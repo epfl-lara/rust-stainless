@@ -1,8 +1,8 @@
 extern crate lazy_static;
 
 use lazy_static::lazy_static;
-use stainless_interop::ast::*;
-use stainless_interop::ser::*;
+use stainless_data::ast::*;
+use stainless_data::ser::*;
 use types::*;
 
 lazy_static! {

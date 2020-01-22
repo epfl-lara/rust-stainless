@@ -133,7 +133,7 @@ version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "stainless-interop"
+name = "stainless_data"
 version = "0.0.1"
 dependencies = [
  "bumpalo 3.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
