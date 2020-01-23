@@ -1,0 +1,6 @@
+## Useful findings for future reference
+
+`cargo mycommand` simply invokes `~/.cargo/bin/cargo-mycommand` with some useful environmental variables
+
+A build plan including all transitive rust dependencies and corresponding rustc invocations
+`cargo build -Z unstable-options --build-plan | python3 -m json.tool`
