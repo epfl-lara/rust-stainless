@@ -5,7 +5,6 @@
 		}
 	],
 	"settings": {
-		"rust-client.logToFile": true,
 		"rust-client.channel": "nightly"
 	}
 }
