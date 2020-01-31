@@ -1,13 +1,17 @@
 #![feature(rustc_private)]
 
+mod extraction;
+
 extern crate rustc;
 extern crate rustc_driver;
+extern crate rustc_hir;
 extern crate rustc_interface;
 extern crate syntax;
 
 use rustc::session::config::ErrorOutputType;
 use rustc::session::early_error;
 use rustc_driver::{run_compiler, Callbacks, Compilation};
+use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::{interface, Queries};
 
 pub fn run() -> Result<(), ()> {
@@ -54,10 +58,12 @@ impl Callbacks for ExtractionCallbacks {
     ) -> Compilation {
         let crate_name = queries.crate_name().unwrap().peek().clone();
 
-        let _expanded_crate = &queries.expansion().unwrap().peek().0;
+        let expanded_crate = &queries.expansion().unwrap().peek().0;
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             tcx.dep_graph.with_ignore(|| {
                 println!("Analysing crate '{}'", crate_name);
+                tcx.analysis(LOCAL_CRATE).unwrap();
+                extraction::playground(tcx, crate_name, expanded_crate);
             });
         });
 
