@@ -1,25 +1,22 @@
 extern crate rustc;
-extern crate rustc_driver;
-extern crate rustc_hir;
-extern crate rustc_interface;
 extern crate syntax;
+extern crate stainless_data;
 
-use rustc::ty::TyCtxt;
+mod extractor;
+mod extractor_rules;
+mod utils;
+
+use rustc::ty::{TyCtxt, TypeckTables};
 use syntax::ast;
-
-fn dump_mod<'tcx>(_tcx: TyCtxt<'tcx>, mod_name: String, modd: &ast::Mod) -> () {
-  use ast::ItemKind::*;
-
-  println!("Module {} w/ {:?} items", &mod_name, modd.items.len());
-  for item in &modd.items {
-    println!("item: #{:?}  kind: {:?}\n", item.id, item.kind);
-    match &item.kind {
-      Mod(modd) => println!("MOD: {:?}", modd),
-      _ => println!("OTHER"),
-    };
-  };
-}
+use stainless_data::ast as st;
 
 pub fn playground<'tcx>(tcx: TyCtxt<'tcx>, crate_name: String, krate: &ast::Crate) -> () {
-  dump_mod(tcx, crate_name, &krate.module);
+  let empty_tables = TypeckTables::empty(None);
+  let factory = &st::Factory::new();
+  let mut extraction = extractor::Extraction {
+    factory: factory,
+    definitions: vec![],
+  };
+  let mut xtor = extractor::Extractor::new(tcx, crate_name, &empty_tables, &mut extraction);
+  xtor.process_mod(&xtor.crate_name.clone(), &krate.module);
 }
