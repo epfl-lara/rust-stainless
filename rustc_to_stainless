@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# set -x
+
 LOG_LEVEL=error
 #RUSTUP_TOOLCHAIN=nightly-2019-11-13
 RUSTUP_TOOLCHAIN=nightly
