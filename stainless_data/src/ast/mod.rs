@@ -101,7 +101,13 @@ impl<'a> Serializable for SymbolIdentifier<'a> {
     s.write_marker(MarkerId(145))?;
     // NOTE: We deviate from Stainless here in that we reuse the Identifier's globalId
     // as the Symbol's id.
-    (self.id.globalId, self.id.id, &self.symbol_path, self.id.globalId).serialize(s)?;
+    (
+      self.id.globalId,
+      self.id.id,
+      &self.symbol_path,
+      self.id.globalId,
+    )
+      .serialize(s)?;
     Ok(())
   }
 }
@@ -110,7 +116,7 @@ impl<'a> Serializable for SymbolIdentifier<'a> {
 impl<'a> Hash for LargeArray<'a> {
   fn hash<H: Hasher>(&self, state: &mut H) {
     let mut elems: Vec<(&Int, &Expr<'a>)> = self.elems.iter().collect();
-    elems.sort_by(|&(i1, _), &(i2, _)| { i1.cmp(&i2) });
+    elems.sort_by(|&(i1, _), &(i2, _)| i1.cmp(&i2));
     elems.iter().for_each(|elem| elem.hash(state));
     self.default.hash(state);
     self.size.hash(state);
@@ -155,5 +161,13 @@ impl Factory {
 
   pub fn Identifier<'a>(&'a self, name: String, globalId: Int, id: Int) -> &'a mut Identifier {
     self.bump.alloc(Identifier { name, globalId, id })
+  }
+
+  pub fn SymbolIdentifier<'a>(
+    &'a self,
+    id: &'a Identifier,
+    symbol_path: Seq<String>,
+  ) -> &'a mut SymbolIdentifier {
+    self.bump.alloc(SymbolIdentifier { id, symbol_path })
   }
 }
