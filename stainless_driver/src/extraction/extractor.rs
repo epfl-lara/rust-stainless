@@ -1,4 +1,5 @@
 extern crate rustc;
+extern crate rustc_hir;
 extern crate rustc_session;
 extern crate stainless_data;
 extern crate syntax;
@@ -6,9 +7,8 @@ extern crate syntax;
 use std::collections::HashMap;
 
 use rustc::ty::{TyCtxt, TypeckTables};
-use rustc_session::Session;
-use syntax::ast::{Ident, NodeId};
-// use syntax::ast::{self, Attribute, NodeId, PatKind, DUMMY_NODE_ID};
+use rustc_hir::HirId;
+use syntax::ast::Ident;
 
 use stainless_data::ast as st;
 
@@ -18,7 +18,7 @@ use super::utils::UniqueCounter;
 pub struct SymbolMapping<'l> {
   global_id_counter: UniqueCounter<()>,
   local_id_counter: UniqueCounter<String>,
-  r2i: HashMap<NodeId, &'l st::SymbolIdentifier<'l>>,
+  r2i: HashMap<HirId, &'l st::SymbolIdentifier<'l>>,
 }
 
 /// Extraction is the result of extracting stainless trees for a Rust AST.
@@ -60,18 +60,14 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     }
   }
 
-  pub fn session(&self) -> &'tcx Session {
-    self.tcx.sess
-  }
-
-  pub fn nest_tables<F>(&mut self, item_id: NodeId, f: F)
+  pub fn nest_tables<F>(&mut self, hir_id: HirId, f: F)
   where
     F: FnOnce(&mut Self),
   {
-    let item_def_id = self.tcx.hir().local_def_id_from_node_id(item_id);
+    let def_id = self.tcx.hir().local_def_id(hir_id);
 
-    let tables = if self.tcx.has_typeck_tables(item_def_id) {
-      self.tcx.typeck_tables_of(item_def_id)
+    let tables = if self.tcx.has_typeck_tables(def_id) {
+      self.tcx.typeck_tables_of(def_id)
     } else {
       self.empty_tables
     };
@@ -82,24 +78,14 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     self.tables = old_tables;
   }
 
-  pub fn fetch_id(&mut self, node_id: NodeId, ident: &Ident) -> &'l st::SymbolIdentifier<'l> {
-    let tcx = &self.tcx;
+  pub fn fetch_id(&mut self, hir_id: HirId, ident: &Ident) -> &'l st::SymbolIdentifier<'l> {
     let f = &mut self.extraction.factory;
     let globals = &mut self.mapping.global_id_counter;
     let locals = &mut self.mapping.local_id_counter;
-    self.mapping.r2i.entry(node_id).or_insert_with(|| {
-      // let simple_name = tcx
-      //   .hir()
-      //   .item(tcx.hir().node_to_hir_id(node_id))
-      //   .ident
-      //   .name
-      //   .to_string();
+    self.mapping.r2i.entry(hir_id).or_insert_with(|| {
+      // TODO: Extract fully-qualified names whenever possible?
       let simple_name = ident.name.to_string();
-      let full_name = match tcx.hir().opt_local_def_id_from_node_id(node_id) {
-        None => simple_name.clone(),
-        Some(def_id) => format!("::{}", tcx.def_path_str(def_id)),
-      };
-      let name_parts: Vec<String> = full_name.split("::").map(String::from).collect();
+      let name_parts: Vec<String> = vec![simple_name.clone()];
       let global_id = globals.fresh(&());
       let local_id = locals.fresh(&simple_name);
       let id = f.Identifier(simple_name, global_id, local_id);

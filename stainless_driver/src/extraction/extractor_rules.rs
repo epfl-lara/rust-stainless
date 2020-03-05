@@ -5,21 +5,29 @@ extern crate syntax;
 
 use super::extractor::Extractor;
 
-use rustc::span_bug;
+use std::collections::HashMap;
+
+use rustc::hir::map::Map;
+use rustc::ty::Ty;
+
+use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
+use rustc_hir::itemlikevisit::ItemLikeVisitor;
+use rustc_hir::{self as hir, HirId};
+
 use syntax::ast;
 
 use stainless_data::ast as st;
 
 macro_rules! unsupported {
-  ($self:expr, $item:expr, $kind_name:expr) => {
-    $self.session().span_warn(
+  ($sess:expr, $item:expr, $kind_name:expr) => {
+    $sess.span_warn(
       $item.span,
       format!("Unsupported tree: {}", $kind_name).as_str(),
     );
   };
 }
 
-macro_rules! unexpected {
+macro_rules! _unexpected {
   ($sp:expr, $what:expr) => {
     span_bug!(
       $sp,
@@ -28,94 +36,137 @@ macro_rules! unexpected {
   };
 }
 
-/// Extractors for various constructs
-impl<'l, 'tcx> Extractor<'l, 'tcx> {
-  pub fn extract_fn(
-    &mut self,
-    item: &'l ast::Item,
-    decl: &'l ast::FnDecl,
-    ty_params: &'l ast::Generics,
-    body: &'l ast::Block,
-  ) -> () {
-    self.nest_tables(item.id, |xtor| {
-      let qualname = format!(
-        "::{}",
-        xtor
-          .tcx
-          .def_path_str(xtor.tcx.hir().local_def_id_from_node_id(item.id))
-      );
-      println!(
-        "FN: name: {}, qualname: {}, decl: {:?}, ty_params: {:?}",
-        item.ident.to_string(),
-        qualname,
-        decl,
-        ty_params
-      );
-      xtor.extract_block(body);
-    });
-  }
+/// DefContext tracks available bindings
+#[derive(Debug)]
+struct DefContext<'l> {
+  vars: HashMap<HirId, &'l st::Variable<'l>>,
+}
 
-  // TODO: Handle last stmt specially / assert it to be an expr without a trailing semi
-  fn extract_block(&mut self, block: &'l ast::Block) -> () {
-    use ast::{PatKind, StmtKind};
-
-    let mut _exprs: Vec<st::Expr> = vec![];
-    for stmt in &block.stmts {
-      match stmt.kind {
-        StmtKind::Local(ref local) => {
-          // TODO: Get HIR tree, check whether simple ident
-          // match local.pat.simple_ident() {
-          //   None => {},
-          //   Some(ident) => {
-          //     ident.id
-          //   }
-          // }
-          match local.pat.kind {
-            PatKind::Ident(_, ident, _) => {
-              let id = self.fetch_id(local.id, &ident);
-              println!("FRESH ID FOR LOCAL {:?}", id);
-            }
-            _ => {}
-          }
-          unsupported!(self, local, "Let-def statement")
-        }
-        StmtKind::Item(ref item) => {
-          let id = self.fetch_id(item.id, &item.ident);
-          println!("FRESH ID FOR ITEM {:?}", id);
-          unsupported!(self, item, "Item statement")
-        }
-        StmtKind::Expr(ref expr) => unsupported!(self, expr, "Expr (result) statement"),
-        StmtKind::Semi(ref expr) => unsupported!(self, expr, "Expr (seq) statement"),
-        StmtKind::Mac(_) => unexpected!(stmt.span, "macro"),
-      }
+impl<'l> DefContext<'l> {
+  fn new() -> Self {
+    Self {
+      vars: HashMap::new(),
     }
   }
 
-  // fn extract_stmt(&mut self, stmt: &'l ast::Stmt) -> () {
-  // }
+  fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+    assert!(!self.vars.contains_key(&hir_id));
+    self.vars.insert(hir_id, var);
+    self
+  }
 }
 
 /// Top-level extraction
+
 /// These handlers simply store extracted constructs in the `Extractor`.
 impl<'l, 'tcx> Extractor<'l, 'tcx> {
-  pub fn process_mod(&mut self, mod_name: &str, modd: &'l ast::Mod) -> () {
-    use ast::ItemKind::*;
+  fn extract_ty(&mut self, _ty: Ty<'tcx>) -> st::Type<'l> {
+    // TODO: Implement
+    self.extraction.factory.UnitType().into()
+  }
 
-    println!(
-      "Module {} w/ {:?} items\n=====\n",
-      mod_name,
-      modd.items.len()
-    );
-    for item in &modd.items {
-      // println!("item: #{:?}  kind: {:?}", item.id, item.kind);
-      match item.kind {
-        Fn(ref sig, ref generics, ref body) => self.extract_fn(item, &sig.decl, generics, body),
-        Use(_) => unsupported!(self, item, "Use"),
-        ExternCrate(_) => unsupported!(self, item, "ExternCrate"),
-        Mod(_) => unsupported!(self, item, "Mod"),
-        Mac(_) => unexpected!(item.span, "macro"),
-        _ => unsupported!(self, item, "(Other)"),
-      };
+  fn register_var(&mut self, hir_id: HirId, ident: &ast::Ident, dctx: &mut DefContext<'l>) {
+    let id = self.fetch_id(hir_id, ident).id;
+    let tpe = self.extract_ty(self.tables.node_type(hir_id));
+    let var = self.extraction.factory.Variable(id, tpe, vec![]);
+    dctx.add_var(hir_id, var);
+  }
+
+  fn extract_fn(
+    &mut self,
+    item: &'l hir::Item,
+    _decl: &'l hir::FnDecl,
+    _ty_params: &'l hir::Generics,
+    body_id: hir::BodyId,
+  ) {
+    struct BindingsCollector<'xtor, 'l, 'tcx> {
+      xtor: &'xtor mut Extractor<'l, 'tcx>,
+      dctx: DefContext<'l>,
     }
+
+    impl<'xtor, 'l, 'tcx> BindingsCollector<'xtor, 'l, 'tcx> {
+      fn new(xtor: &'xtor mut Extractor<'l, 'tcx>, dctx: DefContext<'l>) -> Self {
+        Self {
+          xtor: xtor,
+          dctx: dctx,
+        }
+      }
+
+      fn as_def_context(self) -> DefContext<'l> {
+        self.dctx
+      }
+
+      fn populate(&mut self, body: &'tcx hir::Body<'tcx>) {
+        assert!(body.generator_kind.is_none());
+        for param in body.params {
+          self.visit_pat(&param.pat);
+        }
+        self.visit_expr(&body.value);
+      }
+    }
+
+    impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
+      type Map = Map<'tcx>;
+
+      fn nested_visit_map(&mut self) -> NestedVisitorMap<'_, Self::Map> {
+        NestedVisitorMap::OnlyBodies(&self.xtor.tcx.hir())
+      }
+
+      fn visit_body(&mut self, _b: &'tcx hir::Body<'tcx>) {
+        unreachable!();
+      }
+
+      fn visit_pat(&mut self, pattern: &'tcx hir::Pat<'tcx>) {
+        use hir::PatKind;
+        match pattern.kind {
+          PatKind::Binding(_, hir_id, ref ident, ref optional_subpattern) => {
+            self.xtor.register_var(hir_id, ident, &mut self.dctx);
+            syntax::walk_list!(self, visit_pat, optional_subpattern);
+          }
+          _ => intravisit::walk_pat(self, pattern),
+        }
+      }
+    }
+
+    self.nest_tables(item.hir_id, |xtor| {
+      let body = xtor.tcx.hir().body(body_id);
+      let mut collector = BindingsCollector::new(xtor, DefContext::new());
+      collector.populate(body);
+      println!("EXTRACT FN: {:?}  /  {:?}", item.ident, collector.as_def_context());
+    });
+  }
+
+  pub fn process_crate(&mut self, mod_name: &str) {
+    struct ItemVisitor<'xtor, 'l, 'tcx> {
+      xtor: &'xtor mut Extractor<'l, 'tcx>,
+    }
+
+    impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
+      fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
+        if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
+          let impl_id = self.xtor.tcx.hir().local_def_id(item.hir_id);
+          println!("ITEM: {:?} / {:?}", impl_id, item.ident);
+          self.xtor.extract_fn(item, &sig.decl, generics, body_id);
+        } else {
+          // TODO: Ignore certain boilerplate/compiler-generated items
+          unsupported!(self.xtor.tcx.sess, item, "Other kind of item");
+        }
+      }
+
+      // Unsupported
+      fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
+        unsupported!(self.xtor.tcx.sess, trait_item, "Trait item");
+      }
+
+      // Handled above
+      fn visit_impl_item(&mut self, _impl_item: &'tcx hir::ImplItem<'tcx>) {
+        unreachable!();
+      }
+    }
+
+    println!("PROCESS CRATE via HIR: {}", mod_name);
+    let krate = self.tcx.hir().krate();
+    let mut visitor = ItemVisitor { xtor: self };
+    krate.visit_all_item_likes(&mut visitor);
   }
 }
