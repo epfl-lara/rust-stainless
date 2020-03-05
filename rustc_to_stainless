@@ -1,11 +1,15 @@
 #!/bin/bash
+if [[ -z "$RUST_STAINLESS_ARCH" ]]; then
+  echo "Set RUST_STAINLESS_ARCH environment var (e.g. x86_64-apple-darwin or x86_64-unknown-linux-gnu)"
+  exit
+fi
 
 # set -x
 
 LOG_LEVEL=error
 #RUSTUP_TOOLCHAIN=nightly-2019-11-13
 RUSTUP_TOOLCHAIN=nightly
-RUST_VERSION=${RUSTUP_TOOLCHAIN}-x86_64-unknown-linux-gnu
+RUST_VERSION=${RUSTUP_TOOLCHAIN}-${RUST_STAINLESS_ARCH}
 COMPILER_PATH=$HOME/.rustup/toolchains/${RUST_VERSION}
 TARGET_PATH="./stainless_driver/target/debug"
 LIB_PATH="${COMPILER_PATH}/lib:${TARGET_PATH}:${TARGET_PATH}/deps"
@@ -14,5 +18,5 @@ RUSTC_EXPORT="${TARGET_PATH}/rustc_to_stainless"
 LD_LIBRARY_PATH=${LIB_PATH} \
 RUST_LOG=${LOG_LEVEL} \
 ${RUSTC_EXPORT} \
-  -L ${COMPILER_PATH}/lib/rustlib/x86_64-unknown-linux-gnu/lib/ \
+  -L ${COMPILER_PATH}/lib/rustlib/${RUST_STAINLESS_ARCH}/lib/ \
   "$@"
