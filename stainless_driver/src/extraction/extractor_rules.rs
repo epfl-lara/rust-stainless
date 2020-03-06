@@ -1,5 +1,6 @@
 extern crate rustc;
 extern crate rustc_hir;
+extern crate rustc_span;
 extern crate stainless_data;
 extern crate syntax;
 
@@ -8,18 +9,22 @@ use super::extractor::{Extractor, StainlessSymId};
 use std::collections::HashMap;
 
 use rustc::hir::map::Map;
-use rustc::ty::{self, Ty};
+use rustc::ty::{self, Ty, TyKind};
 
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, HirId};
+
+use rustc_span::Span;
+
+use syntax::ast;
 
 use stainless_data::ast as st;
 
 macro_rules! unsupported {
   ($sess:expr, $item:expr, $kind_name:expr) => {
     $sess.span_warn(
-      $item.span,
+      $item,
       format!("Unsupported tree: {}", $kind_name).as_str(),
     );
   };
@@ -99,7 +104,7 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
         // Extend DefContext with a new variable
         let xtor = &mut self.xtor;
         let id = xtor.register_var(hir_id).id;
-        let tpe = xtor.extract_ty(xtor.tables.node_type(hir_id), &self.dctx);
+        let tpe = xtor.extract_ty(xtor.tables.node_type(hir_id), &self.dctx, pattern.span);
         let var = xtor.extraction.factory.Variable(id, tpe, vec![]);
         self.dctx.add_var(hir_id, var);
 
@@ -125,7 +130,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         if let hir::PatKind::Binding(_, _, ident, _) = pat.kind {
           match self.tables.extract_binding_mode(sess, pat.hir_id, pat.span) {
             Some(ty::BindByValue(hir::Mutability::Not)) => {}
-            _ => unsupported!(sess, pat, "Only immutable by-value bindings are supported"),
+            _ => unsupported!(sess, pat.span, "Only immutable by-value bindings are supported"),
           }
           ident
         } else {
@@ -134,14 +139,25 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       } else {
         unreachable!()
       };
-      self.fresh_id_from_ident(hir_id, &ident)
+      self.register_id_from_ident(hir_id, &ident)
     };
     id
   }
 
-  fn extract_ty(&mut self, _ty: Ty<'tcx>, _dctx: &DefContext<'l>) -> st::Type<'l> {
-    // TODO: Implement
-    self.extraction.factory.UnitType().into()
+  fn extract_ty(&mut self, ty: Ty<'tcx>, _dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
+    let f = &self.extraction.factory;
+    match ty.kind {
+      TyKind::Bool => f.BooleanType().into(),
+      TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
+      _ => {
+        unsupported!(
+          self.tcx.sess,
+          span,
+          format!("Cannot extract type {:?}", ty.kind)
+        );
+        f.Untyped().into()
+      }
+    }
   }
 
   fn extract_expr(&mut self, _expr: &'tcx hir::Expr<'tcx>, _dctx: &DefContext<'l>) -> st::Expr<'l> {
@@ -152,7 +168,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   fn extract_fn(
     &mut self,
     item: &'l hir::Item,
-    _decl: &'l hir::FnDecl,
+    decl: &'l hir::FnDecl,
     _ty_params: &'l hir::Generics,
     body_id: hir::BodyId,
   ) -> &'l st::FunDef<'l> {
@@ -166,29 +182,25 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       collector.populate_from(body);
       let dctx = collector.as_def_context();
 
-      // Extract the parameter types and the return type
+      // Get the function signature and extract the return type
       let sigs = xtor.tables.liberated_fn_sigs();
       let sig = sigs.get(fun_hir_id).unwrap();
-      let param_tpes: Vec<st::Type<'l>> = sig
-        .inputs()
-        .into_iter()
-        .map(|ty| xtor.extract_ty(ty, &dctx))
-        .collect();
-      let return_tpe: st::Type<'l> = xtor.extract_ty(sig.output(), &dctx);
+      let return_tpe: st::Type<'l> = xtor.extract_ty(sig.output(), &dctx, decl.output.span());
 
       // Build parameter ValDefs
       let params: Vec<&'l st::ValDef<'l>> = body
         .params
         .iter()
-        .zip(param_tpes.iter())
+        .zip(sig.inputs().into_iter())
         .enumerate()
-        .map(|(index, (param, tpe))| {
+        .map(|(index, (param, ty))| {
           let hir_id = param.hir_id;
           let ident_opt = param.pat.simple_ident();
           let id = ident_opt
-            .map(|ident| xtor.fresh_id_from_ident(hir_id, &ident))
-            .unwrap_or_else(|| xtor.fresh_id_from_name(hir_id, format!("param{}", index)));
-          let var = xtor.extraction.factory.Variable(id.id, *tpe, vec![]);
+            .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
+            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)));
+          let tpe = xtor.extract_ty(ty, &dctx, param.span);
+          let var = xtor.extraction.factory.Variable(id.id, tpe, vec![]);
           &*xtor.extraction.factory.ValDef(var)
         })
         .collect();
@@ -216,17 +228,17 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
         if let hir::ItemKind::Fn(..) = item.kind {
-          self.xtor.fresh_id_from_ident(item.hir_id, &item.ident);
+          self.xtor.register_id_from_ident(item.hir_id, &item.ident);
           self.functions.push(&item);
         } else {
           // TODO: Ignore certain boilerplate/compiler-generated items
-          unsupported!(self.xtor.tcx.sess, item, "Other kind of item");
+          unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
         }
       }
 
       // Unsupported
       fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
-        unsupported!(self.xtor.tcx.sess, trait_item, "Trait item");
+        unsupported!(self.xtor.tcx.sess, trait_item.span, "Trait item");
       }
 
       // Handled above

@@ -83,10 +83,6 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     result
   }
 
-  fn register_id(&mut self, hir_id: HirId, id: StainlessSymId<'l>) {
-    assert!(self.mapping.r2i.insert(hir_id, id).is_none());
-  }
-
   #[allow(dead_code)]
   pub(in crate) fn get_id_or_register<F>(&mut self, hir_id: HirId, f: F) -> StainlessSymId<'l>
   where
@@ -99,7 +95,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     }
   }
 
-  fn fresh_id(
+  fn register_id(
     &mut self,
     hir_id: HirId,
     name: String,
@@ -110,20 +106,20 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     let f = &mut self.extraction.factory;
     let id = f.Identifier(name, global_id, local_id);
     let id = f.SymbolIdentifier(id, symbol_path);
-    self.register_id(hir_id, id);
+    assert!(self.mapping.r2i.insert(hir_id, id).is_none());
     id
   }
 
-  pub(in crate) fn fresh_id_from_name(
+  pub(in crate) fn register_id_from_name(
     &mut self,
     hir_id: HirId,
     name: String,
   ) -> StainlessSymId<'l> {
     let path = vec![name.clone()];
-    self.fresh_id(hir_id, name, path)
+    self.register_id(hir_id, name, path)
   }
 
-  pub(in crate) fn fresh_id_from_ident(
+  pub(in crate) fn register_id_from_ident(
     &mut self,
     hir_id: HirId,
     ident: &ast::Ident,
@@ -131,7 +127,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     // TODO: Extract fully-qualified name for symbol path whenever possible?
     let simple_name = ident.name.to_string();
     let path = vec![simple_name.clone()];
-    self.fresh_id(hir_id, simple_name, path)
+    self.register_id(hir_id, simple_name, path)
   }
 
   pub fn fetch_id(&self, hir_id: HirId) -> StainlessSymId<'l> {
