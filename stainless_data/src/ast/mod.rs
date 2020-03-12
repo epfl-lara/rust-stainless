@@ -6,6 +6,8 @@ mod macros;
 mod generated;
 pub use generated::*;
 
+pub mod pretty;
+
 use std::hash::{Hash, Hasher};
 
 use crate::ser::types::*;
