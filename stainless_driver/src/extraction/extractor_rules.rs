@@ -219,7 +219,19 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     })
   }
 
-  pub fn process_crate(&mut self, mod_name: &str) {
+  pub fn process_crate(&mut self, _mod_name: &str) {
+    // TODO: Ignore certain boilerplate/compiler-generated items
+    fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
+      match item.kind {
+        hir::ItemKind::ExternCrate(_) =>
+          item.ident.name.to_string() == "std",
+        hir::ItemKind::Use(ref path, hir::UseKind::Glob) =>
+          path.to_string().starts_with("::std::prelude::v"),
+        _ =>
+          false
+      }
+    }
+
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut Extractor<'l, 'tcx>,
       functions: Vec<&'tcx hir::Item<'tcx>>,
@@ -230,8 +242,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         if let hir::ItemKind::Fn(..) = item.kind {
           self.xtor.register_id_from_ident(item.hir_id, &item.ident);
           self.functions.push(&item);
-        } else {
-          // TODO: Ignore certain boilerplate/compiler-generated items
+        } else if !should_ignore(item) {
           unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
         }
       }
@@ -247,7 +258,6 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       }
     }
 
-    println!("PROCESS CRATE via HIR: {}", mod_name);
     let krate = self.tcx.hir().krate();
 
     let mut visitor = ItemVisitor {
@@ -258,8 +268,6 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     for item in visitor.functions {
       if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
-        let impl_id = self.tcx.hir().local_def_id(item.hir_id);
-        println!("FUNCTION: {:?} / {:?}", impl_id, item.ident);
         self.extract_fn(item, &sig.decl, generics, body_id);
       }
     }

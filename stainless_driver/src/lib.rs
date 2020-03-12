@@ -29,7 +29,6 @@ pub fn run() -> Result<(), ()> {
             })
         })
         .collect::<Vec<_>>();
-    println!("(Running the cmpiler with args: {:?})", args);
     rustc_driver::install_ice_hook();
     rustc_driver::catch_fatal_errors(|| run_compiler(&args, &mut callbacks, file_loader, None))
         .map(|_| ())
@@ -61,7 +60,7 @@ impl Callbacks for ExtractionCallbacks {
         let expanded_crate = &queries.expansion().unwrap().peek().0;
         queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
             tcx.dep_graph.with_ignore(|| {
-                println!("Analysing crate '{}'", crate_name);
+                println!("=== Analysing crate '{}' ===\n", crate_name);
                 tcx.analysis(LOCAL_CRATE).unwrap();
                 extraction::playground(tcx, crate_name, expanded_crate);
             });
