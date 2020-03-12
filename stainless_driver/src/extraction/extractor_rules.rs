@@ -2,7 +2,7 @@ extern crate rustc;
 extern crate rustc_hir;
 extern crate rustc_span;
 extern crate stainless_data;
-extern crate syntax;
+extern crate rustc_ast;
 
 use super::extractor::{Extractor, StainlessSymId};
 
@@ -17,7 +17,7 @@ use rustc_hir::{self as hir, HirId};
 
 use rustc_span::Span;
 
-use syntax::ast;
+use rustc_ast::ast;
 
 use stainless_data::ast as st;
 
@@ -109,7 +109,7 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
         self.dctx.add_var(hir_id, var);
 
         // Visit potential sub-patterns
-        syntax::walk_list!(self, visit_pat, optional_subpattern);
+        rustc_ast::walk_list!(self, visit_pat, optional_subpattern);
       }
       _ => intravisit::walk_pat(self, pattern),
     }
