@@ -164,11 +164,25 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
   /// Extraction methods
 
-  fn extract_ty(&mut self, ty: Ty<'tcx>, _dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
+  fn extract_tys<I>(&mut self, tys: I, dctx: &DefContext<'l>, span: Span) -> Vec<st::Type<'l>>
+  where
+    I: IntoIterator<Item = Ty<'tcx>>,
+  {
+    tys
+      .into_iter()
+      .map(|ty| self.extract_ty(ty, dctx, span).into())
+      .collect()
+  }
+
+  fn extract_ty(&mut self, ty: Ty<'tcx>, dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
     let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
+      TyKind::Tuple(..) => {
+        let arg_tps = self.extract_tys(ty.tuple_fields(), dctx, span);
+        f.TupleType(arg_tps).into()
+      }
       _ => {
         unsupported!(
           self.tcx.sess,
@@ -257,8 +271,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
   fn extract_call(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Call(fun, args) = &expr.kind {
-      if let ExprKind::Path(qpath) = &fun.kind {
+    if let ExprKind::Call(fun, args) = expr.kind {
+      if let ExprKind::Path(ref qpath) = fun.kind {
         let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
         match qpath_res {
           Res::Def(DefKind::Fn, def_id) => {
@@ -267,10 +281,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
               .hir()
               .as_local_hir_id(def_id)
               .unwrap_or_else(|| unexpected!(fun.span, "no local def id"));
-            let args: Vec<st::Expr<'l>> = args
-              .iter()
-              .map(|arg| self.extract_expr(arg, dctx).into())
-              .collect();
+            let args = self.extract_exprs(args, dctx);
             let fun_id = self.fetch_id(hir_id).id;
             // TODO: Handle type arguments
             f.FunctionInvocation(fun_id, vec![], args).into()
@@ -346,9 +357,19 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     rec(self, block.stmts, last_expr)
   }
 
+  fn extract_exprs<I>(&mut self, exprs: I, dctx: &DefContext<'l>) -> Vec<st::Expr<'l>>
+  where
+    I: IntoIterator<Item = &'tcx hir::Expr<'tcx>>,
+  {
+    exprs
+      .into_iter()
+      .map(|arg| self.extract_expr(arg, dctx).into())
+      .collect()
+  }
+
   fn extract_expr(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
-    match &expr.kind {
-      ExprKind::Lit(lit) => self.extract_lit(expr, lit),
+    let f = self.factory();
+    match expr.kind {
       ExprKind::Match(
         scrut,
         arms,
@@ -357,7 +378,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         },
       ) => {
         assert_eq!(arms.len(), 2);
-        let elze = if *has_else { Some(arms[1].body) } else { None };
+        let elze = if has_else { Some(arms[1].body) } else { None };
         self.extract_if(scrut, arms[0].body, elze, dctx)
       }
       ExprKind::Block(block, _) => {
@@ -367,7 +388,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           self.unsupported_expr(expr, "Cannot extract unsafe block".into())
         }
       }
-      ExprKind::Path(qpath) => {
+      ExprKind::Path(ref qpath) => {
         let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
         match qpath_res {
           Res::Def(_kind, _def_id) => unimplemented!(),
@@ -379,6 +400,18 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           _ => unexpected!(expr.span, "non-variable path expression"),
         }
       }
+      ExprKind::Tup(args) => {
+        let args = self.extract_exprs(args, dctx);
+        f.Tuple(args).into()
+      }
+      ExprKind::Field(recv, ident) => {
+        let recv = self.extract_expr(recv, dctx);
+        match ident.name.to_ident_string().parse::<i32>() {
+          Ok(index) => f.TupleSelect(recv, index).into(),
+          _ => unimplemented!(),
+        }
+      }
+      ExprKind::Lit(ref lit) => self.extract_lit(expr, lit),
       ExprKind::Call(..) => self.extract_call(expr, dctx),
       ExprKind::Unary(..) => self.extract_unary(expr, dctx),
       ExprKind::Binary(..) => self.extract_binary(expr, dctx),
@@ -394,6 +427,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     _ty_params: &'l hir::Generics,
     body_id: hir::BodyId,
   ) -> &'l st::FunDef<'l> {
+    let f = self.factory();
     let fun_hir_id = item.hir_id;
     self.nest_tables(fun_hir_id, |xtor| {
       let fun_id = xtor.fetch_id(fun_hir_id).id;
@@ -416,31 +450,27 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         .zip(sig.inputs().into_iter())
         .enumerate()
         .map(|(index, (param, ty))| {
-          let hir_id = param.hir_id;
-          let ident_opt = param.pat.simple_ident();
-          let id = ident_opt
-            .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
+          let hir_id = param.pat.hir_id;
+          let id = xtor
+            .get_id(hir_id) // already registered via BindingsCollector
+            .or_else(|| {
+              param
+                .pat
+                .simple_ident()
+                .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
+            })
             .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)));
+          // TODO: Wrap body in match to provide non-simple-ident bindings (e.g. `(a, b): (i32, i32)`)
+          assert!(param.pat.simple_ident().is_some());
           let tpe = xtor.extract_ty(ty, &dctx, param.span);
-          let var = xtor.extraction.factory.Variable(id.id, tpe, vec![]);
-          &*xtor.extraction.factory.ValDef(var)
+          let var = f.Variable(id.id, tpe, vec![]);
+          &*f.ValDef(var)
         })
         .collect();
 
       // Extract the body
       let body_expr = xtor.extract_expr(&body.value, &dctx);
-
-      // println!(
-      //   "EXTRACT FN: {:?} / {:?}\n  dctx: {:?}\n  body_expr: {:?}",
-      //   item.ident, fun_id, dctx, body_expr
-      // );
-      for vd in dctx.vars.values() {
-        println!(" - {}: {}", vd.id, vd.tpe);
-      }
-      xtor
-        .extraction
-        .factory
-        .FunDef(fun_id, vec![], params, return_tpe, body_expr, vec![])
+      f.FunDef(fun_id, vec![], params, return_tpe, body_expr, vec![])
     })
   }
 
@@ -492,10 +522,9 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     for item in visitor.functions {
       if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
-        let impl_id = self.tcx.hir().local_def_id(item.hir_id);
-        println!("FUNCTION: {:?} / {:?}", impl_id, item.ident);
+        println!("== FUNCTION: {:?} ==", item.ident);
         let fd = self.extract_fn(item, &sig.decl, generics, body_id);
-        println!(" ==>\n{}\n", fd)
+        println!("{}", fd)
       }
     }
   }

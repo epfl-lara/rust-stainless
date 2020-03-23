@@ -83,18 +83,6 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     result
   }
 
-  #[allow(dead_code)]
-  pub(in crate) fn get_id_or_register<F>(&mut self, hir_id: HirId, f: F) -> StainlessSymId<'l>
-  where
-    F: FnOnce(&mut Self) -> StainlessSymId<'l>,
-  {
-    if self.mapping.r2i.contains_key(&hir_id) {
-      self.mapping.r2i.get(&hir_id).unwrap()
-    } else {
-      f(self)
-    }
-  }
-
   fn register_id(
     &mut self,
     hir_id: HirId,
@@ -128,6 +116,10 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     let simple_name = ident.name.to_string();
     let path = vec![simple_name.clone()];
     self.register_id(hir_id, simple_name, path)
+  }
+
+  pub fn get_id(&self, hir_id: HirId) -> Option<StainlessSymId<'l>> {
+    self.mapping.r2i.get(&hir_id).map(|&sym| sym)
   }
 
   pub fn fetch_id(&self, hir_id: HirId) -> StainlessSymId<'l> {

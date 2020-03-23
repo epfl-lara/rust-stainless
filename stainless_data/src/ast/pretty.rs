@@ -42,7 +42,7 @@ impl<'a> fmt::Display for FunDef<'a> {
     write!(f, "(")?;
     writeSeq!(f, self.params, ", ")?;
     writeln!(f, ") -> {} {{", self.returnType)?;
-    write!(f, "    {}", self.fullBody)?;
+    writeln!(f, "    {}", self.fullBody)?;
     writeln!(f, "}}")
   }
 }
@@ -98,6 +98,7 @@ impl<'a> fmt::Display for Type<'a> {
     match self {
       Type::BooleanType(t) => t.fmt(f),
       Type::BVType(t) => t.fmt(f),
+      Type::TupleType(t) => t.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -125,6 +126,14 @@ impl fmt::Display for BVType {
       write!(f, "u")?;
     }
     write!(f, "{}", self.size)
+  }
+}
+
+impl<'a> fmt::Display for TupleType<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "(")?;
+    writeSeq!(f, self.bases, ", ")?;
+    write!(f, ")")
   }
 }
 
