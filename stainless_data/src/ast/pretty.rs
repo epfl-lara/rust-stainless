@@ -69,9 +69,12 @@ impl<'a> fmt::Display for Expr<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Expr::Variable(e) => e.fmt(f),
+      Expr::UnitLiteral(e) => e.fmt(f),
       Expr::BooleanLiteral(e) => e.fmt(f),
       Expr::BVLiteral(e) => e.fmt(f),
       Expr::ADT(e) => e.fmt(f),
+      Expr::UMinus(e) => e.fmt(f),
+      Expr::BVNot(e) => e.fmt(f),
       Expr::Plus(e) => e.fmt(f),
       Expr::Minus(e) => e.fmt(f),
       Expr::Times(e) => e.fmt(f),
@@ -88,6 +91,8 @@ impl<'a> fmt::Display for Expr<'a> {
       Expr::Tuple(e) => e.fmt(f),
       Expr::TupleSelect(e) => e.fmt(f),
       Expr::IfExpr(e) => e.fmt(f),
+      Expr::Let(e) => e.fmt(f),
+      Expr::Block(e) => e.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -96,6 +101,7 @@ impl<'a> fmt::Display for Expr<'a> {
 impl<'a> fmt::Display for Type<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      Type::UnitType(t) => t.fmt(f),
       Type::BooleanType(t) => t.fmt(f),
       Type::BVType(t) => t.fmt(f),
       Type::TupleType(t) => t.fmt(f),
@@ -109,6 +115,12 @@ impl<'a> fmt::Display for Flag<'a> {
     match self {
       _ => unimplemented!("No formatter for {:?}", self),
     }
+  }
+}
+
+impl fmt::Display for UnitType {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "()")
   }
 }
 
@@ -140,6 +152,12 @@ impl<'a> fmt::Display for TupleType<'a> {
 impl<'a> fmt::Display for Variable<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}", self.id)
+  }
+}
+
+impl fmt::Display for UnitLiteral {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "()")
   }
 }
 
@@ -176,6 +194,18 @@ impl<'a> fmt::Display for ADT<'a> {
     write!(f, "(")?;
     writeSeq!(f, self.args, ", ")?;
     write!(f, ")")
+  }
+}
+
+impl<'a> fmt::Display for UMinus<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "(-{})", self.expr)
+  }
+}
+
+impl<'a> fmt::Display for BVNot<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "(~{})", self.e)
   }
 }
 
@@ -290,5 +320,22 @@ impl<'a> fmt::Display for IfExpr<'a> {
       "if {} {{\n    {}\n}} else {{\n    {}\n}}",
       self.cond, self.thenn, self.elze
     )
+  }
+}
+
+impl<'a> fmt::Display for Let<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "let {} = {};\n{}", self.vd, self.value, self.body)
+  }
+}
+
+impl<'a> fmt::Display for Block<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "{{\n")?;
+    for expr in &self.exprs {
+      writeln!(f, "    {};", expr)?;
+    }
+    writeln!(f, "    {}", self.last)?;
+    write!(f, "}}")
   }
 }

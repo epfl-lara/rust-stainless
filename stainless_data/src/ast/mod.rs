@@ -126,6 +126,12 @@ impl<'a> Hash for LargeArray<'a> {
   }
 }
 
+impl<'l, 'a> From<&'l ValDef<'a>> for &'l Variable<'a> {
+  fn from(vd: &'l ValDef<'a>) -> &'l Variable<'a> {
+    vd.v
+  }
+}
+
 // Additional helpers that mirror those in Inox
 
 pub fn Int32Literal(value: Int) -> BVLiteral {

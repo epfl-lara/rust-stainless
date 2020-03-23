@@ -15,7 +15,7 @@ use rustc::ty::{self, Ty, TyKind};
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, ExprKind, HirId};
+use rustc_hir::{self as hir, ExprKind, HirId, StmtKind};
 
 use rustc_span::Span;
 
@@ -25,7 +25,7 @@ use stainless_data::ast as st;
 
 macro_rules! unsupported {
   ($sess:expr, $item:expr, $kind_name:expr) => {
-    $sess.span_warn($item, format!("Unsupported tree: {}", $kind_name).as_str());
+    $sess.span_err($item, format!("Unsupported tree: {}", $kind_name).as_str());
   };
 }
 
@@ -181,7 +181,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), dctx, span);
-        f.TupleType(arg_tps).into()
+        if arg_tps.is_empty() {
+          f.UnitType().into()
+        } else {
+          f.TupleType(arg_tps).into()
+        }
       }
       _ => {
         unsupported!(
@@ -326,35 +330,80 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     f.IfExpr(cond, then, elze).into()
   }
 
+  fn extract_block_(
+    &mut self,
+    stmts: &'tcx [hir::Stmt<'tcx>],
+    acc_exprs: &mut Vec<st::Expr<'l>>,
+    final_expr: st::Expr<'l>,
+    dctx: &DefContext<'l>,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let finish = |exprs: Vec<st::Expr<'l>>, final_expr| {
+      if exprs.is_empty() {
+        final_expr
+      } else {
+        f.Block(exprs, final_expr).into()
+      }
+    };
+
+    let mut it = stmts.iter();
+    if let Some(stmt) = it.next() {
+      match stmt.kind {
+        StmtKind::Local(local) => {
+          let bail = |msg| -> st::Expr<'l> {
+            unsupported!(self.tcx.sess, local.span, msg);
+            f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
+              .into()
+          };
+          let has_abnormal_source = match local.source {
+            hir::LocalSource::Normal => false,
+            _ => true,
+          };
+          if has_abnormal_source {
+            // TODO: Support for loops
+            bail("Will not extract let that resulted from desugaring")
+          } else if local.pat.simple_ident().is_none() {
+            // TODO: Desugar complex patterns
+            bail("Cannot extract complex pattern in let")
+          } else if local.init.is_none() {
+            bail("Cannot extract let without initializer")
+          } else {
+            let vd = f.ValDef(
+              dctx
+                .vars
+                .get(&local.pat.hir_id)
+                .unwrap_or_else(|| unexpected!(local.span, "unregistered variable")),
+            );
+            let init = self.extract_expr(local.init.unwrap(), dctx);
+            let exprs = acc_exprs.clone();
+            acc_exprs.clear();
+            let body_expr = self.extract_block_(it.as_slice(), acc_exprs, final_expr, dctx);
+            let last_expr = f.Let(vd, init, body_expr).into();
+            finish(exprs, last_expr)
+          }
+        }
+        StmtKind::Expr(expr) | StmtKind::Semi(expr) => {
+          let expr = self.extract_expr(expr, dctx);
+          acc_exprs.push(expr);
+          self.extract_block_(it.as_slice(), acc_exprs, final_expr, dctx)
+        }
+        _ => self.extract_block_(it.as_slice(), acc_exprs, final_expr, dctx),
+      }
+    } else {
+      finish(acc_exprs.clone(), final_expr)
+    }
+  }
+
   fn extract_block(
     &mut self,
     block: &'tcx hir::Block<'tcx>,
     dctx: &DefContext<'l>,
   ) -> st::Expr<'l> {
-    fn rec<'l, 'tcx>(
-      xtor: &mut Extractor,
-      stmts: &'tcx [hir::Stmt<'tcx>],
-      last_expr: st::Expr<'l>,
-    ) -> st::Expr<'l> {
-      let mut it = stmts.iter();
-      if let Some(_stmt) = it.next() {
-        rec(xtor, it.as_slice(), last_expr)
-      } else {
-        last_expr
-      }
-    }
-
-    let f = self.factory();
-    let last_expr = block
+    let final_expr = block
       .expr
       .map(|e| self.extract_expr(e, dctx))
-      .unwrap_or_else(|| f.UnitLiteral().into());
-    // let exprs = block.stmts.iter().filter_map(|&stmt| match &stmt.kind {});
-    // block
-    //   .expr
-    //   .map(|e| self.extract_expr(e, dctx))
-    //   .unwrap_or_else(|| f.UnitLiteral().into())
-    rec(self, block.stmts, last_expr)
+      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+    self.extract_block_(block.stmts, &mut vec![], final_expr, dctx)
   }
 
   fn extract_exprs<I>(&mut self, exprs: I, dctx: &DefContext<'l>) -> Vec<st::Expr<'l>>
@@ -459,11 +508,18 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
                 .simple_ident()
                 .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
             })
-            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)));
-          // TODO: Wrap body in match to provide non-simple-ident bindings (e.g. `(a, b): (i32, i32)`)
-          assert!(param.pat.simple_ident().is_some());
+            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)))
+            .id;
+          // TODO: Desugar to match in case of non-simple-ident bindings (e.g. `(a, b): (i32, i32)`)
+          if param.pat.simple_ident().is_none() {
+            unsupported!(
+              xtor.tcx.sess,
+              param.pat.span,
+              "Cannot extract complex pattern in parameter"
+            );
+          }
           let tpe = xtor.extract_ty(ty, &dctx, param.span);
-          let var = f.Variable(id.id, tpe, vec![]);
+          let var = f.Variable(id, tpe, vec![]);
           &*f.ValDef(var)
         })
         .collect();
