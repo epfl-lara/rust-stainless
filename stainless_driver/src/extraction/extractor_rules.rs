@@ -1,19 +1,21 @@
 extern crate rustc;
+extern crate rustc_ast;
 extern crate rustc_hir;
 extern crate rustc_span;
 extern crate stainless_data;
-extern crate rustc_ast;
 
 use super::extractor::{Extractor, StainlessSymId};
 
 use std::collections::HashMap;
 
 use rustc::hir::map::Map;
+use rustc::span_bug;
 use rustc::ty::{self, Ty, TyKind};
 
+use rustc_hir::def::{DefKind, Res};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, HirId};
+use rustc_hir::{self as hir, ExprKind, HirId};
 
 use rustc_span::Span;
 
@@ -23,14 +25,11 @@ use stainless_data::ast as st;
 
 macro_rules! unsupported {
   ($sess:expr, $item:expr, $kind_name:expr) => {
-    $sess.span_warn(
-      $item,
-      format!("Unsupported tree: {}", $kind_name).as_str(),
-    );
+    $sess.span_warn($item, format!("Unsupported tree: {}", $kind_name).as_str());
   };
 }
 
-macro_rules! _unexpected {
+macro_rules! unexpected {
   ($sp:expr, $what:expr) => {
     span_bug!(
       $sp,
@@ -130,7 +129,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         if let hir::PatKind::Binding(_, _, ident, _) = pat.kind {
           match self.tables.extract_binding_mode(sess, pat.hir_id, pat.span) {
             Some(ty::BindByValue(hir::Mutability::Not)) => {}
-            _ => unsupported!(sess, pat.span, "Only immutable by-value bindings are supported"),
+            _ => unsupported!(
+              sess,
+              pat.span,
+              "Only immutable by-value bindings are supported"
+            ),
           }
           ident
         } else {
@@ -144,8 +147,25 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     id
   }
 
+  /// Extraction helpers
+
+  fn unsupported_expr(&mut self, expr: &'tcx hir::Expr<'tcx>, msg: String) -> st::Expr<'l> {
+    unsupported!(self.tcx.sess, expr.span, msg);
+    let f = self.factory();
+    f.NoTree(f.Untyped().into()).into()
+  }
+
+  fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
+    match ty.kind {
+      TyKind::Int(_) | TyKind::Uint(_) => true,
+      _ => false,
+    }
+  }
+
+  /// Extraction methods
+
   fn extract_ty(&mut self, ty: Ty<'tcx>, _dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
-    let f = &self.extraction.factory;
+    let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
@@ -160,9 +180,211 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     }
   }
 
-  fn extract_expr(&mut self, _expr: &'tcx hir::Expr<'tcx>, _dctx: &DefContext<'l>) -> st::Expr<'l> {
-    // TODO: Implement
-    self.extraction.factory.Int32Literal(1).into()
+  fn extract_lit(&mut self, expr: &'tcx hir::Expr<'tcx>, lit: &hir::Lit) -> st::Expr<'l> {
+    use ast::LitKind;
+    let f = self.factory();
+    match lit.node {
+      LitKind::Bool(value) => f.BooleanLiteral(value).into(),
+      LitKind::Int(value, _) => {
+        let node_ty = self.tables.node_type(expr.hir_id);
+        match node_ty.kind {
+          ty::Int(ast::IntTy::I32) => f.Int32Literal(value as i32).into(),
+          _ => self.unsupported_expr(
+            expr,
+            format!("Cannot extract literal kind {:?} (ty {:?})", lit, node_ty),
+          ),
+        }
+      }
+      _ => self.unsupported_expr(expr, format!("Cannot extract literal kind {:?}", lit)),
+    }
+  }
+
+  fn extract_unary(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
+    use hir::UnOp;
+    let f = self.factory();
+    if let hir::ExprKind::Unary(op, arg) = expr.kind {
+      let arg_ty = self.tables.node_type(arg.hir_id);
+      let arg = self.extract_expr(arg, dctx);
+      match op {
+        UnOp::UnNot if self.is_bv_type(arg_ty) => f.BVNot(arg).into(),
+        UnOp::UnNot if arg_ty.is_bool() => f.Not(arg).into(),
+        UnOp::UnNeg if self.is_bv_type(arg_ty) => f.UMinus(arg).into(),
+        _ => {
+          // TODO: Handle Deref
+          // TODO: Handle user-defined operators
+          self.unsupported_expr(expr, format!("Cannot extract unary op {:?}", expr.kind))
+        }
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn extract_binary(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
+    use hir::BinOpKind;
+    let f = self.factory();
+    if let hir::ExprKind::Binary(op, arg1, arg2) = expr.kind {
+      let arg1_ty = self.tables.node_type(arg1.hir_id);
+      let arg2_ty = self.tables.node_type(arg2.hir_id);
+      let args_are_bv = self.is_bv_type(arg1_ty) && self.is_bv_type(arg2_ty);
+      let args_are_bool = arg1_ty.is_bool() && arg2_ty.is_bool();
+      let arg1 = self.extract_expr(arg1, dctx);
+      let arg2 = self.extract_expr(arg2, dctx);
+      match op.node {
+        BinOpKind::Add if args_are_bv => f.Plus(arg1, arg2).into(),
+        BinOpKind::Sub if args_are_bv => f.Minus(arg1, arg2).into(),
+        BinOpKind::Mul if args_are_bv => f.Times(arg1, arg2).into(),
+        BinOpKind::Div if args_are_bv => f.Division(arg1, arg2).into(),
+        BinOpKind::And if args_are_bool => f.And(vec![arg1, arg2]).into(),
+        BinOpKind::Or if args_are_bool => f.Or(vec![arg1, arg2]).into(),
+        BinOpKind::Eq if args_are_bool => f.Equals(arg1, arg2).into(),
+        BinOpKind::Lt if args_are_bv => f.LessThan(arg1, arg2).into(),
+        BinOpKind::Le if args_are_bv => f.LessEquals(arg1, arg2).into(),
+        BinOpKind::Ne if args_are_bv => f.Not(f.Equals(arg1, arg2).into()).into(),
+        BinOpKind::Ge if args_are_bv => f.GreaterEquals(arg1, arg2).into(),
+        BinOpKind::Gt if args_are_bv => f.GreaterThan(arg1, arg2).into(),
+        _ => {
+          // TODO: Handle Rem, BitXor, BitAnd, BitOr, Shl, Shr
+          // TODO: Handle arbitrary-precision integers
+          // TODO: Handle user-defined operators
+          self.unsupported_expr(expr, format!("Cannot extract binary op {:?}", expr.kind))
+        }
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn extract_call(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
+    let f = self.factory();
+    if let ExprKind::Call(fun, args) = &expr.kind {
+      if let ExprKind::Path(qpath) = &fun.kind {
+        let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
+        match qpath_res {
+          Res::Def(DefKind::Fn, def_id) => {
+            let hir_id = self
+              .tcx
+              .hir()
+              .as_local_hir_id(def_id)
+              .unwrap_or_else(|| unexpected!(fun.span, "no local def id"));
+            let args: Vec<st::Expr<'l>> = args
+              .iter()
+              .map(|arg| self.extract_expr(arg, dctx).into())
+              .collect();
+            let fun_id = self.fetch_id(hir_id).id;
+            // TODO: Handle type arguments
+            f.FunctionInvocation(fun_id, vec![], args).into()
+          }
+          Res::Def(DefKind::Ctor(_ctor_of, _ctor_kind), _def_id) => unimplemented!(),
+          Res::Def(..) => unexpected!(expr.span, "function of unknown definition kind"),
+          res => self.unsupported_expr(
+            expr,
+            format!(
+              "Cannot extract call to function without known definition (resolved to {:?})",
+              res
+            ),
+          ),
+        }
+      } else {
+        self.unsupported_expr(
+          expr,
+          "Cannot extract call to function given as non-path".into(),
+        )
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
+  fn extract_if(
+    &mut self,
+    cond: &'tcx hir::Expr<'tcx>,
+    then: &'tcx hir::Expr<'tcx>,
+    elze_opt: Option<&'tcx hir::Expr<'tcx>>,
+    dctx: &DefContext<'l>,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let cond = self.extract_expr(cond, dctx);
+    let then = self.extract_expr(then, dctx);
+    let elze = elze_opt
+      .map(|e| self.extract_expr(e, dctx))
+      .unwrap_or_else(|| {
+        // TODO: Match the type of the then branch?
+        f.UnitLiteral().into()
+      });
+    f.IfExpr(cond, then, elze).into()
+  }
+
+  fn extract_block(
+    &mut self,
+    block: &'tcx hir::Block<'tcx>,
+    dctx: &DefContext<'l>,
+  ) -> st::Expr<'l> {
+    fn rec<'l, 'tcx>(
+      xtor: &mut Extractor,
+      stmts: &'tcx [hir::Stmt<'tcx>],
+      last_expr: st::Expr<'l>,
+    ) -> st::Expr<'l> {
+      let mut it = stmts.iter();
+      if let Some(_stmt) = it.next() {
+        rec(xtor, it.as_slice(), last_expr)
+      } else {
+        last_expr
+      }
+    }
+
+    let f = self.factory();
+    let last_expr = block
+      .expr
+      .map(|e| self.extract_expr(e, dctx))
+      .unwrap_or_else(|| f.UnitLiteral().into());
+    // let exprs = block.stmts.iter().filter_map(|&stmt| match &stmt.kind {});
+    // block
+    //   .expr
+    //   .map(|e| self.extract_expr(e, dctx))
+    //   .unwrap_or_else(|| f.UnitLiteral().into())
+    rec(self, block.stmts, last_expr)
+  }
+
+  fn extract_expr(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
+    match &expr.kind {
+      ExprKind::Lit(lit) => self.extract_lit(expr, lit),
+      ExprKind::Match(
+        scrut,
+        arms,
+        hir::MatchSource::IfDesugar {
+          contains_else_clause: has_else,
+        },
+      ) => {
+        assert_eq!(arms.len(), 2);
+        let elze = if *has_else { Some(arms[1].body) } else { None };
+        self.extract_if(scrut, arms[0].body, elze, dctx)
+      }
+      ExprKind::Block(block, _) => {
+        if let hir::BlockCheckMode::DefaultBlock = block.rules {
+          self.extract_block(block, dctx)
+        } else {
+          self.unsupported_expr(expr, "Cannot extract unsafe block".into())
+        }
+      }
+      ExprKind::Path(qpath) => {
+        let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
+        match qpath_res {
+          Res::Def(_kind, _def_id) => unimplemented!(),
+          Res::Local(ref hir_id) => dctx
+            .vars
+            .get(hir_id)
+            .map(|&v| v.into())
+            .unwrap_or_else(|| unexpected!(expr.span, "unregistered variable")),
+          _ => unexpected!(expr.span, "non-variable path expression"),
+        }
+      }
+      ExprKind::Call(..) => self.extract_call(expr, dctx),
+      ExprKind::Unary(..) => self.extract_unary(expr, dctx),
+      ExprKind::Binary(..) => self.extract_binary(expr, dctx),
+      ExprKind::DropTemps(expr) => self.extract_expr(expr, dctx),
+      _ => self.unsupported_expr(expr, format!("Cannot extract expr kind {:?}", expr.kind)),
+    }
   }
 
   fn extract_fn(
@@ -208,10 +430,13 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       // Extract the body
       let body_expr = xtor.extract_expr(&body.value, &dctx);
 
-      println!(
-        "EXTRACT FN: {:?} / {:?}\n  dctx: {:?}\n  body_expr: {:?}",
-        item.ident, fun_id, dctx, body_expr
-      );
+      // println!(
+      //   "EXTRACT FN: {:?} / {:?}\n  dctx: {:?}\n  body_expr: {:?}",
+      //   item.ident, fun_id, dctx, body_expr
+      // );
+      for vd in dctx.vars.values() {
+        println!(" - {}: {}", vd.id, vd.tpe);
+      }
       xtor
         .extraction
         .factory
@@ -223,12 +448,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     // TODO: Ignore certain boilerplate/compiler-generated items
     fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
       match item.kind {
-        hir::ItemKind::ExternCrate(_) =>
-          item.ident.name.to_string() == "std",
-        hir::ItemKind::Use(ref path, hir::UseKind::Glob) =>
-          path.to_string().starts_with("::std::prelude::v"),
-        _ =>
-          false
+        hir::ItemKind::ExternCrate(_) => item.ident.name.to_string() == "std",
+        hir::ItemKind::Use(ref path, hir::UseKind::Glob) => {
+          path.to_string().starts_with("::std::prelude::v")
+        }
+        _ => false,
       }
     }
 
@@ -268,7 +492,10 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     for item in visitor.functions {
       if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
-        self.extract_fn(item, &sig.decl, generics, body_id);
+        let impl_id = self.tcx.hir().local_def_id(item.hir_id);
+        println!("FUNCTION: {:?} / {:?}", impl_id, item.ident);
+        let fd = self.extract_fn(item, &sig.decl, generics, body_id);
+        println!(" ==>\n{}\n", fd)
       }
     }
   }

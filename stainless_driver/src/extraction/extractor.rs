@@ -134,4 +134,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     let id_opt = self.mapping.r2i.get(&hir_id);
     id_opt.expect("No Stainless id registered for given HIR node")
   }
+
+  pub fn factory(&self) -> &'l st::Factory {
+    self.extraction.factory
+  }
 }
