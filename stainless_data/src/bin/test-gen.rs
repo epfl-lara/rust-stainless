@@ -81,7 +81,9 @@ test_gen!(arithmetic_expr, s => {
 
 fn make_identity_fundef<'a>(f: &'a Factory) -> &'a FunDef<'a> {
   let id_x = f.Identifier(S!("x"), 1, 1);
+  let id_x = f.SymbolIdentifier(id_x, vec![S!("x")]);
   let id_f = f.Identifier(S!("f"), 2, 1);
+  let id_f = f.SymbolIdentifier(id_f, vec![S!("x")]);
   let tpe_int: Type = f.Int32Type().into();
   let v_x: &'a _ = f.Variable(id_x, tpe_int, vec![]);
   let param: &'a _ = f.ValDef(v_x);

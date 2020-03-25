@@ -26,7 +26,7 @@ pub enum Definition<'a> {
 impl Factory {
   pub fn ADTSort<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     constructors: Seq<&'a ADTConstructor<'a>>,
     flags: Seq<Flag<'a>>,
@@ -41,7 +41,7 @@ impl Factory {
 
   pub fn ClassDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     parents: Seq<&'a ClassType<'a>>,
     fields: Seq<&'a ValDef<'a>>,
@@ -58,7 +58,7 @@ impl Factory {
 
   pub fn FunDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     params: Seq<&'a ValDef<'a>>,
     returnType: Type<'a>,
@@ -77,7 +77,7 @@ impl Factory {
 
   pub fn LocalClassDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     parents: Seq<Type<'a>>,
     fields: Seq<&'a ValDef<'a>>,
@@ -98,7 +98,7 @@ impl Factory {
 
   pub fn LocalFunDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     params: Seq<&'a ValDef<'a>>,
     returnType: Type<'a>,
@@ -117,7 +117,7 @@ impl Factory {
 
   pub fn LocalMethodDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     params: Seq<&'a ValDef<'a>>,
     returnType: Type<'a>,
@@ -136,7 +136,7 @@ impl Factory {
 
   pub fn LocalTypeDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     rhs: Type<'a>,
     flags: Seq<Flag<'a>>,
@@ -151,7 +151,7 @@ impl Factory {
 
   pub fn TypeDef<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     rhs: Type<'a>,
     flags: Seq<Flag<'a>>,
@@ -205,7 +205,7 @@ derive_conversions_for_ast!(Definition<'a>, ValDef<'a>);
 /// inox.ast.Definitions.ADTSort
 #[derive(Clone, Debug)]
 pub struct ADTSort<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub constructors: Seq<&'a ADTConstructor<'a>>,
   pub flags: Seq<Flag<'a>>,
@@ -247,7 +247,7 @@ impl<'a> Serializable for ADTSort<'a> {
 /// stainless.extraction.oo.Definitions.ClassDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClassDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub parents: Seq<&'a ClassType<'a>>,
   pub fields: Seq<&'a ValDef<'a>>,
@@ -269,7 +269,7 @@ impl<'a> Serializable for ClassDef<'a> {
 /// inox.ast.Definitions.FunDef
 #[derive(Clone, Debug)]
 pub struct FunDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub params: Seq<&'a ValDef<'a>>,
   pub returnType: Type<'a>,
@@ -315,7 +315,7 @@ impl<'a> Serializable for FunDef<'a> {
 /// stainless.extraction.innerclasses.Definitions.LocalClassDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalClassDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub parents: Seq<Type<'a>>,
   pub fields: Seq<&'a ValDef<'a>>,
@@ -341,7 +341,7 @@ impl<'a> Serializable for LocalClassDef<'a> {
 /// stainless.extraction.innerfuns.Definitions.LocalFunDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalFunDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub params: Seq<&'a ValDef<'a>>,
   pub returnType: Type<'a>,
@@ -365,7 +365,7 @@ impl<'a> Serializable for LocalFunDef<'a> {
 /// stainless.extraction.innerclasses.Definitions.LocalMethodDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalMethodDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub params: Seq<&'a ValDef<'a>>,
   pub returnType: Type<'a>,
@@ -389,7 +389,7 @@ impl<'a> Serializable for LocalMethodDef<'a> {
 /// stainless.extraction.innerclasses.Definitions.LocalTypeDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalTypeDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub rhs: Type<'a>,
   pub flags: Seq<Flag<'a>>,
@@ -409,7 +409,7 @@ impl<'a> Serializable for LocalTypeDef<'a> {
 /// stainless.extraction.oo.Definitions.TypeDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TypeDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub rhs: Type<'a>,
   pub flags: Seq<Flag<'a>>,
@@ -532,7 +532,7 @@ impl Factory {
     self.bump.alloc(Bounds { lo, hi })
   }
 
-  pub fn Derived<'a>(&'a self, id: &'a Identifier) -> &'a mut Derived<'a> {
+  pub fn Derived<'a>(&'a self, id: &'a SymbolIdentifier<'a>) -> &'a mut Derived<'a> {
     self.bump.alloc(Derived { id })
   }
 
@@ -552,11 +552,14 @@ impl Factory {
     self.bump.alloc(Ghost {})
   }
 
-  pub fn HasADTEquality<'a>(&'a self, id: &'a Identifier) -> &'a mut HasADTEquality<'a> {
+  pub fn HasADTEquality<'a>(&'a self, id: &'a SymbolIdentifier<'a>) -> &'a mut HasADTEquality<'a> {
     self.bump.alloc(HasADTEquality { id })
   }
 
-  pub fn HasADTInvariant<'a>(&'a self, id: &'a Identifier) -> &'a mut HasADTInvariant<'a> {
+  pub fn HasADTInvariant<'a>(
+    &'a self,
+    id: &'a SymbolIdentifier<'a>,
+  ) -> &'a mut HasADTInvariant<'a> {
     self.bump.alloc(HasADTInvariant { id })
   }
 
@@ -580,7 +583,7 @@ impl Factory {
     self.bump.alloc(IsAbstract {})
   }
 
-  pub fn IsAccessor<'a>(&'a self, id: Option<&'a Identifier>) -> &'a mut IsAccessor<'a> {
+  pub fn IsAccessor<'a>(&'a self, id: Option<&'a SymbolIdentifier<'a>>) -> &'a mut IsAccessor<'a> {
     self.bump.alloc(IsAccessor { id })
   }
 
@@ -596,7 +599,7 @@ impl Factory {
     self.bump.alloc(IsInvariant {})
   }
 
-  pub fn IsMethodOf<'a>(&'a self, id: &'a Identifier) -> &'a mut IsMethodOf<'a> {
+  pub fn IsMethodOf<'a>(&'a self, id: &'a SymbolIdentifier<'a>) -> &'a mut IsMethodOf<'a> {
     self.bump.alloc(IsMethodOf { id })
   }
 
@@ -614,8 +617,8 @@ impl Factory {
 
   pub fn IsUnapply<'a>(
     &'a self,
-    isEmpty: &'a Identifier,
-    get: &'a Identifier,
+    isEmpty: &'a SymbolIdentifier<'a>,
+    get: &'a SymbolIdentifier<'a>,
   ) -> &'a mut IsUnapply<'a> {
     self.bump.alloc(IsUnapply { isEmpty, get })
   }
@@ -777,7 +780,7 @@ impl<'a> Serializable for Bounds<'a> {
 /// stainless.ast.Definitions.Derived
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Derived<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for Derived<'a> {
@@ -835,7 +838,7 @@ impl Serializable for Ghost {
 /// inox.ast.Definitions.HasADTEquality
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HasADTEquality<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for HasADTEquality<'a> {
@@ -849,7 +852,7 @@ impl<'a> Serializable for HasADTEquality<'a> {
 /// inox.ast.Definitions.HasADTInvariant
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HasADTInvariant<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for HasADTInvariant<'a> {
@@ -921,7 +924,7 @@ impl Serializable for IsAbstract {
 /// stainless.extraction.methods.Trees.IsAccessor
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IsAccessor<'a> {
-  pub id: Option<&'a Identifier>,
+  pub id: Option<&'a SymbolIdentifier<'a>>,
 }
 
 impl<'a> Serializable for IsAccessor<'a> {
@@ -971,7 +974,7 @@ impl Serializable for IsInvariant {
 /// stainless.extraction.methods.Trees.IsMethodOf
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IsMethodOf<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for IsMethodOf<'a> {
@@ -1018,8 +1021,8 @@ impl Serializable for IsSealed {
 /// stainless.ast.Definitions.IsUnapply
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IsUnapply<'a> {
-  pub isEmpty: &'a Identifier,
-  pub get: &'a Identifier,
+  pub isEmpty: &'a SymbolIdentifier<'a>,
+  pub get: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for IsUnapply<'a> {
@@ -1279,7 +1282,7 @@ pub enum Expr<'a> {
 impl Factory {
   pub fn ADT<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tps: Seq<Type<'a>>,
     args: Seq<Expr<'a>>,
   ) -> &'a mut ADT<'a> {
@@ -1289,7 +1292,7 @@ impl Factory {
   pub fn ADTSelector<'a>(
     &'a self,
     adt: Expr<'a>,
-    selector: &'a Identifier,
+    selector: &'a SymbolIdentifier<'a>,
   ) -> &'a mut ADTSelector<'a> {
     self.bump.alloc(ADTSelector { adt, selector })
   }
@@ -1312,7 +1315,7 @@ impl Factory {
 
   pub fn ApplyLetRec<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameter<'a>>,
     tpe: &'a FunctionType<'a>,
     tps: Seq<Type<'a>>,
@@ -1493,7 +1496,7 @@ impl Factory {
   pub fn ClassSelector<'a>(
     &'a self,
     expr: Expr<'a>,
-    selector: &'a Identifier,
+    selector: &'a SymbolIdentifier<'a>,
   ) -> &'a mut ClassSelector<'a> {
     self.bump.alloc(ClassSelector { expr, selector })
   }
@@ -1525,7 +1528,7 @@ impl Factory {
   pub fn FieldAssignment<'a>(
     &'a self,
     obj: Expr<'a>,
-    selector: &'a Identifier,
+    selector: &'a SymbolIdentifier<'a>,
     value: Expr<'a>,
   ) -> &'a mut FieldAssignment<'a> {
     self.bump.alloc(FieldAssignment {
@@ -1587,7 +1590,7 @@ impl Factory {
 
   pub fn FunctionInvocation<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tps: Seq<Type<'a>>,
     args: Seq<Expr<'a>>,
   ) -> &'a mut FunctionInvocation<'a> {
@@ -1630,7 +1633,7 @@ impl Factory {
   pub fn IsConstructor<'a>(
     &'a self,
     expr: Expr<'a>,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
   ) -> &'a mut IsConstructor<'a> {
     self.bump.alloc(IsConstructor { expr, id })
   }
@@ -1702,7 +1705,7 @@ impl Factory {
   pub fn LocalClassSelector<'a>(
     &'a self,
     expr: Expr<'a>,
-    selector: &'a Identifier,
+    selector: &'a SymbolIdentifier<'a>,
     tpe: Type<'a>,
   ) -> &'a mut LocalClassSelector<'a> {
     self.bump.alloc(LocalClassSelector {
@@ -1757,7 +1760,7 @@ impl Factory {
   pub fn MethodInvocation<'a>(
     &'a self,
     receiver: Expr<'a>,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tps: Seq<Type<'a>>,
     args: Seq<Expr<'a>>,
   ) -> &'a mut MethodInvocation<'a> {
@@ -1883,7 +1886,7 @@ impl Factory {
 
   pub fn SizedADT<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tps: Seq<Type<'a>>,
     args: Seq<Expr<'a>>,
     size: Expr<'a>,
@@ -1976,7 +1979,7 @@ impl Factory {
 
   pub fn Variable<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tpe: Type<'a>,
     flags: Seq<Flag<'a>>,
   ) -> &'a mut Variable<'a> {
@@ -2233,7 +2236,7 @@ derive_conversions_for_ast!(Expr<'a>, While<'a>);
 /// inox.ast.Expressions.ADT
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ADT<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub args: Seq<Expr<'a>>,
 }
@@ -2252,7 +2255,7 @@ impl<'a> Serializable for ADT<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ADTSelector<'a> {
   pub adt: Expr<'a>,
-  pub selector: &'a Identifier,
+  pub selector: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for ADTSelector<'a> {
@@ -2313,7 +2316,7 @@ impl<'a> Serializable for Application<'a> {
 /// stainless.extraction.innerfuns.Trees.ApplyLetRec
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ApplyLetRec<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameter<'a>>,
   pub tpe: &'a FunctionType<'a>,
   pub tps: Seq<Type<'a>>,
@@ -2806,7 +2809,7 @@ impl<'a> Serializable for ClassConstructor<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClassSelector<'a> {
   pub expr: Expr<'a>,
-  pub selector: &'a Identifier,
+  pub selector: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for ClassSelector<'a> {
@@ -2918,7 +2921,7 @@ impl<'a> Serializable for Error<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FieldAssignment<'a> {
   pub obj: Expr<'a>,
-  pub selector: &'a Identifier,
+  pub selector: &'a SymbolIdentifier<'a>,
   pub value: Expr<'a>,
 }
 
@@ -3035,7 +3038,7 @@ impl Serializable for FractionLiteral {
 /// inox.ast.Expressions.FunctionInvocation
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionInvocation<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub args: Seq<Expr<'a>>,
 }
@@ -3150,7 +3153,7 @@ impl Serializable for IntegerLiteral {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IsConstructor<'a> {
   pub expr: Expr<'a>,
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for IsConstructor<'a> {
@@ -3334,7 +3337,7 @@ impl<'a> Serializable for LocalClassConstructor<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalClassSelector<'a> {
   pub expr: Expr<'a>,
-  pub selector: &'a Identifier,
+  pub selector: &'a SymbolIdentifier<'a>,
   pub tpe: Type<'a>,
 }
 
@@ -3438,7 +3441,7 @@ impl<'a> Serializable for MatchExpr<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MethodInvocation<'a> {
   pub receiver: Expr<'a>,
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub args: Seq<Expr<'a>>,
 }
@@ -3775,7 +3778,7 @@ impl<'a> Serializable for SetUnion<'a> {
 /// stainless.ast.Expressions.SizedADT
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SizedADT<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub args: Seq<Expr<'a>>,
   pub size: Expr<'a>,
@@ -4034,7 +4037,7 @@ impl Serializable for UnitLiteral {
 /// inox.ast.Expressions.Variable
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Variable<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tpe: Type<'a>,
   pub flags: Seq<Flag<'a>>,
 }
@@ -4106,7 +4109,11 @@ pub enum Type<'a> {
 }
 
 impl Factory {
-  pub fn ADTType<'a>(&'a self, id: &'a Identifier, tps: Seq<Type<'a>>) -> &'a mut ADTType<'a> {
+  pub fn ADTType<'a>(
+    &'a self,
+    id: &'a SymbolIdentifier<'a>,
+    tps: Seq<Type<'a>>,
+  ) -> &'a mut ADTType<'a> {
     self.bump.alloc(ADTType { id, tps })
   }
 
@@ -4142,7 +4149,11 @@ impl Factory {
     self.bump.alloc(CharType {})
   }
 
-  pub fn ClassType<'a>(&'a self, id: &'a Identifier, tps: Seq<Type<'a>>) -> &'a mut ClassType<'a> {
+  pub fn ClassType<'a>(
+    &'a self,
+    id: &'a SymbolIdentifier<'a>,
+    tps: Seq<Type<'a>>,
+  ) -> &'a mut ClassType<'a> {
     self.bump.alloc(ClassType { id, tps })
   }
 
@@ -4156,7 +4167,7 @@ impl Factory {
 
   pub fn LocalClassType<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tparams: Seq<&'a TypeParameterDef<'a>>,
     tps: Seq<Type<'a>>,
     ancestors: Seq<Type<'a>>,
@@ -4191,7 +4202,7 @@ impl Factory {
 
   pub fn RecursiveType<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     tps: Seq<Type<'a>>,
     index: Expr<'a>,
   ) -> &'a mut RecursiveType<'a> {
@@ -4245,7 +4256,7 @@ impl Factory {
 
   pub fn TypeParameter<'a>(
     &'a self,
-    id: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
     flags: Seq<Flag<'a>>,
   ) -> &'a mut TypeParameter<'a> {
     self.bump.alloc(TypeParameter { id, flags })
@@ -4254,7 +4265,7 @@ impl Factory {
   pub fn TypeSelect<'a>(
     &'a self,
     expr: Option<Expr<'a>>,
-    selector: &'a Identifier,
+    selector: &'a SymbolIdentifier<'a>,
   ) -> &'a mut TypeSelect<'a> {
     self.bump.alloc(TypeSelect { expr, selector })
   }
@@ -4350,7 +4361,7 @@ derive_conversions_for_ast!(Type<'a>, ValueType<'a>);
 /// inox.ast.Types.ADTType
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ADTType<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
 }
 
@@ -4459,7 +4470,7 @@ impl Serializable for CharType {
 /// stainless.extraction.oo.Trees.ClassType
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ClassType<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
 }
 
@@ -4502,7 +4513,7 @@ impl Serializable for IntegerType {
 /// stainless.extraction.innerclasses.Types.LocalClassType
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalClassType<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub tps: Seq<Type<'a>>,
   pub ancestors: Seq<Type<'a>>,
@@ -4592,7 +4603,7 @@ impl Serializable for RealType {
 /// stainless.ast.Expressions.RecursiveType
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct RecursiveType<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub index: Expr<'a>,
 }
@@ -4715,7 +4726,7 @@ impl<'a> Serializable for TypeBounds<'a> {
 /// inox.ast.Types.TypeParameter
 #[derive(Clone, Debug)]
 pub struct TypeParameter<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub flags: Seq<Flag<'a>>,
 }
 
@@ -4754,7 +4765,7 @@ impl<'a> Serializable for TypeParameter<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TypeSelect<'a> {
   pub expr: Option<Expr<'a>>,
-  pub selector: &'a Identifier,
+  pub selector: &'a SymbolIdentifier<'a>,
 }
 
 impl<'a> Serializable for TypeSelect<'a> {
@@ -4821,8 +4832,8 @@ impl<'a> Serializable for ValueType<'a> {
 /// inox.ast.Definitions.ADTConstructor
 #[derive(Clone, Debug)]
 pub struct ADTConstructor<'a> {
-  pub id: &'a Identifier,
-  pub sort: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
+  pub sort: &'a SymbolIdentifier<'a>,
   pub fields: Seq<&'a ValDef<'a>>,
 }
 
@@ -4862,7 +4873,7 @@ impl<'a> Serializable for ADTConstructor<'a> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ADTPattern<'a> {
   pub binder: Option<&'a ValDef<'a>>,
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub subPatterns: Seq<Expr<'a>>,
 }
@@ -5009,11 +5020,11 @@ impl<'a> Serializable for MatchCase<'a> {
 /// stainless.extraction.xlang.Trees.ModuleDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ModuleDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub imports: Seq<&'a Import>,
-  pub classes: Seq<&'a Identifier>,
-  pub functions: Seq<&'a Identifier>,
-  pub typeDefs: Seq<&'a Identifier>,
+  pub classes: Seq<&'a SymbolIdentifier<'a>>,
+  pub functions: Seq<&'a SymbolIdentifier<'a>>,
+  pub typeDefs: Seq<&'a SymbolIdentifier<'a>>,
   pub modules: Seq<&'a ModuleDef<'a>>,
 }
 
@@ -5094,7 +5105,7 @@ impl<'a> Serializable for TuplePattern<'a> {
 pub struct UnapplyPattern<'a> {
   pub binder: Option<&'a ValDef<'a>>,
   pub recs: Seq<Expr<'a>>,
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub tps: Seq<Type<'a>>,
   pub subPatterns: Seq<Expr<'a>>,
 }
@@ -5114,9 +5125,9 @@ impl<'a> Serializable for UnapplyPattern<'a> {
 /// stainless.extraction.xlang.Trees.UnitDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnitDef<'a> {
-  pub id: &'a Identifier,
+  pub id: &'a SymbolIdentifier<'a>,
   pub imports: Seq<&'a Import>,
-  pub classes: Seq<&'a Identifier>,
+  pub classes: Seq<&'a SymbolIdentifier<'a>>,
   pub modules: Seq<&'a ModuleDef<'a>>,
   pub isMain: Boolean,
 }

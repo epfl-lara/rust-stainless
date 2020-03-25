@@ -23,7 +23,11 @@ impl fmt::Display for Identifier {
 
 impl<'a> fmt::Display for SymbolIdentifier<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{}<{}>", self.id, self.symbol_path.join("::"))
+    write!(f, "{}", self.id)?;
+    if !self.symbol_path.is_empty() {
+      write!(f, "<{}>", self.symbol_path.join("::"))?;
+    }
+    Ok(())
   }
 }
 

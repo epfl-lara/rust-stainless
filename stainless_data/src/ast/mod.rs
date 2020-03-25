@@ -34,8 +34,18 @@ impl Factory {
 /// inox.trees.Symbols
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbols<'a> {
-  pub sorts: Map<&'a Identifier, &'a ADTSort<'a>>,
-  pub functions: Map<&'a Identifier, &'a FunDef<'a>>,
+  pub sorts: Map<&'a SymbolIdentifier<'a>, &'a ADTSort<'a>>,
+  pub functions: Map<&'a SymbolIdentifier<'a>, &'a FunDef<'a>>,
+}
+
+impl<'a> Symbols<'a> {
+  pub fn new(sorts: Seq<&'a ADTSort<'a>>, functions: Seq<&'a FunDef<'a>>) -> Self {
+    let mut sorts_map = Map::new();
+    let mut functions_map = Map::new();
+    sorts.iter().for_each(|&sort| { sorts_map.insert(sort.id, sort); });
+    functions.iter().for_each(|&fd| { functions_map.insert(fd.id, fd); });
+    Symbols { sorts: sorts_map, functions: functions_map }
+  }
 }
 
 impl<'a> Hash for Symbols<'a> {
@@ -160,8 +170,8 @@ impl Factory {
 
   pub fn ADTConstructor<'a>(
     &'a self,
-    id: &'a Identifier,
-    sort: &'a Identifier,
+    id: &'a SymbolIdentifier<'a>,
+    sort: &'a SymbolIdentifier<'a>,
     fields: Seq<&'a ValDef<'a>>,
   ) -> &'a mut ADTConstructor<'a> {
     self.bump.alloc(ADTConstructor { id, sort, fields })
