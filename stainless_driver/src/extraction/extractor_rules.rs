@@ -102,7 +102,7 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
       PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
         // Extend DefContext with a new variable
         let xtor = &mut self.xtor;
-        let id = xtor.register_var(hir_id).id;
+        let id = xtor.register_var(hir_id);
         let tpe = xtor.extract_ty(xtor.tables.node_type(hir_id), &self.dctx, pattern.span);
         let var = xtor.extraction.factory.Variable(id, tpe, vec![]);
         self.dctx.add_var(hir_id, var);
@@ -286,7 +286,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
               .as_local_hir_id(def_id)
               .unwrap_or_else(|| unexpected!(fun.span, "no local def id"));
             let args = self.extract_exprs(args, dctx);
-            let fun_id = self.fetch_id(hir_id).id;
+            let fun_id = self.fetch_id(hir_id);
             // TODO: Handle type arguments
             f.FunctionInvocation(fun_id, vec![], args).into()
           }
@@ -456,7 +456,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       ExprKind::Field(recv, ident) => {
         let recv = self.extract_expr(recv, dctx);
         match ident.name.to_ident_string().parse::<i32>() {
-          Ok(index) => f.TupleSelect(recv, index).into(),
+          Ok(index) => f.TupleSelect(recv, index + 1).into(),
           _ => unimplemented!(),
         }
       }
@@ -479,7 +479,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     let f = self.factory();
     let fun_hir_id = item.hir_id;
     self.nest_tables(fun_hir_id, |xtor| {
-      let fun_id = xtor.fetch_id(fun_hir_id).id;
+      let fun_id = xtor.fetch_id(fun_hir_id);
       let body = xtor.tcx.hir().body(body_id);
 
       // Build a DefContext that includes all variable bindings
@@ -508,8 +508,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
                 .simple_ident()
                 .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
             })
-            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)))
-            .id;
+            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)));
           // TODO: Desugar to match in case of non-simple-ident bindings (e.g. `(a, b): (i32, i32)`)
           if param.pat.simple_ident().is_none() {
             unsupported!(
@@ -528,6 +527,13 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       let body_expr = xtor.extract_expr(&body.value, &dctx);
       f.FunDef(fun_id, vec![], params, return_tpe, body_expr, vec![])
     })
+  }
+
+  fn output_program<P: AsRef<std::path::Path>>(&mut self, path: P, symbols: st::Symbols<'l>) -> () {
+    use stainless_data::ser::{BufferSerializer, Serializable};
+    let mut ser = BufferSerializer::new();
+    symbols.serialize(&mut ser).expect("Unable to serialize stainless program");
+    std::fs::write(path, ser.as_slice()).expect("Unable to write serialized stainless program");
   }
 
   pub fn process_crate(&mut self, _mod_name: &str) {
@@ -576,12 +582,18 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     };
     krate.visit_all_item_likes(&mut visitor);
 
+    let mut functions: Vec<&st::FunDef<'l>> = vec![];
+
     for item in visitor.functions {
       if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
         println!("== FUNCTION: {:?} ==", item.ident);
         let fd = self.extract_fn(item, &sig.decl, generics, body_id);
-        println!("{}", fd)
+        println!("{}", fd);
+        functions.push(fd);
       }
     }
+
+    let output_path = std::path::Path::new("./output.inoxser");
+    self.output_program(output_path, st::Symbols::new(vec![], functions));
   }
 }
