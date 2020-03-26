@@ -543,7 +543,9 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         hir::ItemKind::ExternCrate(_) => item.ident.name.to_string() == "std",
         hir::ItemKind::Use(ref path, hir::UseKind::Glob) => {
           path.to_string().starts_with("::std::prelude::v")
-        }
+        },
+        // TODO: Quick fix to filter our synthetic functions
+        hir::ItemKind::Fn(..) if !item.attrs.is_empty() => true,
         _ => false,
       }
     }
@@ -555,11 +557,13 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
-        if let hir::ItemKind::Fn(..) = item.kind {
-          self.xtor.register_id_from_ident(item.hir_id, &item.ident);
-          self.functions.push(&item);
-        } else if !should_ignore(item) {
-          unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
+        if !should_ignore(item) {
+          if let hir::ItemKind::Fn(..) = item.kind {
+            self.xtor.register_id_from_ident(item.hir_id, &item.ident);
+            self.functions.push(&item);
+          } else {
+            unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
+          }
         }
       }
 
@@ -586,9 +590,9 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     for item in visitor.functions {
       if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
-        println!("== FUNCTION: {:?} ==", item.ident);
+        eprintln!("== FUNCTION: {:?} ==", item.ident);
         let fd = self.extract_fn(item, &sig.decl, generics, body_id);
-        println!("{}", fd);
+        eprintln!("{}", fd);
         functions.push(fd);
       }
     }

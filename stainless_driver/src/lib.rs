@@ -1,6 +1,6 @@
 #![feature(rustc_private)]
 
-mod extraction;
+pub mod extraction;
 
 extern crate rustc;
 extern crate rustc_driver;
