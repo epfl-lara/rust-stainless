@@ -4827,6 +4827,246 @@ impl<'a> Serializable for ValueType<'a> {
   }
 }
 
+// === Patterns ===
+
+/// stainless.ast.Expressions.Pattern
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pattern<'a> {
+  ADTPattern(&'a ADTPattern<'a>),
+  ClassPattern(&'a ClassPattern<'a>),
+  InstanceOfPattern(&'a InstanceOfPattern<'a>),
+  LiteralPattern(&'a LiteralPattern<'a>),
+  TuplePattern(&'a TuplePattern<'a>),
+  UnapplyPattern(&'a UnapplyPattern<'a>),
+  WildcardPattern(&'a WildcardPattern<'a>),
+}
+
+impl Factory {
+  pub fn ADTPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    id: &'a SymbolIdentifier<'a>,
+    tps: Seq<Type<'a>>,
+    subPatterns: Seq<Pattern<'a>>,
+  ) -> &'a mut ADTPattern<'a> {
+    self.bump.alloc(ADTPattern {
+      binder,
+      id,
+      tps,
+      subPatterns,
+    })
+  }
+
+  pub fn ClassPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    tpe: &'a ClassType<'a>,
+    subPatterns: Seq<Pattern<'a>>,
+  ) -> &'a mut ClassPattern<'a> {
+    self.bump.alloc(ClassPattern {
+      binder,
+      tpe,
+      subPatterns,
+    })
+  }
+
+  pub fn InstanceOfPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    tpe: Type<'a>,
+  ) -> &'a mut InstanceOfPattern<'a> {
+    self.bump.alloc(InstanceOfPattern { binder, tpe })
+  }
+
+  pub fn LiteralPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    lit: Expr<'a>,
+  ) -> &'a mut LiteralPattern<'a> {
+    self.bump.alloc(LiteralPattern { binder, lit })
+  }
+
+  pub fn TuplePattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    subPatterns: Seq<Pattern<'a>>,
+  ) -> &'a mut TuplePattern<'a> {
+    self.bump.alloc(TuplePattern {
+      binder,
+      subPatterns,
+    })
+  }
+
+  pub fn UnapplyPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+    recs: Seq<Expr<'a>>,
+    id: &'a SymbolIdentifier<'a>,
+    tps: Seq<Type<'a>>,
+    subPatterns: Seq<Pattern<'a>>,
+  ) -> &'a mut UnapplyPattern<'a> {
+    self.bump.alloc(UnapplyPattern {
+      binder,
+      recs,
+      id,
+      tps,
+      subPatterns,
+    })
+  }
+
+  pub fn WildcardPattern<'a>(
+    &'a self,
+    binder: Option<&'a ValDef<'a>>,
+  ) -> &'a mut WildcardPattern<'a> {
+    self.bump.alloc(WildcardPattern { binder })
+  }
+}
+
+impl<'a> Serializable for Pattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    match self {
+      Pattern::ADTPattern(v) => v.serialize(s)?,
+      Pattern::ClassPattern(v) => v.serialize(s)?,
+      Pattern::InstanceOfPattern(v) => v.serialize(s)?,
+      Pattern::LiteralPattern(v) => v.serialize(s)?,
+      Pattern::TuplePattern(v) => v.serialize(s)?,
+      Pattern::UnapplyPattern(v) => v.serialize(s)?,
+      Pattern::WildcardPattern(v) => v.serialize(s)?,
+    };
+    Ok(())
+  }
+}
+
+derive_conversions_for_ast!(Pattern<'a>, ADTPattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, ClassPattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, InstanceOfPattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, LiteralPattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, TuplePattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, UnapplyPattern<'a>);
+derive_conversions_for_ast!(Pattern<'a>, WildcardPattern<'a>);
+
+/// stainless.ast.Expressions.ADTPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ADTPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub id: &'a SymbolIdentifier<'a>,
+  pub tps: Seq<Type<'a>>,
+  pub subPatterns: Seq<Pattern<'a>>,
+}
+
+impl<'a> Serializable for ADTPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(129))?;
+    self.binder.serialize(s)?;
+    self.id.serialize(s)?;
+    self.tps.serialize(s)?;
+    self.subPatterns.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.extraction.oo.Trees.ClassPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ClassPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub tpe: &'a ClassType<'a>,
+  pub subPatterns: Seq<Pattern<'a>>,
+}
+
+impl<'a> Serializable for ClassPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(204))?;
+    self.binder.serialize(s)?;
+    self.tpe.serialize(s)?;
+    self.subPatterns.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.extraction.oo.Trees.InstanceOfPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InstanceOfPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub tpe: Type<'a>,
+}
+
+impl<'a> Serializable for InstanceOfPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(205))?;
+    self.binder.serialize(s)?;
+    self.tpe.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Expressions.LiteralPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LiteralPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub lit: Expr<'a>,
+}
+
+impl<'a> Serializable for LiteralPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(131))?;
+    self.binder.serialize(s)?;
+    self.lit.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Expressions.TuplePattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TuplePattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub subPatterns: Seq<Pattern<'a>>,
+}
+
+impl<'a> Serializable for TuplePattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(130))?;
+    self.binder.serialize(s)?;
+    self.subPatterns.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Expressions.UnapplyPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct UnapplyPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+  pub recs: Seq<Expr<'a>>,
+  pub id: &'a SymbolIdentifier<'a>,
+  pub tps: Seq<Type<'a>>,
+  pub subPatterns: Seq<Pattern<'a>>,
+}
+
+impl<'a> Serializable for UnapplyPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(132))?;
+    self.binder.serialize(s)?;
+    self.recs.serialize(s)?;
+    self.id.serialize(s)?;
+    self.tps.serialize(s)?;
+    self.subPatterns.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Expressions.WildcardPattern
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct WildcardPattern<'a> {
+  pub binder: Option<&'a ValDef<'a>>,
+}
+
+impl<'a> Serializable for WildcardPattern<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(128))?;
+    self.binder.serialize(s)?;
+    Ok(())
+  }
+}
+
 // === Other ===
 
 /// inox.ast.Definitions.ADTConstructor
@@ -4865,44 +5105,6 @@ impl<'a> Serializable for ADTConstructor<'a> {
     self.id.serialize(s)?;
     self.sort.serialize(s)?;
     self.fields.serialize(s)?;
-    Ok(())
-  }
-}
-
-/// stainless.ast.Expressions.ADTPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ADTPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub id: &'a SymbolIdentifier<'a>,
-  pub tps: Seq<Type<'a>>,
-  pub subPatterns: Seq<Expr<'a>>,
-}
-
-impl<'a> Serializable for ADTPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(129))?;
-    self.binder.serialize(s)?;
-    self.id.serialize(s)?;
-    self.tps.serialize(s)?;
-    self.subPatterns.serialize(s)?;
-    Ok(())
-  }
-}
-
-/// stainless.extraction.oo.Trees.ClassPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ClassPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub tpe: &'a ClassType<'a>,
-  pub subPatterns: Seq<Expr<'a>>,
-}
-
-impl<'a> Serializable for ClassPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(204))?;
-    self.binder.serialize(s)?;
-    self.tpe.serialize(s)?;
-    self.subPatterns.serialize(s)?;
     Ok(())
   }
 }
@@ -4967,42 +5169,10 @@ impl<'a> Serializable for Inner<'a> {
   }
 }
 
-/// stainless.extraction.oo.Trees.InstanceOfPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct InstanceOfPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub tpe: Type<'a>,
-}
-
-impl<'a> Serializable for InstanceOfPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(205))?;
-    self.binder.serialize(s)?;
-    self.tpe.serialize(s)?;
-    Ok(())
-  }
-}
-
-/// stainless.ast.Expressions.LiteralPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct LiteralPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub lit: Expr<'a>,
-}
-
-impl<'a> Serializable for LiteralPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(131))?;
-    self.binder.serialize(s)?;
-    self.lit.serialize(s)?;
-    Ok(())
-  }
-}
-
 /// stainless.ast.Expressions.MatchCase
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MatchCase<'a> {
-  pub pattern: Expr<'a>,
+  pub pattern: Pattern<'a>,
   pub optGuard: Option<Expr<'a>>,
   pub rhs: Expr<'a>,
 }
@@ -5084,44 +5254,6 @@ impl<'a> Hash for SymbolIdentifier<'a> {
   }
 }
 
-/// stainless.ast.Expressions.TuplePattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TuplePattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub subPatterns: Seq<Expr<'a>>,
-}
-
-impl<'a> Serializable for TuplePattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(130))?;
-    self.binder.serialize(s)?;
-    self.subPatterns.serialize(s)?;
-    Ok(())
-  }
-}
-
-/// stainless.ast.Expressions.UnapplyPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct UnapplyPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-  pub recs: Seq<Expr<'a>>,
-  pub id: &'a SymbolIdentifier<'a>,
-  pub tps: Seq<Type<'a>>,
-  pub subPatterns: Seq<Expr<'a>>,
-}
-
-impl<'a> Serializable for UnapplyPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(132))?;
-    self.binder.serialize(s)?;
-    self.recs.serialize(s)?;
-    self.id.serialize(s)?;
-    self.tps.serialize(s)?;
-    self.subPatterns.serialize(s)?;
-    Ok(())
-  }
-}
-
 /// stainless.extraction.xlang.Trees.UnitDef
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnitDef<'a> {
@@ -5140,20 +5272,6 @@ impl<'a> Serializable for UnitDef<'a> {
     self.classes.serialize(s)?;
     self.modules.serialize(s)?;
     self.isMain.serialize(s)?;
-    Ok(())
-  }
-}
-
-/// stainless.ast.Expressions.WildcardPattern
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct WildcardPattern<'a> {
-  pub binder: Option<&'a ValDef<'a>>,
-}
-
-impl<'a> Serializable for WildcardPattern<'a> {
-  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(128))?;
-    self.binder.serialize(s)?;
     Ok(())
   }
 }
