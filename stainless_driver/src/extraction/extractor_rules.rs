@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use rustc::hir::map::Map;
 use rustc::span_bug;
-use rustc::ty::{self, Ty, TyKind};
+use rustc::ty::{self, AdtDef, Ty, TyKind};
 
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
@@ -117,6 +117,8 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
 
 /// Top-level extraction
 
+type Result<'l> = std::result::Result<st::Expr<'l>, &'static str>;
+
 /// These handlers simply store extracted constructs in the `Extractor`.
 impl<'l, 'tcx> Extractor<'l, 'tcx> {
   /// Extends DefContext with a new variable based on a HIR binding node
@@ -162,6 +164,18 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     }
   }
 
+  fn is_bigint(&self, adt_def: &'tcx AdtDef) -> bool {
+    // TODO: Add a check for BigInt that avoids generating the string?
+    self.tcx.def_path_str(adt_def.did) == "num_bigint::BigInt"
+  }
+
+  fn is_bigint_type(&self, ty: Ty<'tcx>) -> bool {
+    match ty.kind {
+      TyKind::Adt(adt_def, _) => self.is_bigint(adt_def),
+      _ => false,
+    }
+  }
+
   /// Extraction methods
 
   fn extract_tys<I>(&mut self, tys: I, dctx: &DefContext<'l>, span: Span) -> Vec<st::Type<'l>>
@@ -178,6 +192,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
+      TyKind::Adt(adt_def, _) if self.is_bigint(adt_def) => f.IntegerType().into(),
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), dctx, span);
@@ -217,16 +232,53 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     }
   }
 
+  fn try_extract_bigint_lit(&mut self, expr: &'tcx hir::Expr<'tcx>) -> Result<'l> {
+    use ast::LitKind;
+    let f = self.factory();
+    if let ExprKind::Lit(ref lit) = expr.kind {
+      match lit.node {
+        LitKind::Int(value, _) => {
+          let node_ty = self.tables.node_type(expr.hir_id);
+          match node_ty.kind {
+            ty::Int(_) => Ok(f.IntegerLiteral((value as i128).into()).into()),
+            _ => Err("Cannot extract BigInt from non-signed-int literal"),
+          }
+        }
+        _ => Err("Cannot extract BigInt from non-integral literal kind"),
+      }
+    } else {
+      Err("Can only extract BigInt from integer literals")
+    }
+  }
+
+  fn try_extract_bigint_expr(
+    &mut self,
+    expr: &'tcx hir::Expr<'tcx>,
+    dctx: &DefContext<'l>,
+  ) -> Result<'l> {
+    self.try_extract_bigint_lit(expr).or_else(|_| {
+      let expr_ty = self.tables.node_type(expr.hir_id);
+      if self.is_bigint_type(expr_ty) {
+        Ok(self.extract_expr(expr, dctx))
+      } else {
+        Err("Not a BigInt-convertible expr")
+      }
+    })
+  }
+
   fn extract_unary(&mut self, expr: &'tcx hir::Expr<'tcx>, dctx: &DefContext<'l>) -> st::Expr<'l> {
     use hir::UnOp;
     let f = self.factory();
     if let hir::ExprKind::Unary(op, arg) = expr.kind {
       let arg_ty = self.tables.node_type(arg.hir_id);
+      let arg_is_bv = self.is_bv_type(arg_ty);
+      let arg_is_int = arg_is_bv || self.is_bigint_type(arg_ty);
       let arg = self.extract_expr(arg, dctx);
+
       match op {
-        UnOp::UnNot if self.is_bv_type(arg_ty) => f.BVNot(arg).into(),
+        UnOp::UnNot if arg_is_bv => f.BVNot(arg).into(),
         UnOp::UnNot if arg_ty.is_bool() => f.Not(arg).into(),
-        UnOp::UnNeg if self.is_bv_type(arg_ty) => f.UMinus(arg).into(),
+        UnOp::UnNeg if arg_is_int => f.UMinus(arg).into(),
         _ => {
           // TODO: Handle Deref
           // TODO: Handle user-defined operators
@@ -246,21 +298,31 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       let arg2_ty = self.tables.node_type(arg2.hir_id);
       let args_are_bv = self.is_bv_type(arg1_ty) && self.is_bv_type(arg2_ty);
       let args_are_bool = arg1_ty.is_bool() && arg2_ty.is_bool();
-      let arg1 = self.extract_expr(arg1, dctx);
-      let arg2 = self.extract_expr(arg2, dctx);
+
+      let arg1_bigint_opt = self.try_extract_bigint_expr(arg1, dctx).ok();
+      let arg2_bigint_opt = self.try_extract_bigint_expr(arg2, dctx).ok();
+      let (arg1, arg2, args_are_int) = match (arg1_bigint_opt, arg2_bigint_opt) {
+        (Some(arg1), Some(arg2)) if !args_are_bv => (arg1, arg2, true),
+        _ => (
+          self.extract_expr(arg1, dctx),
+          self.extract_expr(arg2, dctx),
+          args_are_bv,
+        ),
+      };
+
       match op.node {
-        BinOpKind::Add if args_are_bv => f.Plus(arg1, arg2).into(),
-        BinOpKind::Sub if args_are_bv => f.Minus(arg1, arg2).into(),
-        BinOpKind::Mul if args_are_bv => f.Times(arg1, arg2).into(),
-        BinOpKind::Div if args_are_bv => f.Division(arg1, arg2).into(),
+        BinOpKind::Add if args_are_int => f.Plus(arg1, arg2).into(),
+        BinOpKind::Sub if args_are_int => f.Minus(arg1, arg2).into(),
+        BinOpKind::Mul if args_are_int => f.Times(arg1, arg2).into(),
+        BinOpKind::Div if args_are_int => f.Division(arg1, arg2).into(),
         BinOpKind::And if args_are_bool => f.And(vec![arg1, arg2]).into(),
         BinOpKind::Or if args_are_bool => f.Or(vec![arg1, arg2]).into(),
         BinOpKind::Eq if args_are_bool => f.Equals(arg1, arg2).into(),
-        BinOpKind::Lt if args_are_bv => f.LessThan(arg1, arg2).into(),
-        BinOpKind::Le if args_are_bv => f.LessEquals(arg1, arg2).into(),
-        BinOpKind::Ne if args_are_bv => f.Not(f.Equals(arg1, arg2).into()).into(),
-        BinOpKind::Ge if args_are_bv => f.GreaterEquals(arg1, arg2).into(),
-        BinOpKind::Gt if args_are_bv => f.GreaterThan(arg1, arg2).into(),
+        BinOpKind::Lt if args_are_int => f.LessThan(arg1, arg2).into(),
+        BinOpKind::Le if args_are_int => f.LessEquals(arg1, arg2).into(),
+        BinOpKind::Ne if args_are_int => f.Not(f.Equals(arg1, arg2).into()).into(),
+        BinOpKind::Ge if args_are_int => f.GreaterEquals(arg1, arg2).into(),
+        BinOpKind::Gt if args_are_int => f.GreaterThan(arg1, arg2).into(),
         _ => {
           // TODO: Handle Rem, BitXor, BitAnd, BitOr, Shl, Shr
           // TODO: Handle arbitrary-precision integers
@@ -305,6 +367,61 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           expr,
           "Cannot extract call to function given as non-path".into(),
         )
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
+  // Expressions for which `e.clone()` can be translated simply as `e`.
+  // This is sound, in particular, for types for which we don't extract any
+  // mutating operations.
+  fn can_treat_clone_as_identity(&self, expr: &'tcx hir::Expr<'tcx>) -> bool {
+    let expr_ty = self.tables.node_type(expr.hir_id);
+    match expr_ty.kind {
+      TyKind::Adt(adt_ref, _) => self.is_bigint(adt_ref),
+      _ => false,
+    }
+  }
+
+  fn extract_conversion_into(
+    &mut self,
+    outer: &'tcx hir::Expr<'tcx>,
+    inner: &'tcx hir::Expr<'tcx>,
+  ) -> st::Expr<'l> {
+    let from_ty = self.tables.node_type(inner.hir_id);
+    let to_ty = self.tables.node_type(outer.hir_id);
+    match (&from_ty.kind, &to_ty.kind) {
+      (TyKind::Int(_), TyKind::Adt(adt_def, _)) if self.is_bigint(adt_def) => self
+        .try_extract_bigint_lit(inner)
+        .unwrap_or_else(|reason| self.unsupported_expr(inner, reason.into())),
+      _ => self.unsupported_expr(
+        outer,
+        format!("Cannot extract conversion from {} to {}", from_ty, to_ty),
+      ),
+    }
+  }
+
+  fn extract_method_call(
+    &mut self,
+    expr: &'tcx hir::Expr<'tcx>,
+    dctx: &DefContext<'l>,
+  ) -> st::Expr<'l> {
+    if let ExprKind::MethodCall(_path_seg, _, args) = expr.kind {
+      let def_path = self
+        .tables
+        .type_dependent_def(expr.hir_id)
+        .map(|(_, def_id)| def_id)
+        .map(|def_id| self.tcx.def_path_str(def_id))
+        .unwrap_or("<unknown>".into());
+      let arg = &args[0];
+      // TODO: Fast check using `path_seg.ident.name == Symbol::intern("into")`?
+      match def_path.as_str() {
+        "std::convert::Into::into" => self.extract_conversion_into(expr, arg),
+        "std::clone::Clone::clone" if self.can_treat_clone_as_identity(expr) => {
+          self.extract_expr(arg, dctx)
+        }
+        _ => self.unsupported_expr(expr, "Cannot extract general method calls".into()),
       }
     } else {
       unreachable!()
@@ -462,6 +579,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       }
       ExprKind::Lit(ref lit) => self.extract_lit(expr, lit),
       ExprKind::Call(..) => self.extract_call(expr, dctx),
+      ExprKind::MethodCall(..) => self.extract_method_call(expr, dctx),
       ExprKind::Unary(..) => self.extract_unary(expr, dctx),
       ExprKind::Binary(..) => self.extract_binary(expr, dctx),
       ExprKind::DropTemps(expr) => self.extract_expr(expr, dctx),
@@ -532,7 +650,9 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   fn output_program<P: AsRef<std::path::Path>>(&mut self, path: P, symbols: st::Symbols<'l>) -> () {
     use stainless_data::ser::{BufferSerializer, Serializable};
     let mut ser = BufferSerializer::new();
-    symbols.serialize(&mut ser).expect("Unable to serialize stainless program");
+    symbols
+      .serialize(&mut ser)
+      .expect("Unable to serialize stainless program");
     std::fs::write(path, ser.as_slice()).expect("Unable to write serialized stainless program");
   }
 
@@ -540,10 +660,14 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     // TODO: Ignore certain boilerplate/compiler-generated items
     fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
       match item.kind {
-        hir::ItemKind::ExternCrate(_) => item.ident.name.to_string() == "std",
-        hir::ItemKind::Use(ref path, hir::UseKind::Glob) => {
-          path.to_string().starts_with("::std::prelude::v")
-        },
+        hir::ItemKind::ExternCrate(_) => {
+          let name = item.ident.name.to_string();
+          name == "std" || name == "num_bigint"
+        }
+        hir::ItemKind::Use(ref path, _) => {
+          let path = path.to_string();
+          path.starts_with("::std::prelude::v") || path.starts_with("num_bigint::")
+        }
         // TODO: Quick fix to filter our synthetic functions
         hir::ItemKind::Fn(..) if !item.attrs.is_empty() => true,
         _ => false,

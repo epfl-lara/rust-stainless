@@ -24,9 +24,9 @@ impl fmt::Display for Identifier {
 impl<'a> fmt::Display for SymbolIdentifier<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}", self.id)?;
-    if !self.symbol_path.is_empty() {
-      write!(f, "<{}>", self.symbol_path.join("::"))?;
-    }
+    // if !self.symbol_path.is_empty() {
+    //   write!(f, "<{}>", self.symbol_path.join("::"))?;
+    // }
     Ok(())
   }
 }
@@ -75,6 +75,7 @@ impl<'a> fmt::Display for Expr<'a> {
       Expr::Variable(e) => e.fmt(f),
       Expr::UnitLiteral(e) => e.fmt(f),
       Expr::BooleanLiteral(e) => e.fmt(f),
+      Expr::IntegerLiteral(e) => e.fmt(f),
       Expr::BVLiteral(e) => e.fmt(f),
       Expr::ADT(e) => e.fmt(f),
       Expr::UMinus(e) => e.fmt(f),
@@ -107,6 +108,7 @@ impl<'a> fmt::Display for Type<'a> {
     match self {
       Type::UnitType(t) => t.fmt(f),
       Type::BooleanType(t) => t.fmt(f),
+      Type::IntegerType(t) => t.fmt(f),
       Type::BVType(t) => t.fmt(f),
       Type::TupleType(t) => t.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
@@ -131,6 +133,12 @@ impl fmt::Display for UnitType {
 impl fmt::Display for BooleanType {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "bool")
+  }
+}
+
+impl fmt::Display for IntegerType {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "BigInt")
   }
 }
 
@@ -172,6 +180,12 @@ impl fmt::Display for BooleanLiteral {
     } else {
       write!(f, "false")
     }
+  }
+}
+
+impl fmt::Display for IntegerLiteral {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.value)
   }
 }
 
