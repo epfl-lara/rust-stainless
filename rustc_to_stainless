@@ -1,38 +1,48 @@
 #!/usr/bin/env bash
+set +e
 
-if [ "$(uname)" == "Darwin" ]; then
-  RUST_STAINLESS_ARCH=x86_64-apple-darwin
-elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
-  RUST_STAINLESS_ARCH=x86_64-unknown-linux-gnu
-else
-  echo "Couldn't determine the correct RUST_STAINLESS_ARCH value. Aborting."
-  exit 1
-fi
+function check_installed () {
+  if ! [ -x "$(command -v ${1})" ]; then
+    echo "Error: Could not find ${1}." >&2
+    exit 1
+  fi
+}
+
+check_installed "rustup"
+# check_installed "cargo"
+# check_installed "python"
 
 SELF_DIR="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
+RUSTUP_TOOLCHAIN_VERSION=nightly
+RUSTUP_HOME="$( rustup run ${RUSTUP_TOOLCHAIN_VERSION} printenv RUSTUP_HOME )"
+RUSTUP_TOOLCHAIN="$( rustup run ${RUSTUP_TOOLCHAIN_VERSION} printenv RUSTUP_TOOLCHAIN )"
+RUSTUP_TOOLCHAIN_ARCH="${RUSTUP_TOOLCHAIN#*-}"
+
 LOG_LEVEL=error
-RUSTUP_TOOLCHAIN=nightly
-RUST_VERSION=${RUSTUP_TOOLCHAIN}-${RUST_STAINLESS_ARCH}
-COMPILER_PATH=$HOME/.rustup/toolchains/${RUST_VERSION}
+SYSROOT_PATH="${RUSTUP_HOME}/toolchains/${RUSTUP_TOOLCHAIN}"
 TARGET_PATH="${SELF_DIR}/stainless_driver/target/debug"
-LIB_PATH="${COMPILER_PATH}/lib:${TARGET_PATH}:${TARGET_PATH}/deps"
 RUSTC_EXPORT="${TARGET_PATH}/rustc_to_stainless"
 
-# Hack to include num-bigint library for BigInt support throught stainless_data
-# (which will always be present and itself depends on num-bigint).
-BIGINT_DUMMY_PATH="${SELF_DIR}/stainless_data"
-BIGINT_EXTRA_FLAGS="-L dependency=${BIGINT_DUMMY_PATH}/target/debug/deps"
-set -e
-cd ${BIGINT_DUMMY_PATH} >/dev/null
-BIGINT_EXTRA_FLAGS+=" --extern "
-BIGINT_EXTRA_FLAGS+="$( cargo build -Z unstable-options --build-plan | python -mjson.tool | grep -o -m 1 --color=never 'num_bigint=.*libnum_bigint.*\.rmeta' )"
-cd - >/dev/null
-set +e
+if [ ! -f "${RUSTC_EXPORT}" ]; then
+  echo "Error: Could not find ${RUSTC_EXPORT}."
+  exit 1
+fi
 
-LD_LIBRARY_PATH=${LIB_PATH} \
+# # Hack to include num-bigint library for BigInt support throught stainless_data
+# # (which will always be present and itself depends on num-bigint).
+# BIGINT_DUMMY_PATH="${SELF_DIR}/stainless_data"
+# BIGINT_EXTRA_FLAGS="-L dependency=${BIGINT_DUMMY_PATH}/target/debug/deps"
+# set -e
+# cd ${BIGINT_DUMMY_PATH} >/dev/null
+# BIGINT_EXTRA_FLAGS+=" --extern "
+# BIGINT_EXTRA_FLAGS+="$( cargo build -Z unstable-options --build-plan | python -mjson.tool 2>/dev/null | grep -o -m 1 --color=never 'num_bigint=.*libnum_bigint.*\.rmeta' )"
+# cd - >/dev/null
+# set +e
+BIGINT_EXTRA_FLAGS=""
+
 RUST_LOG=${LOG_LEVEL} \
-${RUSTC_EXPORT} \
-  -L ${COMPILER_PATH}/lib/rustlib/${RUST_STAINLESS_ARCH}/lib/ \
+rustup run ${RUSTUP_TOOLCHAIN_VERSION} ${RUSTC_EXPORT} \
+  --sysroot ${SYSROOT_PATH} \
   ${BIGINT_EXTRA_FLAGS} \
   "$@"
