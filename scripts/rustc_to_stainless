@@ -9,8 +9,6 @@ function check_installed () {
 }
 
 check_installed "rustup"
-# check_installed "cargo"
-# check_installed "python"
 
 SELF_DIR="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 
@@ -21,7 +19,7 @@ RUSTUP_TOOLCHAIN_ARCH="${RUSTUP_TOOLCHAIN#*-}"
 
 LOG_LEVEL=error
 SYSROOT_PATH="${RUSTUP_HOME}/toolchains/${RUSTUP_TOOLCHAIN}"
-TARGET_PATH="${SELF_DIR}/stainless_driver/target/debug"
+TARGET_PATH="${SELF_DIR}/../stainless_driver/target/debug"
 RUSTC_EXPORT="${TARGET_PATH}/rustc_to_stainless"
 
 if [ ! -f "${RUSTC_EXPORT}" ]; then
@@ -29,20 +27,7 @@ if [ ! -f "${RUSTC_EXPORT}" ]; then
   exit 1
 fi
 
-# # Hack to include num-bigint library for BigInt support throught stainless_data
-# # (which will always be present and itself depends on num-bigint).
-# BIGINT_DUMMY_PATH="${SELF_DIR}/stainless_data"
-# BIGINT_EXTRA_FLAGS="-L dependency=${BIGINT_DUMMY_PATH}/target/debug/deps"
-# set -e
-# cd ${BIGINT_DUMMY_PATH} >/dev/null
-# BIGINT_EXTRA_FLAGS+=" --extern "
-# BIGINT_EXTRA_FLAGS+="$( cargo build -Z unstable-options --build-plan | python -mjson.tool 2>/dev/null | grep -o -m 1 --color=never 'num_bigint=.*libnum_bigint.*\.rmeta' )"
-# cd - >/dev/null
-# set +e
-BIGINT_EXTRA_FLAGS=""
-
 RUST_LOG=${LOG_LEVEL} \
 rustup run ${RUSTUP_TOOLCHAIN_VERSION} ${RUSTC_EXPORT} \
   --sysroot ${SYSROOT_PATH} \
-  ${BIGINT_EXTRA_FLAGS} \
   "$@"
