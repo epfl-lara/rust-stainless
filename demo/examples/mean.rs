@@ -1,4 +1,3 @@
-#![no_main]
 #![feature(box_patterns)]
 
 extern crate stainless_macros as st;
@@ -20,3 +19,5 @@ pub fn mean_ok(x: i32, y: i32) -> i32 {
         -1
     }
 }
+
+fn main() -> () {}

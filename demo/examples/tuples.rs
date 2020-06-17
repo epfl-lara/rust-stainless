@@ -12,3 +12,5 @@ pub fn swap(t: (i32, i32)) -> (i32, i32) {
 
 // pub fn fst((x, _): (i32, i32)) -> i32 { x }  // TODO
 // pub fn snd((_, y): (i32, i32)) -> i32 { y }  // TODO
+
+fn main() -> () {}

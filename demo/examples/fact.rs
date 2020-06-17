@@ -5,3 +5,5 @@ pub fn fact(x: i32) -> i32 {
     fact(x - 1) * x
   }
 }
+
+fn main () -> () {}

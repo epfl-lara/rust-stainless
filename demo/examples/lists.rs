@@ -1,4 +1,3 @@
-#![no_main]
 #![feature(box_patterns)]
 
 extern crate num_bigint;
@@ -57,3 +56,5 @@ pub fn append(l1: IntList, l2: IntList) -> IntList {
         IntList::Cons(x, rest) => IntList::Cons(x, Box::new(append(*rest, l2)))
     }
 }
+
+fn main() -> () {}

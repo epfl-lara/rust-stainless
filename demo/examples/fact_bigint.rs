@@ -16,3 +16,5 @@ pub fn fact_tail(x: BigInt, acc: BigInt) -> BigInt {
     fact_tail(x.clone() - 1, acc * x)
   }
 }
+
+fn main() -> () {}

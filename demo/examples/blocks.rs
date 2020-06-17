@@ -10,3 +10,5 @@ pub fn bar(x: i32) -> i32 {
     bar(x - 1) * x
   }
 }
+
+fn main () -> () {}
