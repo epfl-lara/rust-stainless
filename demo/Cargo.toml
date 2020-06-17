@@ -1,0 +1,10 @@
+[package]
+name = "demo"
+version = "0.0.1"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+num-bigint = "0.2.5"
+stainless_macros = { path = "../stainless_macros"}
