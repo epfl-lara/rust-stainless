@@ -1,13 +1,9 @@
-extern crate rustc;
-extern crate rustc_ast;
-extern crate stainless_data;
-
 mod extractor;
 mod extractor_rules;
 mod utils;
 
-use rustc::ty::{TyCtxt, TypeckTables};
 use rustc_ast::ast;
+use rustc_middle::ty::{TyCtxt, TypeckTables};
 use stainless_data::ast as st;
 
 pub fn playground<'tcx>(tcx: TyCtxt<'tcx>, crate_name: String, _krate: &ast::Crate) -> () {

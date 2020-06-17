@@ -1,14 +1,8 @@
-extern crate rustc;
-extern crate rustc_ast;
-extern crate rustc_hir;
-extern crate rustc_session;
-extern crate stainless_data;
-
 use std::collections::HashMap;
 
-use rustc::ty::{TyCtxt, TypeckTables};
-use rustc_ast::ast;
 use rustc_hir::HirId;
+use rustc_middle::ty::{TyCtxt, TypeckTables};
+use rustc_span::symbol;
 
 use stainless_data::ast as st;
 
@@ -110,7 +104,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   pub(in crate) fn register_id_from_ident(
     &mut self,
     hir_id: HirId,
-    ident: &ast::Ident,
+    ident: &symbol::Ident,
   ) -> StainlessSymId<'l> {
     // TODO: Extract fully-qualified name for symbol path whenever possible?
     let simple_name = ident.name.to_string();
