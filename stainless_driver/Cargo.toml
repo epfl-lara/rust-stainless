@@ -8,6 +8,7 @@ categories = ["development-tools"]
 
 [dependencies]
 stainless_data = { path = "../stainless_data" }
+clap = "2.33.1"
 env_logger = "0.7.1"
 serde_json = "1.0"
 
