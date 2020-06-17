@@ -1,3 +1,6 @@
 target/
 save-analysis-temp/
 .vscode
+.metals
+*.inoxser
+

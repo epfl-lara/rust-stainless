@@ -1,10 +1,18 @@
 {
 	"folders": [
 		{
-			"path": "."
-		}
+			"path": "./stainless_driver"
+		},
+		{
+			"path": "./stainless_macros"
+		},
+		{
+			"path": "./stainless_data"
+		},
+{"path": "./examples"}
 	],
 	"settings": {
 		"rust-client.channel": "nightly"
 	}
 }
+
