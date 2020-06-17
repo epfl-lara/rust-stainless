@@ -11,7 +11,7 @@ name = "demo"
 version = "0.0.1"
 dependencies = [
  "num-bigint",
- "stainless_macros",
+ "stainless_contracts",
 ]
 
 [[package]]
@@ -63,7 +63,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stainless_macros"
+name = "stainless_contracts"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

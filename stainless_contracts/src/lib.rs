@@ -23,10 +23,12 @@ pub fn ensuring(attr: TokenStream, item: TokenStream) -> TokenStream {
             let pc_ident = format_ident!("__postcondition_{}", function.sig.ident);
 
             let condition = Expr::Closure(closure);
-            let item2 = proc_macro2::TokenStream::from(item);
-            
+            let item = proc_macro2::TokenStream::from(item);
+
             let augumented_item = quote! {
-                #item2
+                #item
+
+                #[allow(unused_variables)]
                 fn #pc_ident(__pc_res: #ret_type, #fn_args) -> bool {
                     (#condition)(__pc_res)
                 }
@@ -39,7 +41,7 @@ pub fn ensuring(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn ignore(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    if let Item::Fn(mut function) = parse_macro_input!(item as Item) {
+    if let Item::Fn(function) = parse_macro_input!(item as Item) {
         // TODO: figure out how to generate custom attribute to mark function for ignoring
         // function.attrs.push(???);
         let f = quote! {

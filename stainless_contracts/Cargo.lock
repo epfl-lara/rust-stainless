@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stainless_macros"
+name = "stainless_contracts"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

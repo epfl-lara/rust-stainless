@@ -4,7 +4,7 @@
 			"path": "./stainless_driver"
 		},
 		{
-			"path": "./stainless_macros"
+			"path": "./stainless_contracts"
 		},
 		{
 			"path": "./stainless_data"

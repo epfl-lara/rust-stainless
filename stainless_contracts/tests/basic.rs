@@ -1,6 +1,5 @@
-#![allow(dead_code)]
 #[macro_use]
-extern crate stainless_macros;
+extern crate stainless_contracts;
 
 #[ensuring(|res| res > x)]
 fn inc(x: i32) -> i32 {

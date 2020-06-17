@@ -1,6 +1,6 @@
 #![feature(box_patterns)]
 
-extern crate stainless_macros as st;
+extern crate stainless_contracts as st;
 
 #[st::ensuring(|m| y < x || x < 0 || y < 0 || x <= m && m <= y)]
 pub fn mean_wrong(x: i32, y: i32) -> i32 {

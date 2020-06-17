@@ -3,7 +3,7 @@
 extern crate num_bigint;
 use num_bigint::BigInt;
 
-extern crate stainless_macros as st;
+extern crate stainless_contracts as st;
 
 // #[derive(Clone)]
 pub enum IntList {

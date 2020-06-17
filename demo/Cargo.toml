@@ -4,4 +4,4 @@ version = "0.0.1"
 
 [dev-dependencies]
 num-bigint = "0.2.6"
-stainless_macros = { path = "../stainless_macros"}
+stainless_contracts = { path = "../stainless_contracts"}
