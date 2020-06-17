@@ -177,6 +177,15 @@ impl Factory {
     self.bump.alloc(ADTConstructor { id, sort, fields })
   }
 
+  pub fn MatchCase<'a>(
+    &'a self,
+    pattern: Pattern<'a>,
+    optGuard: Option<Expr<'a>>,
+    rhs: Expr<'a>
+  ) -> &'a mut MatchCase<'a> {
+    self.bump.alloc(MatchCase { pattern, optGuard, rhs })
+  }
+
   pub fn Identifier<'a>(&'a self, name: String, globalId: Int, id: Int) -> &'a mut Identifier {
     self.bump.alloc(Identifier { name, globalId, id })
   }

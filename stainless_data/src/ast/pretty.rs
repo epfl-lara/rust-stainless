@@ -47,7 +47,12 @@ impl<'a> fmt::Display for FunDef<'a> {
     writeSeq!(f, self.params, ", ")?;
     writeln!(f, ") -> {} {{", self.returnType)?;
     writeln!(f, "    {}", self.fullBody)?;
-    writeln!(f, "}}")
+    match self.fullBody {
+      Expr::Ensuring(e) => {
+        writeln!(f, "}} ensuring ({})", e.pred)
+      },
+      _ => writeln!(f, "}}")
+    }
   }
 }
 
@@ -66,6 +71,26 @@ impl<'a> fmt::Display for TypeParameter<'a> {
       write!(f, "{} ", flag)?;
     }
     write!(f, "{}", self.id)
+  }
+}
+
+impl<'a> fmt::Display for ADTSort<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "enum {} {{", self.id)?;
+    writeSeq!(f, self.constructors, ",\n")?;
+    writeln!(f, "\n}}")
+  }
+}
+
+impl<'a> fmt::Display for ADTConstructor<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "    {}", self.id)?;
+    if !&self.fields.is_empty() {
+      write!(f, "(")?;
+      writeSeq!(f, self.fields, ", ")?;
+      write!(f, ")")?;
+    }
+    Ok(())
   }
 }
 
@@ -98,6 +123,11 @@ impl<'a> fmt::Display for Expr<'a> {
       Expr::IfExpr(e) => e.fmt(f),
       Expr::Let(e) => e.fmt(f),
       Expr::Block(e) => e.fmt(f),
+      Expr::Lambda(e) => e.fmt(f),
+      Expr::LetVar(e) => e.fmt(f),
+      Expr::Ensuring(e) => e.fmt(f),
+      Expr::MatchExpr(e) => e.fmt(f),
+      Expr::NoTree(e) => e.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -111,6 +141,19 @@ impl<'a> fmt::Display for Type<'a> {
       Type::IntegerType(t) => t.fmt(f),
       Type::BVType(t) => t.fmt(f),
       Type::TupleType(t) => t.fmt(f),
+      Type::FunctionType(t) => t.fmt(f),
+      Type::AnyType(t) => t.fmt(f),
+      Type::ADTType(t) => t.fmt(f),
+      _ => unimplemented!("No formatter for {:?}", self),
+    }
+  }
+}
+
+impl<'a> fmt::Display for Pattern<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Pattern::ADTPattern(t) => t.fmt(f),
+      Pattern::WildcardPattern(t) => t.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -158,6 +201,43 @@ impl<'a> fmt::Display for TupleType<'a> {
     write!(f, "(")?;
     writeSeq!(f, self.bases, ", ")?;
     write!(f, ")")
+  }
+}
+
+impl<'a> fmt::Display for FunctionType<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "(")?;
+    writeSeq!(f, self.from, ", ")?;
+    write!(f, ") -> ")?;
+    write!(f, "{}", self.to)
+  }
+}
+
+impl fmt::Display for AnyType {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "Any")
+  }
+}
+
+impl<'a> fmt::Display for ADTType<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "{}", self.id)
+  }
+}
+
+
+impl<'a> fmt::Display for Lambda<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "|")?;
+    writeSeq!(f, self.params, ", ")?;
+    write!(f, "| ")?;
+    write!(f, "{}", self.body)
+  }
+}
+
+impl<'a> fmt::Display for Ensuring<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.body)
   }
 }
 
@@ -257,6 +337,12 @@ impl<'a> fmt::Display for Not<'a> {
   }
 }
 
+impl<'a> fmt::Display for NoTree<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "???")
+  }
+}
+
 impl<'a> fmt::Display for Equals<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "({} == {})", self.lhs, self.rhs)
@@ -341,9 +427,31 @@ impl<'a> fmt::Display for IfExpr<'a> {
   }
 }
 
+impl<'a> fmt::Display for MatchExpr<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    writeln!(f, "match {} {{", self.scrutinee)?;
+    for case in &self.cases {
+      writeln!(f, "    {}", case)?;
+    }
+    write!(f, "}}")
+  }
+}
+
+impl<'a> fmt::Display for MatchCase<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{} => {}", self.pattern, self.rhs)
+  }
+}
+
 impl<'a> fmt::Display for Let<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "let {} = {};\n{}", self.vd, self.value, self.body)
+    write!(f, "let {} = {};\n    {}", self.vd, self.value, self.body)
+  }
+}
+
+impl<'a> fmt::Display for LetVar<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "let mut {} = {};\n    {}", self.vd, self.value, self.body)
   }
 }
 
@@ -355,5 +463,30 @@ impl<'a> fmt::Display for Block<'a> {
     }
     writeln!(f, "    {}", self.last)?;
     write!(f, "}}")
+  }
+}
+
+impl<'a> fmt::Display for ADTPattern<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if let Some(b) = self.binder {
+      write!(f, "{} @ ", b)?;
+    }
+    write!(f, "{}", self.id)?;
+    if !self.subPatterns.is_empty() {
+      write!(f, "(")?;
+      writeSeq!(f, self.subPatterns, ", ")?;
+      write!(f, ")")?;
+    }
+    Ok(())
+  }
+}
+
+impl<'a> fmt::Display for WildcardPattern<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if let Some(b) = self.binder {
+      write!(f, "{}", b.v.id)
+    } else {
+      write!(f, "_")
+    }
   }
 }
