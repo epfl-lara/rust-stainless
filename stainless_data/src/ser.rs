@@ -87,7 +87,7 @@ pub trait Serializer: Sized {
   // Raw writing
 
   fn write(&mut self, data: &[u8]) -> SerializationResult {
-    self.writer().write(data)?;
+    self.writer().write_all(data)?;
     Ok(())
   }
 
