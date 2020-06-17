@@ -658,7 +658,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           let name = item.ident.name.to_string();
           name == "std" || name == "num_bigint"
         }
-        hir::ItemKind::Use(ref path, _) => {
+        hir::ItemKind::Use(ref _path, _) => {
           false
           // FIXME: Figure out how to express code below with latest nightly
           //        now that `Path` apparently doesn't implement `Display` anymore.
