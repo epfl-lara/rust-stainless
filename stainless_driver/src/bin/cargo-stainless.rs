@@ -4,6 +4,7 @@ extern crate serde_json;
 use clap::{App, Arg};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::process::*;
 
@@ -138,6 +139,47 @@ fn parse_build(config: &Config, data: &[u8]) -> Build {
   }
 }
 
+// Use cargo's build-plan flag to extract rustc arguments as a JSON object.
+//
+// Note that this feature is unstable and broken in that it mysteriously
+// invalidates existing files in the target/ directory.
+// We therefore include a hacky workaround that protects the target/debug/
+// subdirectory by moving it during the generation of the build-plan in cargo.
+#[allow(unused_must_use)]
+fn fetch_build_plan(config: &Config) -> Output {
+  const TARGET_CACHE_DIR: &str = "target/debug";
+  const TARGET_CACHE_DIR_TMP: &str = "target/debug__tmp";
+
+  // Protect target dir
+  fs::rename(TARGET_CACHE_DIR, TARGET_CACHE_DIR_TMP)
+    .expect("Couldn't temporarily rename target cache dir");
+
+  // Get the build plan from cargo
+  let mut build_cmd = Command::new("cargo");
+  build_cmd
+    .arg("build")
+    .arg("-Z")
+    .arg("unstable-options")
+    .arg("--build-plan");
+  if config.example_opt.is_some() {
+    build_cmd.arg("--all-targets");
+  }
+
+  let build_output = build_cmd
+    .output()
+    .expect("Couldn't start cargo build to extract plan");
+  if !build_output.status.success() {
+    parsing_error("Failed to run cargo build to extract plan".into());
+  }
+
+  // Restore target dir
+  fs::remove_dir_all(TARGET_CACHE_DIR);  // hope for the best.
+  fs::rename(TARGET_CACHE_DIR_TMP, TARGET_CACHE_DIR)
+    .expect("Couldn't move target cache dir back!");
+
+  build_output
+}
+
 fn main() -> ! {
   let matches = App::new("cargo-stainless")
     .version("0.0.1")
@@ -168,22 +210,7 @@ fn main() -> ! {
   };
 
   // Parse build plan
-  let mut build_cmd = Command::new("cargo");
-  build_cmd
-    .arg("build")
-    .arg("-Z")
-    .arg("unstable-options")
-    .arg("--build-plan");
-  if config.example_opt.is_some() {
-    build_cmd.arg("--all-targets");
-  }
-
-  let build_output = build_cmd
-    .output()
-    .expect("Couldn't start cargo build to extract plan");
-  if !build_output.status.success() {
-    parsing_error("Failed to run cargo build to extract plan".into());
-  }
+  let build_output = fetch_build_plan(&config);
 
   // NOTE: When no example is specified we currently just pick the last build
   // invocation, which should work well enough for simple, single target builds.
