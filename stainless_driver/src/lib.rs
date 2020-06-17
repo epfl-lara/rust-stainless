@@ -2,17 +2,20 @@
 
 pub mod extraction;
 
-extern crate rustc;
 extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_interface;
+extern crate rustc_middle;
+extern crate rustc_session;
+extern crate rustc_span;
+extern crate rustc_ty;
 
-use rustc::session::config::ErrorOutputType;
-use rustc::session::early_error;
 use rustc_driver::{run_compiler, Callbacks, Compilation};
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::{interface, Queries};
+use rustc_session::config::ErrorOutputType;
+use rustc_session::early_error;
 
 pub fn run() -> Result<(), ()> {
   let mut callbacks = ExtractionCallbacks {};

@@ -1,16 +1,10 @@
-extern crate rustc;
-extern crate rustc_ast;
-extern crate rustc_hir;
-extern crate rustc_span;
-extern crate stainless_data;
-
 use super::extractor::{Extractor, StainlessSymId};
 
 use std::collections::HashMap;
 
-use rustc::hir::map::Map;
-use rustc::span_bug;
-use rustc::ty::{self, AdtDef, Ty, TyKind};
+use rustc_middle::hir::map::Map;
+use rustc_middle::span_bug;
+use rustc_middle::ty::{self, AdtDef, Ty, TyKind};
 
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
@@ -88,7 +82,7 @@ impl<'xtor, 'l, 'tcx> BindingsCollector<'xtor, 'l, 'tcx> {
 impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
   type Map = Map<'tcx>;
 
-  fn nested_visit_map(&mut self) -> NestedVisitorMap<'_, Self::Map> {
+  fn nested_visit_map(&mut self) -> NestedVisitorMap<Self::Map> {
     NestedVisitorMap::None
   }
 
@@ -342,11 +336,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
         match qpath_res {
           Res::Def(DefKind::Fn, def_id) => {
-            let hir_id = self
-              .tcx
-              .hir()
-              .as_local_hir_id(def_id)
-              .unwrap_or_else(|| unexpected!(fun.span, "no local def id"));
+            let hir_id = self.tcx.hir().as_local_hir_id(
+              def_id
+                .as_local()
+                .unwrap_or_else(|| unexpected!(fun.span, "no local def id")),
+            );
             let args = self.extract_exprs(args, dctx);
             let fun_id = self.fetch_id(hir_id);
             // TODO: Handle type arguments
@@ -665,8 +659,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           name == "std" || name == "num_bigint"
         }
         hir::ItemKind::Use(ref path, _) => {
-          let path = path.to_string();
-          path.starts_with("::std::prelude::v") || path.starts_with("num_bigint::")
+          false
+          // FIXME: Figure out how to express code below with latest nightly
+          //        now that `Path` apparently doesn't implement `Display` anymore.
+          // let path = path.to_string();
+          // path.starts_with("::std::prelude::v") || path.starts_with("num_bigint::")
         }
         // TODO: Quick fix to filter our synthetic functions
         hir::ItemKind::Fn(..) if !item.attrs.is_empty() => true,
