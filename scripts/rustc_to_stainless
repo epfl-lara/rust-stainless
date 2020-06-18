@@ -19,7 +19,7 @@ RUSTUP_TOOLCHAIN_ARCH="${RUSTUP_TOOLCHAIN#*-}"
 
 LOG_LEVEL=error
 SYSROOT_PATH="${RUSTUP_HOME}/toolchains/${RUSTUP_TOOLCHAIN}"
-TARGET_PATH="${SELF_DIR}/../stainless_driver/target/debug"
+TARGET_PATH="${SELF_DIR}/../target/debug"
 RUSTC_EXPORT="${TARGET_PATH}/rustc_to_stainless"
 
 if [ ! -f "${RUSTC_EXPORT}" ]; then
