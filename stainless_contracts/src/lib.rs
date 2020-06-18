@@ -20,7 +20,7 @@ pub fn require(attr: TokenStream, item: TokenStream) -> TokenStream {
       let augumented_item = quote! {
           #item
 
-          #[allow(unused_variables)]
+          #[allow(unused_variables, unused_mut)]
           fn #pc_ident(#fn_args) -> bool {
               #condition
           }
@@ -55,7 +55,7 @@ pub fn ensuring(attr: TokenStream, item: TokenStream) -> TokenStream {
       let augumented_item = quote! {
           #item
 
-          #[allow(unused_variables)]
+          #[allow(unused_variables, unused_mut)]
           fn #pc_ident(__pc_res: #ret_type, #fn_args) -> bool {
               (#condition)(__pc_res)
           }
