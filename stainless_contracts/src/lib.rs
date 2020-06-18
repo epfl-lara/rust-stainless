@@ -5,6 +5,33 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, Expr, Item, ReturnType, Type};
 
 #[proc_macro_attribute]
+pub fn require(attr: TokenStream, item: TokenStream) -> TokenStream {
+  let condition = parse_macro_input!(attr as Expr);
+  let original_func = item.clone();
+  let func = parse_macro_input!(original_func as Item);
+
+  match func {
+    Item::Fn(function) => {
+      let fn_args = function.sig.inputs;
+      let pc_ident = format_ident!("__precondition_{}", function.sig.ident);
+
+      let item = proc_macro2::TokenStream::from(item);
+
+      let augumented_item = quote! {
+          #item
+
+          #[allow(unused_variables)]
+          fn #pc_ident(#fn_args) -> bool {
+              #condition
+          }
+      };
+      augumented_item.into()
+    }
+    _ => panic!("Expecting ensuring to decorate a function with postcondition lambda"),
+  }
+}
+
+#[proc_macro_attribute]
 pub fn ensuring(attr: TokenStream, item: TokenStream) -> TokenStream {
   let expr = parse_macro_input!(attr as Expr);
   let original_func = item.clone();

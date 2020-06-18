@@ -1,9 +1,20 @@
 #[macro_use]
 extern crate stainless_contracts;
 
+#[require(x >= 0)]
 #[ensuring(|res| res > x)]
 fn inc(x: i32) -> i32 {
   x + 1
+}
+
+#[test]
+fn require_pos_test() {
+  assert!(__precondition_inc(1));
+}
+
+#[test]
+fn require_neg_test() {
+  assert!(!__precondition_inc(-42));
 }
 
 #[test]
