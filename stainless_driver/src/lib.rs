@@ -61,12 +61,11 @@ impl Callbacks for ExtractionCallbacks {
   ) -> Compilation {
     let crate_name = queries.crate_name().unwrap().peek().clone();
 
-    let expanded_crate = &queries.expansion().unwrap().peek().0;
     queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
       tcx.dep_graph.with_ignore(|| {
         println!("=== Analysing crate '{}' ===\n", crate_name);
         tcx.analysis(LOCAL_CRATE).unwrap();
-        extraction::playground(tcx, crate_name, expanded_crate);
+        extraction::playground(tcx, crate_name);
       });
     });
 
