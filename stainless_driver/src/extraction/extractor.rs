@@ -1,14 +1,14 @@
 extern crate rustc;
+extern crate rustc_ast;
 extern crate rustc_hir;
 extern crate rustc_session;
 extern crate stainless_data;
-extern crate rustc_ast;
 
 use std::collections::HashMap;
 
 use rustc::ty::{TyCtxt, TypeckTables};
-use rustc_hir::HirId;
 use rustc_ast::ast;
+use rustc_hir::HirId;
 
 use stainless_data::ast as st;
 

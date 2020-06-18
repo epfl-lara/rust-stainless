@@ -42,9 +42,16 @@ impl<'a> Symbols<'a> {
   pub fn new(sorts: Seq<&'a ADTSort<'a>>, functions: Seq<&'a FunDef<'a>>) -> Self {
     let mut sorts_map = Map::new();
     let mut functions_map = Map::new();
-    sorts.iter().for_each(|&sort| { sorts_map.insert(sort.id, sort); });
-    functions.iter().for_each(|&fd| { functions_map.insert(fd.id, fd); });
-    Symbols { sorts: sorts_map, functions: functions_map }
+    sorts.iter().for_each(|&sort| {
+      sorts_map.insert(sort.id, sort);
+    });
+    functions.iter().for_each(|&fd| {
+      functions_map.insert(fd.id, fd);
+    });
+    Symbols {
+      sorts: sorts_map,
+      functions: functions_map,
+    }
   }
 }
 
@@ -181,9 +188,13 @@ impl Factory {
     &'a self,
     pattern: Pattern<'a>,
     optGuard: Option<Expr<'a>>,
-    rhs: Expr<'a>
+    rhs: Expr<'a>,
   ) -> &'a mut MatchCase<'a> {
-    self.bump.alloc(MatchCase { pattern, optGuard, rhs })
+    self.bump.alloc(MatchCase {
+      pattern,
+      optGuard,
+      rhs,
+    })
   }
 
   pub fn Identifier<'a>(&'a self, name: String, globalId: Int, id: Int) -> &'a mut Identifier {

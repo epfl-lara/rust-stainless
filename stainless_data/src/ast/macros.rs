@@ -14,7 +14,9 @@ macro_rules! derive_conversions_for_ast {
     }
 
     impl<'a> AsRef<$t_conc<'a>> for $t_conc<'a> {
-      fn as_ref(&self) -> &Self { self }
+      fn as_ref(&self) -> &Self {
+        self
+      }
     }
   };
 
@@ -30,5 +32,5 @@ macro_rules! derive_conversions_for_ast {
         $t_abs::$t_conc(v)
       }
     }
-  }
+  };
 }

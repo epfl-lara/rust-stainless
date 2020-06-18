@@ -76,7 +76,7 @@ macro_rules! make_write_raw {
       self.write(&v.to_be_bytes())?;
       Ok(())
     }
-  }
+  };
 }
 
 pub trait Serializer: Sized {

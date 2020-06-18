@@ -88,14 +88,7 @@ fn make_identity_fundef<'a>(f: &'a Factory) -> &'a FunDef<'a> {
   let v_x: &'a _ = f.Variable(id_x, tpe_int, vec![]);
   let param: &'a _ = f.ValDef(v_x);
   let body: Expr = v_x.into();
-  f.FunDef(
-    id_f,
-    vec![],
-    vec![&param],
-    tpe_int,
-    body,
-    vec![]
-  )
+  f.FunDef(id_f, vec![], vec![&param], tpe_int, body, vec![])
 }
 
 test_gen!(identity_fundef, s => {

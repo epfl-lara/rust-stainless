@@ -48,10 +48,8 @@ impl<'a> fmt::Display for FunDef<'a> {
     writeln!(f, ") -> {} {{", self.returnType)?;
     writeln!(f, "    {}", self.fullBody)?;
     match self.fullBody {
-      Expr::Ensuring(e) => {
-        writeln!(f, "}} ensuring ({})", e.pred)
-      },
-      _ => writeln!(f, "}}")
+      Expr::Ensuring(e) => writeln!(f, "}} ensuring ({})", e.pred),
+      _ => writeln!(f, "}}"),
     }
   }
 }
@@ -224,7 +222,6 @@ impl<'a> fmt::Display for ADTType<'a> {
     write!(f, "{}", self.id)
   }
 }
-
 
 impl<'a> fmt::Display for Lambda<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -451,7 +448,11 @@ impl<'a> fmt::Display for Let<'a> {
 
 impl<'a> fmt::Display for LetVar<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "let mut {} = {};\n    {}", self.vd, self.value, self.body)
+    write!(
+      f,
+      "let mut {} = {};\n    {}",
+      self.vd, self.value, self.body
+    )
   }
 }
 

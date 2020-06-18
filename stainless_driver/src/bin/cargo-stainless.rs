@@ -173,9 +173,8 @@ fn fetch_build_plan(config: &Config) -> Output {
   }
 
   // Restore target dir
-  fs::remove_dir_all(TARGET_CACHE_DIR);  // hope for the best.
-  fs::rename(TARGET_CACHE_DIR_TMP, TARGET_CACHE_DIR)
-    .expect("Couldn't move target cache dir back!");
+  fs::remove_dir_all(TARGET_CACHE_DIR); // hope for the best.
+  fs::rename(TARGET_CACHE_DIR_TMP, TARGET_CACHE_DIR).expect("Couldn't move target cache dir back!");
 
   build_output
 }
