@@ -2,8 +2,8 @@ extern crate serde_json;
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::process::*;
 use std::path::PathBuf;
+use std::process::*;
 
 #[derive(Debug)]
 struct Build {
@@ -29,7 +29,7 @@ fn unpack_name(value: &Value) -> String {
 fn unpack_build_env(value: &Value) -> HashMap<String, String> {
   if let Value::Object(env) = value {
     let mut map: HashMap<String, String> = HashMap::with_capacity(env.len());
-    for (k,v) in env {
+    for (k, v) in env {
       if let Value::String(v) = v {
         map.insert(k.clone(), v.clone());
       }
@@ -42,24 +42,29 @@ fn unpack_build_env(value: &Value) -> HashMap<String, String> {
 
 fn unpack_build_args(value: &Value) -> Vec<String> {
   if let Value::Array(args) = value {
-    args.iter().flat_map(|arg| {
-      if let Value::String(arg) = arg {
-        if !arg.starts_with("--error-format") && !arg.starts_with("--json") {
-          Some(arg.clone())
+    args
+      .iter()
+      .flat_map(|arg| {
+        if let Value::String(arg) = arg {
+          if !arg.starts_with("--error-format") && !arg.starts_with("--json") {
+            Some(arg.clone())
+          } else {
+            None
+          }
         } else {
           None
         }
-      } else {
-        None
-      }
-    }).collect()
+      })
+      .collect()
   } else {
     parsing_error("Expected invocation to contain 'env' object".into())
   }
 }
 
 fn find_sysroot(env: &HashMap<String, String>) -> String {
-  let cargo_path = env.get("CARGO").expect("Expected CARGO env to be present in build plan");
+  let cargo_path = env
+    .get("CARGO")
+    .expect("Expected CARGO env to be present in build plan");
   let mut sysroot_path = PathBuf::from(cargo_path);
   sysroot_path.pop();
   sysroot_path.pop();
@@ -67,9 +72,8 @@ fn find_sysroot(env: &HashMap<String, String>) -> String {
 }
 
 fn parse_build(data: &[u8]) -> Build {
-  let plan: Value = serde_json::from_reader(data).unwrap_or_else(|e| {
-    parsing_error(format!("{}", e))
-  });
+  let plan: Value =
+    serde_json::from_reader(data).unwrap_or_else(|e| parsing_error(format!("{}", e)));
   if let Value::Array(invocations) = plan
     .pointer("/invocations")
     .expect("Expected 'invocations' key")
