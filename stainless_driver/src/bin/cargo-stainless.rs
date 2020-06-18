@@ -147,6 +147,8 @@ fn parse_build(config: &Config, data: &[u8]) -> Build {
 // subdirectory by moving it during the generation of the build-plan in cargo.
 #[allow(unused_must_use)]
 fn fetch_build_plan(config: &Config) -> Output {
+  // TODO: Extract this directory from Cargo? (These hardcoded paths currently
+  // prevent us from working in the presence of Cargo workspaces.)
   const TARGET_CACHE_DIR: &str = "target/debug";
   const TARGET_CACHE_DIR_TMP: &str = "target/debug__tmp";
 

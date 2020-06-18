@@ -1,5 +1,9 @@
 [workspace]
 members = [
+  "stainless_contracts",
   "stainless_data",
   "stainless_driver",
+]
+exclude = [
+  "demo",
 ]
