@@ -13,10 +13,11 @@ The actual code interfacing with rustc and performing program extraction is foun
 
 The following instructions assume that you have installed Rust using [rustup](https://github.com/rust-lang/rustup).
 - Clone this repo in `/basedir/stainless-rust-interop`.
-- Make sure your `rustup` toolchain defaults to `nightly` (via `rustup default nightly`).
+- Make sure your `rustup` toolchain defaults to `nightly` (via `rustup default nightly`; last tested with `nightly-2020-03-11`).
 - Make sure you have the `rustc-dev` component installed (via `rustup toolchain install nightly --component rustc-dev`).
 - Install `stainless_driver` (via `cargo install --path stainless_driver/`). This will build the `rustc_to_stainless` driver, which is essentially a modified version of `rustc`, and `cargo-stainless`, which provides a convenient way for invoking `rustc_to_stainless` from within Cargo project folders. Installation ensures that both of these binaries end up on your `PATH`.
-- Clone and build [stainless with the `stainless-noxt` frontend](https://gitlab.epfl.ch/gschmid/stainless/-/tree/stainless-rust) in `/basedir/stainless` to verify the extracted programs.
+- Clone and `sbt publishLocal` [inox with the modified serializer](https://github.com/epfl-lara/inox/tree/rust-interop) in `/basedir/inox`.
+- Clone and build [stainless with the `stainless-noxt` frontend](https://github.com/epfl-lara/stainless/tree/rust-interop) in `/basedir/stainless` to verify the extracted programs.
 
 ## Usage
 
