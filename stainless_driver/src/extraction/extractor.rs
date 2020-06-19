@@ -44,17 +44,17 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     extraction: &'l mut Extraction<'l>,
   ) -> Self {
     Self {
-      tcx: tcx,
-      crate_name: crate_name,
+      tcx,
+      crate_name,
+      empty_tables,
       tables: empty_tables,
-      empty_tables: empty_tables,
 
+      extraction,
       mapping: SymbolMapping {
         global_id_counter: UniqueCounter::new(),
         local_id_counter: UniqueCounter::new(),
         r2i: HashMap::new(),
       },
-      extraction: extraction,
     }
   }
 
@@ -113,7 +113,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   }
 
   pub fn get_id(&self, hir_id: HirId) -> Option<StainlessSymId<'l>> {
-    self.mapping.r2i.get(&hir_id).map(|&sym| sym)
+    self.mapping.r2i.get(&hir_id).copied()
   }
 
   pub fn fetch_id(&self, hir_id: HirId) -> StainlessSymId<'l> {

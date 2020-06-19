@@ -15,7 +15,7 @@ lazy_static! {
     args[1].clone()
   };
 }
-const PATH_SUFFIX: &'static str = ".inoxser";
+const PATH_SUFFIX: &str = ".inoxser";
 
 macro_rules! test_gen {
   ($name:ident, $s:ident => $body:block) => {
@@ -104,7 +104,7 @@ test_gen!(identity_symbols, s => {
   functions.insert(fd.id, fd);
   let symbols = Symbols {
     sorts: Map::new(),
-    functions: functions
+    functions
   };
   ser!(symbols, s)
 });
