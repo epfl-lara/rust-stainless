@@ -61,13 +61,10 @@ struct BindingsCollector<'xtor, 'l, 'tcx> {
 
 impl<'xtor, 'l, 'tcx> BindingsCollector<'xtor, 'l, 'tcx> {
   fn new(xtor: &'xtor mut Extractor<'l, 'tcx>, dctx: DefContext<'l>) -> Self {
-    Self {
-      xtor: xtor,
-      dctx: dctx,
-    }
+    Self { xtor, dctx }
   }
 
-  fn as_def_context(self) -> DefContext<'l> {
+  fn into_def_context(self) -> DefContext<'l> {
     self.dctx
   }
 
@@ -179,7 +176,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   {
     tys
       .into_iter()
-      .map(|ty| self.extract_ty(ty, dctx, span).into())
+      .map(|ty| self.extract_ty(ty, dctx, span))
       .collect()
   }
 
@@ -408,7 +405,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         .type_dependent_def(expr.hir_id)
         .map(|(_, def_id)| def_id)
         .map(|def_id| self.tcx.def_path_str(def_id))
-        .unwrap_or("<unknown>".into());
+        .unwrap_or_else(|| "<unknown>".into());
       let arg = &args[0];
       // TODO: Fast check using `path_seg.ident.name == Symbol::intern("into")`?
       match def_path.as_str() {
@@ -524,7 +521,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   {
     exprs
       .into_iter()
-      .map(|arg| self.extract_expr(arg, dctx).into())
+      .map(|arg| self.extract_expr(arg, dctx))
       .collect()
   }
 
@@ -598,7 +595,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       // Build a DefContext that includes all variable bindings
       let mut collector = BindingsCollector::new(xtor, DefContext::new());
       collector.populate_from(body);
-      let dctx = collector.as_def_context();
+      let dctx = collector.into_def_context();
 
       // Get the function signature and extract the return type
       let sigs = xtor.tables.liberated_fn_sigs();
@@ -609,7 +606,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       let params: Vec<&'l st::ValDef<'l>> = body
         .params
         .iter()
-        .zip(sig.inputs().into_iter())
+        .zip(sig.inputs().iter())
         .enumerate()
         .map(|(index, (param, ty))| {
           let hir_id = param.pat.hir_id;

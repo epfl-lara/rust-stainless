@@ -80,7 +80,7 @@ fn find_sysroot(env: &HashMap<String, String>) -> String {
   sysroot_path.into_os_string().into_string().unwrap()
 }
 
-fn unpack_invocation<'a>(config: &Config, invocations: &'a Vec<Value>) -> &'a Map<String, Value> {
+fn unpack_invocation<'a>(config: &Config, invocations: &'a [Value]) -> &'a Map<String, Value> {
   let value = match &config.example_opt {
     Some(example) => invocations
       .iter()
@@ -131,8 +131,8 @@ fn parse_build(config: &Config, data: &[u8]) -> Build {
     Build {
       package_name: unpack_name(invocation.get("package_name").unwrap()),
       sysroot: find_sysroot(&env),
-      env: env,
       args: unpack_build_args(invocation.get("args").unwrap()),
+      env,
     }
   } else {
     parsing_error("Expected 'invocations' to be an array".into())

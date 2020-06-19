@@ -5,11 +5,11 @@ mod utils;
 use rustc_middle::ty::{TyCtxt, TypeckTables};
 use stainless_data::ast as st;
 
-pub fn playground<'tcx>(tcx: TyCtxt<'tcx>, crate_name: String) -> () {
+pub fn playground(tcx: TyCtxt<'_>, crate_name: String) -> () {
   let empty_tables = TypeckTables::empty(None);
   let factory = &st::Factory::new();
   let mut extraction = extractor::Extraction {
-    factory: factory,
+    factory,
     definitions: vec![],
   };
   let mut xtor = extractor::Extractor::new(tcx, crate_name, &empty_tables, &mut extraction);

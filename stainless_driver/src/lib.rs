@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![allow(clippy::unused_unit, clippy::let_and_return)]
 
 pub mod extraction;
 
