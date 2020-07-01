@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use rustc_hir::def_id::DefId;
 use rustc_hir::HirId;
 use rustc_middle::ty::{TyCtxt, TypeckTables};
-use rustc_span::symbol;
 
 use stainless_data::ast as st;
 
@@ -16,7 +16,8 @@ pub type StainlessSymId<'l> = &'l st::SymbolIdentifier<'l>;
 pub struct SymbolMapping<'l> {
   global_id_counter: UniqueCounter<()>,
   local_id_counter: UniqueCounter<String>,
-  r2i: HashMap<HirId, StainlessSymId<'l>>,
+  did_to_stid: HashMap<DefId, StainlessSymId<'l>>,
+  hid_to_stid: HashMap<HirId, StainlessSymId<'l>>,
 }
 
 /// Extraction is the result of extracting stainless trees for a Rust AST.
@@ -53,7 +54,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       mapping: SymbolMapping {
         global_id_counter: UniqueCounter::new(),
         local_id_counter: UniqueCounter::new(),
-        r2i: HashMap::new(),
+        did_to_stid: HashMap::new(),
+        hid_to_stid: HashMap::new(),
       },
     }
   }
@@ -77,48 +79,49 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     result
   }
 
-  fn register_id(
-    &mut self,
-    hir_id: HirId,
-    name: String,
-    symbol_path: Vec<String>,
-  ) -> StainlessSymId<'l> {
+  /// Identifier mappings
+
+  fn fresh_id(&mut self, name: String, symbol_path: Vec<String>) -> StainlessSymId<'l> {
     let global_id = self.mapping.global_id_counter.fresh(&());
     let local_id = self.mapping.local_id_counter.fresh(&name);
     let f = &mut self.extraction.factory;
     let id = f.Identifier(name, global_id, local_id);
-    let id = f.SymbolIdentifier(id, symbol_path);
-    assert!(self.mapping.r2i.insert(hir_id, id).is_none());
+    f.SymbolIdentifier(id, symbol_path)
+  }
+
+  fn symbol_path_from_def_id(&self, def_id: DefId) -> Vec<String> {
+    self
+      .tcx
+      .def_path_str(def_id)
+      .split("::")
+      .map(|s| s.into())
+      .collect()
+  }
+
+  pub(in crate) fn register_def(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+    let symbol_path = self.symbol_path_from_def_id(def_id);
+    let name = symbol_path.last().unwrap().clone();
+    let id = self.fresh_id(name, symbol_path);
+
+    assert!(self.mapping.did_to_stid.insert(def_id, id).is_none());
     id
   }
 
-  pub(in crate) fn register_id_from_name(
-    &mut self,
-    hir_id: HirId,
-    name: String,
-  ) -> StainlessSymId<'l> {
-    let path = vec![name.clone()];
-    self.register_id(hir_id, name, path)
+  pub(in crate) fn register_hir(&mut self, hir_id: HirId, name: String) -> StainlessSymId<'l> {
+    let mut symbol_path = self.symbol_path_from_def_id(hir_id.owner.to_def_id());
+    symbol_path.push(name.clone());
+    let id = self.fresh_id(name, symbol_path);
+
+    assert!(self.mapping.hid_to_stid.insert(hir_id, id).is_none());
+    id
   }
 
-  pub(in crate) fn register_id_from_ident(
-    &mut self,
-    hir_id: HirId,
-    ident: &symbol::Ident,
-  ) -> StainlessSymId<'l> {
-    // TODO: Extract fully-qualified name for symbol path whenever possible?
-    let simple_name = ident.name.to_string();
-    let path = vec![simple_name.clone()];
-    self.register_id(hir_id, simple_name, path)
-  }
-
-  pub fn get_id(&self, hir_id: HirId) -> Option<StainlessSymId<'l>> {
-    self.mapping.r2i.get(&hir_id).copied()
-  }
-
-  pub fn fetch_id(&self, hir_id: HirId) -> StainlessSymId<'l> {
-    let id_opt = self.mapping.r2i.get(&hir_id);
-    id_opt.expect("No Stainless id registered for given HIR node")
+  pub fn fetch_id_from_def(&self, def_id: DefId) -> StainlessSymId<'l> {
+    self
+      .mapping
+      .did_to_stid
+      .get(&def_id)
+      .expect("No Stainless id registered for the given definition id")
   }
 
   pub fn factory(&self) -> &'l st::Factory {
