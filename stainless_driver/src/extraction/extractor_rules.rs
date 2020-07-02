@@ -1,4 +1,4 @@
-use super::extractor::{Extractor, StainlessSymId};
+use super::extractor::Extractor;
 
 use std::collections::HashMap;
 
@@ -93,11 +93,7 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
     match pattern.kind {
       PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
         // Extend DefContext with a new variable
-        let xtor = &mut self.xtor;
-        let id = xtor.register_var(hir_id);
-        let tpe = xtor.extract_ty(xtor.tables.node_type(hir_id), &self.dctx, pattern.span);
-        let var = xtor.extraction.factory.Variable(id, tpe, vec![]);
-        self.dctx.add_var(hir_id, var);
+        self.xtor.extract_binding(hir_id, &mut self.dctx);
 
         // Visit potential sub-patterns
         rustc_ast::walk_list!(self, visit_pat, optional_subpattern);
@@ -113,32 +109,56 @@ type Result<'l> = std::result::Result<st::Expr<'l>, &'static str>;
 
 /// These handlers simply store extracted constructs in the `Extractor`.
 impl<'l, 'tcx> Extractor<'l, 'tcx> {
-  /// Extends DefContext with a new variable based on a HIR binding node
-  fn register_var(&mut self, hir_id: HirId) -> StainlessSymId<'l> {
-    // Extract ident from corresponding node, sanity-check binding mode
-    let id = {
-      let node = self.tcx.hir().find(hir_id).unwrap();
-      let sess = self.tcx.sess;
-      let ident = if let hir::Node::Binding(pat) = node {
-        if let hir::PatKind::Binding(_, _, ident, _) = pat.kind {
-          match self.tables.extract_binding_mode(sess, pat.hir_id, pat.span) {
-            Some(ty::BindByValue(hir::Mutability::Not)) => {}
-            _ => unsupported!(
+  /// Extract a binding based on the binding node's HIR id.
+  /// Updates `dctx` if the binding hadn't been extacted before.
+  fn extract_binding(&mut self, hir_id: HirId, dctx: &mut DefContext<'l>) -> &'l st::Variable<'l> {
+    match dctx.vars.get(&hir_id) {
+      Some(var) => var,
+      None => {
+        // Extract ident from corresponding HIR node, sanity-check binding mode
+        let (id, span) = {
+          let node = self.tcx.hir().find(hir_id).unwrap();
+          let sess = self.tcx.sess;
+          let ident = if let hir::Node::Binding(pat) = node {
+            if let hir::PatKind::Binding(_, _, ident, _) = pat.kind {
+              match self.tables.extract_binding_mode(sess, pat.hir_id, pat.span) {
+                Some(ty::BindByValue(hir::Mutability::Not)) => {}
+                _ => unsupported!(
+                  sess,
+                  pat.span,
+                  "Only immutable by-value bindings are supported"
+                ),
+              }
+              ident
+            } else {
+              unreachable!()
+            }
+          } else {
+            let span = node
+              .ident()
+              .map(|ident| ident.span)
+              .unwrap_or(Span::default());
+            unsupported!(
               sess,
-              pat.span,
-              "Only immutable by-value bindings are supported"
-            ),
-          }
-          ident
-        } else {
-          unreachable!()
-        }
-      } else {
-        unreachable!()
-      };
-      self.register_id_from_ident(hir_id, &ident)
-    };
-    id
+              span,
+              "Cannot extract complex pattern in binding (cannot recover from this)"
+            );
+            unreachable!()
+          };
+          (
+            self.register_hir(hir_id, ident.name.to_string()),
+            ident.span,
+          )
+        };
+
+        // Build a Variable node
+        // TODO: Extract flags on bindings
+        let tpe = self.extract_ty(self.tables.node_type(hir_id), dctx, span);
+        let var = self.extraction.factory.Variable(id, tpe, vec![]);
+        dctx.add_var(hir_id, var);
+        var
+      }
+    }
   }
 
   /// Extraction helpers
@@ -334,13 +354,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
         match qpath_res {
           Res::Def(DefKind::Fn, def_id) => {
-            let hir_id = self.tcx.hir().as_local_hir_id(
-              def_id
-                .as_local()
-                .unwrap_or_else(|| unexpected!(fun.span, "no local def id")),
-            );
             let args = self.extract_exprs(args, dctx);
-            let fun_id = self.fetch_id(hir_id);
+            let fun_id = self.fetch_id_from_def(def_id);
             // TODO: Handle type arguments
             f.FunctionInvocation(fun_id, vec![], args).into()
           }
@@ -588,14 +603,15 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   ) -> &'l st::FunDef<'l> {
     let f = self.factory();
     let fun_hir_id = item.hir_id;
+    let fun_id = self.fetch_id_from_def(self.tcx.hir().local_def_id(fun_hir_id).to_def_id());
+
     self.nest_tables(fun_hir_id, |xtor| {
-      let fun_id = xtor.fetch_id(fun_hir_id);
       let body = xtor.tcx.hir().body(body_id);
 
       // Build a DefContext that includes all variable bindings
       let mut collector = BindingsCollector::new(xtor, DefContext::new());
       collector.populate_from(body);
-      let dctx = collector.into_def_context();
+      let mut dctx = collector.into_def_context();
 
       // Get the function signature and extract the return type
       let sigs = xtor.tables.liberated_fn_sigs();
@@ -606,29 +622,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       let params: Vec<&'l st::ValDef<'l>> = body
         .params
         .iter()
-        .zip(sig.inputs().iter())
-        .enumerate()
-        .map(|(index, (param, ty))| {
-          let hir_id = param.pat.hir_id;
-          let id = xtor
-            .get_id(hir_id) // already registered via BindingsCollector
-            .or_else(|| {
-              param
-                .pat
-                .simple_ident()
-                .map(|ident| xtor.register_id_from_ident(hir_id, &ident))
-            })
-            .unwrap_or_else(|| xtor.register_id_from_name(hir_id, format!("param{}", index)));
-          // TODO: Desugar to match in case of non-simple-ident bindings (e.g. `(a, b): (i32, i32)`)
-          if param.pat.simple_ident().is_none() {
-            unsupported!(
-              xtor.tcx.sess,
-              param.pat.span,
-              "Cannot extract complex pattern in parameter"
-            );
-          }
-          let tpe = xtor.extract_ty(ty, &dctx, param.span);
-          let var = f.Variable(id, tpe, vec![]);
+        .map(|param| {
+          let var = xtor.extract_binding(param.pat.hir_id, &mut dctx);
           &*f.ValDef(var)
         })
         .collect();
@@ -679,7 +674,8 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
         if !should_ignore(item) {
           if let hir::ItemKind::Fn(..) = item.kind {
-            self.xtor.register_id_from_ident(item.hir_id, &item.ident);
+            let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
+            self.xtor.register_def(def_id);
             self.functions.push(&item);
           } else {
             unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
