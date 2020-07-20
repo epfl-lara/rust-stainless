@@ -2,6 +2,8 @@ mod extractor;
 mod extractor_rules;
 mod utils;
 
+use std::collections::HashMap;
+
 use rustc_middle::ty::{TyCtxt, TypeckTables};
 use stainless_data::ast as st;
 
@@ -10,7 +12,8 @@ pub fn playground(tcx: TyCtxt<'_>, crate_name: String) -> () {
   let factory = &st::Factory::new();
   let mut extraction = extractor::Extraction {
     factory,
-    definitions: vec![],
+    adts: HashMap::new(),
+    functions: HashMap::new(),
   };
   let mut xtor = extractor::Extractor::new(tcx, crate_name, &empty_tables, &mut extraction);
   xtor.process_crate(&xtor.crate_name.clone());

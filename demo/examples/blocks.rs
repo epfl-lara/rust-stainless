@@ -11,4 +11,4 @@ pub fn bar(x: i32) -> i32 {
   }
 }
 
-fn main () -> () {}
+fn main() -> () {}

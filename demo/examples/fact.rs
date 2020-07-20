@@ -6,4 +6,4 @@ pub fn fact(x: i32) -> i32 {
   }
 }
 
-fn main () -> () {}
+fn main() -> () {}
