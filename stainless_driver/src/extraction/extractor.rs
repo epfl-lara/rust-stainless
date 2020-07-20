@@ -23,7 +23,8 @@ pub struct SymbolMapping<'l> {
 /// Extraction is the result of extracting stainless trees for a Rust AST.
 pub struct Extraction<'l> {
   pub factory: &'l st::Factory,
-  pub definitions: Vec<&'l st::Definition<'l>>,
+  pub adts: HashMap<StainlessSymId<'l>, &'l st::ADTSort<'l>>,
+  pub functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
 }
 
 /// Extractor traverses an AST after analysis and extracts stainless definitions.
@@ -89,6 +90,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     f.SymbolIdentifier(id, symbol_path)
   }
 
+  pub(in crate) fn fresh_param_id(&mut self, index: usize) -> StainlessSymId<'l> {
+    let name = format!("param{}", index);
+    self.fresh_id(name.clone(), vec![name])
+  }
+
   fn symbol_path_from_def_id(&self, def_id: DefId) -> Vec<String> {
     self
       .tcx
@@ -116,11 +122,22 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     id
   }
 
+  /// Conflates a Rust HIR identifier with the meaning of an existing Stainless id
+  #[allow(unused)]
+  pub(in crate) fn register_hir_alias(&mut self, hir_id: HirId, id: StainlessSymId<'l>) -> () {
+    assert!(self.mapping.hid_to_stid.insert(hir_id, id).is_none());
+  }
+
+  #[inline]
+  pub fn get_id_from_def(&self, def_id: DefId) -> Option<StainlessSymId<'l>> {
+    self.mapping.did_to_stid.get(&def_id).copied()
+  }
+
+  #[inline]
+  #[allow(unused)]
   pub fn fetch_id_from_def(&self, def_id: DefId) -> StainlessSymId<'l> {
     self
-      .mapping
-      .did_to_stid
-      .get(&def_id)
+      .get_id_from_def(def_id)
       .expect("No Stainless id registered for the given definition id")
   }
 

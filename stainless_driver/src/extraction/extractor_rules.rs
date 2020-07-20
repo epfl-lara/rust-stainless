@@ -1,18 +1,19 @@
-use super::extractor::Extractor;
+use super::extractor::{Extractor, StainlessSymId};
 
 use std::collections::HashMap;
 
 use rustc_middle::hir::map::Map;
 use rustc_middle::span_bug;
-use rustc_middle::ty::{self, AdtDef, Ty, TyKind};
+use rustc_middle::ty::{self, AdtDef, List, Ty, TyKind};
 
 use rustc_hir::def::{DefKind, Res};
+use rustc_hir::def_id::DefId;
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, ExprKind, HirId, StmtKind};
+use rustc_hir::{self as hir, ExprKind, HirId, ItemKind, PatKind, StmtKind};
 use rustc_hir_pretty as pretty;
 
-use rustc_span::Span;
+use rustc_span::{Span, DUMMY_SP};
 
 use rustc_ast::ast;
 
@@ -89,7 +90,6 @@ impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
   }
 
   fn visit_pat(&mut self, pattern: &'tcx hir::Pat<'tcx>) {
-    use hir::PatKind;
     match pattern.kind {
       PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
         // Extend DefContext with a new variable
@@ -120,7 +120,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
           let node = self.tcx.hir().find(hir_id).unwrap();
           let sess = self.tcx.sess;
           let ident = if let hir::Node::Binding(pat) = node {
-            if let hir::PatKind::Binding(_, _, ident, _) = pat.kind {
+            if let PatKind::Binding(_, _, ident, _) = pat.kind {
               match self.tables.extract_binding_mode(sess, pat.hir_id, pat.span) {
                 Some(ty::BindByValue(hir::Mutability::Not)) => {}
                 _ => unsupported!(
@@ -134,10 +134,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
               unreachable!()
             }
           } else {
-            let span = node
-              .ident()
-              .map(|ident| ident.span)
-              .unwrap_or(Span::default());
+            let span = node.ident().map(|ident| ident.span).unwrap_or_default();
             unsupported!(
               sess,
               span,
@@ -355,11 +352,11 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         match qpath_res {
           Res::Def(DefKind::Fn, def_id) => {
             let args = self.extract_exprs(args, dctx);
-            let fun_id = self.fetch_id_from_def(def_id);
+            let fd_id = self.extract_fn(def_id);
             // TODO: Handle type arguments
-            f.FunctionInvocation(fun_id, vec![], args).into()
+            f.FunctionInvocation(fd_id, vec![], args).into()
           }
-          Res::Def(DefKind::Ctor(_ctor_of, _ctor_kind), _def_id) => unimplemented!(),
+          Res::Def(DefKind::Ctor(..), def_id) => self.extract_adt_construction(def_id, args, dctx),
           Res::Def(..) => unexpected!(expr.span, "function of unknown definition kind"),
           res => self.unsupported_expr(
             expr,
@@ -386,7 +383,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
   fn can_treat_clone_as_identity(&self, expr: &'tcx hir::Expr<'tcx>) -> bool {
     let expr_ty = self.tables.node_type(expr.hir_id);
     match expr_ty.kind {
-      TyKind::Adt(adt_ref, _) => self.is_bigint(adt_ref),
+      TyKind::Adt(adt_def, _) => self.is_bigint(adt_def),
       _ => false,
     }
   }
@@ -407,6 +404,22 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         format!("Cannot extract conversion from {} to {}", from_ty, to_ty),
       ),
     }
+  }
+
+  // TODO: Extract type arguments in ADT constructors
+  fn extract_adt_construction<I>(
+    &mut self,
+    def_id: DefId,
+    args: I,
+    dctx: &DefContext<'l>,
+  ) -> st::Expr<'l>
+  where
+    I: IntoIterator<Item = &'tcx hir::Expr<'tcx>>,
+  {
+    let f = self.factory();
+    let adt_id = self.extract_adt(def_id);
+    let args = self.extract_exprs(args, dctx);
+    f.ADT(adt_id, vec![], args).into()
   }
 
   fn extract_method_call(
@@ -452,6 +465,10 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
         f.UnitLiteral().into()
       });
     f.IfExpr(cond, then, elze).into()
+  }
+
+  fn _extract_match(&mut self, _expr: &'tcx hir::Expr<'tcx>) -> st::Expr<'l> {
+    unimplemented!()
   }
 
   fn extract_block_(
@@ -564,7 +581,16 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       ExprKind::Path(ref qpath) => {
         let qpath_res = self.tables.qpath_res(qpath, expr.hir_id);
         match qpath_res {
-          Res::Def(_kind, _def_id) => unimplemented!(),
+          Res::Def(DefKind::Ctor(..), def_id) => {
+            self.extract_adt_construction(def_id, vec![], dctx)
+          }
+          Res::Def(kind, _def_id) => self.unsupported_expr(
+            expr,
+            format!(
+              "Cannot extract Path expr of kind {:?} resolving to def kind {:?}",
+              expr.kind, kind
+            ),
+          ),
           Res::Local(ref hir_id) => dctx
             .vars
             .get(hir_id)
@@ -589,50 +615,154 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       ExprKind::MethodCall(..) => self.extract_method_call(expr, dctx),
       ExprKind::Unary(..) => self.extract_unary(expr, dctx),
       ExprKind::Binary(..) => self.extract_binary(expr, dctx),
-      ExprKind::DropTemps(expr) => self.extract_expr(expr, dctx),
+      ExprKind::DropTemps(expr) => self.extract_expr(expr, dctx), // TODO: Investigate semantics
       _ => self.unsupported_expr(expr, format!("Cannot extract expr kind {:?}", expr.kind)),
     }
   }
 
-  fn extract_fn(
-    &mut self,
-    item: &'l hir::Item,
-    decl: &'l hir::FnDecl,
-    _ty_params: &'l hir::Generics,
-    body_id: hir::BodyId,
-  ) -> &'l st::FunDef<'l> {
-    let f = self.factory();
-    let fun_hir_id = item.hir_id;
-    let fun_id = self.fetch_id_from_def(self.tcx.hir().local_def_id(fun_hir_id).to_def_id());
+  /// Extract a function (regardless of whether it is local or external)
+  // TODO: Extract flags on functions and parameters
+  fn extract_fn(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+    match self.get_id_from_def(def_id) {
+      Some(fun_id) => fun_id,
+      None => {
+        let fun_id = self.register_def(def_id);
 
-    self.nest_tables(fun_hir_id, |xtor| {
-      let body = xtor.tcx.hir().body(body_id);
+        let f = self.factory();
 
-      // Build a DefContext that includes all variable bindings
-      let mut collector = BindingsCollector::new(xtor, DefContext::new());
-      collector.populate_from(body);
-      let mut dctx = collector.into_def_context();
+        let is_external = !def_id.is_local();
+        let span = self.tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
 
-      // Get the function signature and extract the return type
-      let sigs = xtor.tables.liberated_fn_sigs();
-      let sig = sigs.get(fun_hir_id).unwrap();
-      let return_tpe: st::Type<'l> = xtor.extract_ty(sig.output(), &dctx, decl.output.span());
+        let generics = self.tcx.generics_of(def_id);
+        if generics.count() > 0 {
+          unsupported!(
+            self.tcx.sess,
+            span,
+            "Type parameters on functions are unsupported"
+          );
+          unreachable!()
+        }
 
-      // Build parameter ValDefs
-      let params: Vec<&'l st::ValDef<'l>> = body
-        .params
-        .iter()
-        .map(|param| {
-          let var = xtor.extract_binding(param.pat.hir_id, &mut dctx);
-          &*f.ValDef(var)
-        })
-        .collect();
+        type Params<'l> = Vec<&'l st::ValDef<'l>>;
+        type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>, Vec<st::Flag<'l>>);
 
-      // Extract the body
-      let body_expr = xtor.extract_expr(&body.value, &dctx);
-      f.FunDef(fun_id, vec![], params, return_tpe, body_expr, vec![])
-    })
+        let (params, return_tpe, body_expr, flags): Parts<'l> = if is_external {
+          // Extract the function signature and extract the signature
+          let poly_fn_sig = self.tcx.fn_sig(def_id);
+          let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
+          let dctx = DefContext::new();
+          let params: Params<'l> = fn_sig
+            .inputs()
+            .iter()
+            .enumerate()
+            .map(|(i, ty)| {
+              let id = self.fresh_param_id(i);
+              let tpe = self.extract_ty(ty, &dctx, DUMMY_SP);
+              let var = f.Variable(id, tpe, vec![]);
+              &*f.ValDef(var)
+            })
+            .collect();
+          let return_tpe = self.extract_ty(fn_sig.output(), &dctx, DUMMY_SP);
+
+          // Attach an empty body
+          let body_expr = f.NoTree(return_tpe).into();
+          let flags = vec![f.Extern().into()];
+
+          (params, return_tpe, body_expr, flags)
+        } else {
+          let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
+          self.nest_tables(hir_id, |xtor| {
+            // Fetch the HIR representation of the function
+            let body_id = xtor.tcx.hir().body_owned_by(hir_id);
+            let body = xtor.tcx.hir().body(body_id);
+            let decl = xtor.tcx.hir().fn_decl_by_hir_id(hir_id).unwrap();
+
+            // Build a DefContext that includes all variable bindings
+            let mut collector = BindingsCollector::new(xtor, DefContext::new());
+            collector.populate_from(body);
+            let mut dctx: DefContext = collector.into_def_context();
+
+            // Extract the function signature and extract the signature
+            let sigs = xtor.tables.liberated_fn_sigs();
+            let sig = sigs.get(hir_id).unwrap();
+            let return_tpe = xtor.extract_ty(sig.output(), &dctx, decl.output.span());
+            let params: Params<'l> = body
+              .params
+              .iter()
+              .map(|param| {
+                let var = xtor.extract_binding(param.pat.hir_id, &mut dctx);
+                &*f.ValDef(var)
+              })
+              .collect();
+
+            // Extract the body
+            let body_expr = xtor.extract_expr(&body.value, &dctx);
+            let flags = vec![];
+
+            (params, return_tpe, body_expr, flags)
+          })
+        };
+
+        let fd = f.FunDef(fun_id, vec![], params, return_tpe, body_expr, flags);
+        self.extraction.functions.insert(fun_id, fd);
+        fun_id
+      }
+    }
   }
+
+  /// Extract an ADT (regardless of whether it is local or external)
+  fn extract_adt(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+    match self.get_id_from_def(def_id) {
+      Some(adt_id) => adt_id,
+      None => {
+        let adt_id = self.register_def(def_id);
+
+        let f = self.factory();
+
+        let adt_def = self.tcx.adt_def(def_id);
+        let span = self.tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
+
+        // TODO: Support type parameters on ADTs
+        // TODO: Extract flags on ADTs
+        let generics = self.tcx.generics_of(def_id);
+        if generics.count() > 0 {
+          unsupported!(
+            self.tcx.sess,
+            span,
+            "Type parameters on ADT are unsupported"
+          );
+          unreachable!()
+        }
+
+        let constructors = adt_def
+          .variants
+          .iter()
+          .map(|variant| {
+            let cons_id = self.register_def(variant.def_id);
+            let fields = variant
+              .fields
+              .iter()
+              .map(|field| {
+                let field_id = self.register_def(field.did);
+                let field_ty = field.ty(self.tcx, List::empty());
+                let field_ty = self.extract_ty(field_ty, &DefContext::new(), field.ident.span);
+                // TODO: Extract flags on ADT fields
+                let field = f.Variable(field_id, field_ty, vec![]);
+                &*f.ValDef(field)
+              })
+              .collect();
+            &*f.ADTConstructor(cons_id, adt_id, fields)
+          })
+          .collect();
+
+        let adt = f.ADTSort(adt_id, vec![], constructors, vec![]);
+        self.extraction.adts.insert(adt_id, adt);
+        adt_id
+      }
+    }
+  }
+
+  /// Entrypoint and output helpers
 
   fn output_program<P: AsRef<std::path::Path>>(&mut self, path: P, symbols: st::Symbols<'l>) -> () {
     use stainless_data::ser::{BufferSerializer, Serializable};
@@ -651,33 +781,42 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     // TODO: Ignore certain boilerplate/compiler-generated items
     fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
       match item.kind {
-        hir::ItemKind::ExternCrate(_) => {
+        ItemKind::ExternCrate(_) => {
           let name = item.ident.name.to_string();
           name == "std" || name == "num_bigint"
         }
-        hir::ItemKind::Use(ref path, _) => {
+        ItemKind::Use(ref path, _) => {
           let path_str = pretty_path(path);
           path_str.starts_with("::std::prelude::v") || path_str.starts_with("num_bigint::")
         }
         // TODO: Quick fix to filter our synthetic functions
-        hir::ItemKind::Fn(..) if !item.attrs.is_empty() => true,
+        ItemKind::Fn(..) if !item.attrs.is_empty() => true,
         _ => false,
       }
     }
 
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut Extractor<'l, 'tcx>,
+      adts: Vec<&'tcx hir::Item<'tcx>>,
       functions: Vec<&'tcx hir::Item<'tcx>>,
     }
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
-        if !should_ignore(item) {
-          if let hir::ItemKind::Fn(..) = item.kind {
+        match item.kind {
+          _ if should_ignore(item) => {}
+          ItemKind::Enum(..) | ItemKind::Struct(..) | ItemKind::Fn(..) => {
             let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
-            self.xtor.register_def(def_id);
-            self.functions.push(&item);
-          } else {
+            let def_path_str = self.xtor.tcx.def_path_str(def_id);
+            if let ItemKind::Fn(..) = item.kind {
+              eprintln!("  - Fun {}", def_path_str);
+              self.functions.push(&item);
+            } else {
+              eprintln!("  - ADT {}", def_path_str);
+              self.adts.push(&item);
+            }
+          }
+          _ => {
             unsupported!(self.xtor.tcx.sess, item.span, "Other kind of item");
           }
         }
@@ -696,24 +835,40 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
     let krate = self.tcx.hir().krate();
 
+    // Discover items in the local crate
     let mut visitor = ItemVisitor {
       xtor: self,
+      adts: vec![],
       functions: vec![],
     };
+    eprintln!("[ Discovering local definitions ]");
     krate.visit_all_item_likes(&mut visitor);
+    eprintln!("");
 
-    let mut functions: Vec<&st::FunDef<'l>> = vec![];
+    // Extract items
+    let (adts, functions) = (visitor.adts, visitor.functions);
+    for item in adts {
+      let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
+      self.extract_adt(def_id);
+    }
+    for item in functions {
+      let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
+      self.extract_fn(def_id);
+    }
 
-    for item in visitor.functions {
-      if let hir::ItemKind::Fn(ref sig, ref generics, body_id) = item.kind {
-        eprintln!("== FUNCTION: {:?} ==", item.ident);
-        let fd = self.extract_fn(item, &sig.decl, generics, body_id);
-        eprintln!("{}", fd);
-        functions.push(fd);
-      }
+    // Output extracted Stainless program
+    let adts: Vec<&'l st::ADTSort<'l>> = self.extraction.adts.values().copied().collect();
+    let functions: Vec<&'l st::FunDef<'l>> = self.extraction.functions.values().copied().collect();
+
+    eprintln!("[ Extracted ADTs and functions ]");
+    for adt in &adts {
+      eprintln!(" - ADT {}", adt.id);
+    }
+    for fd in &functions {
+      eprintln!(" - Fun {}", fd.id);
     }
 
     let output_path = std::path::Path::new("./output.inoxser");
-    self.output_program(output_path, st::Symbols::new(vec![], functions));
+    self.output_program(output_path, st::Symbols::new(adts, functions));
   }
 }

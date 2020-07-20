@@ -134,6 +134,7 @@ impl<'a> fmt::Display for Expr<'a> {
 impl<'a> fmt::Display for Type<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      Type::Untyped(t) => t.fmt(f),
       Type::UnitType(t) => t.fmt(f),
       Type::BooleanType(t) => t.fmt(f),
       Type::IntegerType(t) => t.fmt(f),
@@ -162,6 +163,12 @@ impl<'a> fmt::Display for Flag<'a> {
     match self {
       _ => unimplemented!("No formatter for {:?}", self),
     }
+  }
+}
+
+impl fmt::Display for Untyped {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "???")
   }
 }
 
