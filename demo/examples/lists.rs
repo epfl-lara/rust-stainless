@@ -7,31 +7,30 @@ extern crate stainless_contracts as st;
 
 // #[derive(Clone)]
 pub enum IntList {
-    Nil,
-    Cons(i32, Box<IntList>)
+  Nil,
+  Cons(i32, Box<IntList>),
 }
 
 pub fn is_sorted(list: IntList) -> bool {
-    match list {
-        IntList::Cons(a, box IntList::Cons(b, rest)) =>
-            a <= b && is_sorted(IntList::Cons(b, rest)),
-        _ => true
-    }
+  match list {
+    IntList::Cons(a, box IntList::Cons(b, rest)) => a <= b && is_sorted(IntList::Cons(b, rest)),
+    _ => true,
+  }
 }
 
 pub fn is_empty(list: IntList) -> bool {
-    match list {
-        IntList::Nil => true,
-        IntList::Cons(_, _) => false
-    }
+  match list {
+    IntList::Nil => true,
+    IntList::Cons(_, _) => false,
+  }
 }
 
 #[st::ensuring(|res| is_empty(list) || res > 0.into())]
 pub fn size(list: IntList) -> BigInt {
-    match list {
-        IntList::Nil => 0.into(),
-        IntList::Cons(_, rest) => 1 + size(*rest)
-    }
+  match list {
+    IntList::Nil => 0.into(),
+    IntList::Cons(_, rest) => 1 + size(*rest),
+  }
 }
 
 // #[st::ensuring(|res: IntList| {
@@ -39,22 +38,24 @@ pub fn size(list: IntList) -> BigInt {
 // })]
 #[st::ensuring(|res| !is_sorted(list) || is_sorted(res))]
 pub fn insert(e: i32, list: IntList) -> IntList {
-    match list {
-        IntList::Nil => IntList::Cons(e, Box::new(IntList::Nil)),
-        IntList::Cons(x, xs) => if x <= e {
-            IntList::Cons(x, Box::new(insert(e, *xs)))
-        } else {
-            IntList::Cons(e, Box::new(IntList::Cons(x, xs)))
-        }
+  match list {
+    IntList::Nil => IntList::Cons(e, Box::new(IntList::Nil)),
+    IntList::Cons(x, xs) => {
+      if x <= e {
+        IntList::Cons(x, Box::new(insert(e, *xs)))
+      } else {
+        IntList::Cons(e, Box::new(IntList::Cons(x, xs)))
+      }
     }
+  }
 }
 
 #[st::ensuring(|res| size(res) == size(l1) + size(l2))]
 pub fn append(l1: IntList, l2: IntList) -> IntList {
-    match l1 {
-        IntList::Nil => l2,
-        IntList::Cons(x, rest) => IntList::Cons(x, Box::new(append(*rest, l2)))
-    }
+  match l1 {
+    IntList::Nil => l2,
+    IntList::Cons(x, rest) => IntList::Cons(x, Box::new(append(*rest, l2))),
+  }
 }
 
 fn main() -> () {}
