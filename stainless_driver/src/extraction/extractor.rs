@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use rustc_hair::hair;
-use rustc_hir::def_id::DefId;
+use rustc_hir as hir;
 use rustc_hir::HirId;
+use rustc_hir::def_id::DefId;
+use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_middle::ty::{TyCtxt, TypeckTables};
 
@@ -99,7 +101,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
   /// Identifier mappings
 
-  pub(in crate) fn fresh_param_id(&mut self, index: usize) -> StainlessSymId<'l> {
+  pub(in super) fn fresh_param_id(&mut self, index: usize) -> StainlessSymId<'l> {
     self.with_extraction_mut(|xt| {
       let name = format!("param{}", index);
       xt.fresh_id(name.clone(), vec![name])
@@ -115,7 +117,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
       .collect()
   }
 
-  pub(in crate) fn register_def(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+  pub(in super) fn register_def(&mut self, def_id: DefId) -> StainlessSymId<'l> {
     let symbol_path = self.symbol_path_from_def_id(def_id);
     let name = symbol_path.last().unwrap().clone();
 
@@ -126,7 +128,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
     })
   }
 
-  pub(in crate) fn register_hir(&mut self, hir_id: HirId, name: String) -> StainlessSymId<'l> {
+  pub(in super) fn register_hir(&mut self, hir_id: HirId, name: String) -> StainlessSymId<'l> {
     let mut symbol_path = self.symbol_path_from_def_id(hir_id.owner.to_def_id());
     symbol_path.push(name.clone());
 
@@ -139,7 +141,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
   /// Conflates a Rust HIR identifier with the meaning of an existing Stainless id
   #[allow(unused)]
-  pub(in crate) fn register_hir_alias(&mut self, hir_id: HirId, id: StainlessSymId<'l>) -> () {
+  pub(in super) fn register_hir_alias(&mut self, hir_id: HirId, id: StainlessSymId<'l>) -> () {
     self.with_extraction_mut(|xt| {
       assert!(xt.mapping.hid_to_stid.insert(hir_id, id).is_none());
     })
@@ -160,13 +162,13 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  pub(in crate) fn add_adt(&mut self, id: StainlessSymId<'l>, adt: &'l st::ADTSort<'l>) {
+  pub(in super) fn add_adt(&mut self, id: StainlessSymId<'l>, adt: &'l st::ADTSort<'l>) {
     self.with_extraction_mut(|xt| {
       assert!(xt.adts.insert(id, adt).is_none());
     })
   }
 
-  pub(in crate) fn add_function(&mut self, id: StainlessSymId<'l>, fd: &'l st::FunDef<'l>) {
+  pub(in super) fn add_function(&mut self, id: StainlessSymId<'l>, fd: &'l st::FunDef<'l>) {
     self.with_extraction_mut(|xt| {
       assert!(xt.functions.insert(id, fd).is_none());
     })
@@ -229,5 +231,73 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   #[inline]
   pub fn tables(&mut self) -> &'a TypeckTables<'tcx> {
     self.tables
+  }
+}
+
+
+/// DefContext tracks available bindings
+#[derive(Debug)]
+pub(in super) struct DefContext<'l> {
+  vars: HashMap<HirId, &'l st::Variable<'l>>,
+}
+
+impl<'l> DefContext<'l> {
+  pub(in super) fn new() -> Self {
+    Self {
+      vars: HashMap::new(),
+    }
+  }
+
+  fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+    assert!(!self.vars.contains_key(&hir_id));
+    self.vars.insert(hir_id, var);
+    self
+  }
+}
+
+/// BindingsCollector populates a DefContext
+struct BindingsCollector<'xtor, 'l, 'tcx> {
+  xtor: &'xtor mut Extractor<'l, 'tcx>,
+  dctx: DefContext<'l>,
+}
+
+impl<'xtor, 'l, 'tcx> BindingsCollector<'xtor, 'l, 'tcx> {
+  fn new(xtor: &'xtor mut Extractor<'l, 'tcx>, dctx: DefContext<'l>, body: &'tcx hir::Body<'tcx>) -> Self {
+    assert!(body.generator_kind.is_none());
+    let this = Self { xtor, dctx };
+    for param in body.params {
+      this.visit_pat(&param.pat);
+    }
+    this.visit_expr(&body.value);
+    this
+  }
+
+  fn into_def_context(self) -> DefContext<'l> {
+    self.dctx
+  }
+}
+
+impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
+  type Map = rustc_middle::hir::map::Map<'tcx>;
+
+  fn nested_visit_map(&mut self) -> NestedVisitorMap<Self::Map> {
+    NestedVisitorMap::None
+  }
+
+  fn visit_body(&mut self, _b: &'tcx hir::Body<'tcx>) {
+    unreachable!();
+  }
+
+  fn visit_pat(&mut self, pattern: &'tcx hir::Pat<'tcx>) {
+    match pattern.kind {
+      hir::PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
+        // Extend DefContext with a new variable
+        self.xtor.extract_binding(hir_id, &mut self.dctx);
+
+        // Visit potential sub-patterns
+        rustc_ast::walk_list!(self, visit_pat, optional_subpattern);
+      }
+      _ => intravisit::walk_pat(self, pattern),
+    }
   }
 }

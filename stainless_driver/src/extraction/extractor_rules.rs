@@ -1,4 +1,4 @@
-use super::extractor::{Extractor, StainlessSymId};
+use super::extractor::{DefContext, Extractor, StainlessSymId};
 
 use std::collections::HashMap;
 
@@ -8,7 +8,6 @@ use rustc_middle::ty::{self, AdtDef, List, Ty, TyKind};
 
 use rustc_hir::def::{DefKind, Res};
 use rustc_hir::def_id::DefId;
-use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, ExprKind, HirId, ItemKind, PatKind, StmtKind};
 use rustc_hir_pretty as pretty;
@@ -32,75 +31,6 @@ macro_rules! unexpected {
       concat!("Unexpected ", $what, "encountered during extraction.")
     );
   };
-}
-
-/// DefContext tracks available bindings
-#[derive(Debug)]
-struct DefContext<'l> {
-  vars: HashMap<HirId, &'l st::Variable<'l>>,
-}
-
-impl<'l> DefContext<'l> {
-  fn new() -> Self {
-    Self {
-      vars: HashMap::new(),
-    }
-  }
-
-  fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
-    assert!(!self.vars.contains_key(&hir_id));
-    self.vars.insert(hir_id, var);
-    self
-  }
-}
-
-/// BindingsCollector populates a DefContext
-struct BindingsCollector<'xtor, 'l, 'tcx> {
-  xtor: &'xtor mut Extractor<'l, 'tcx>,
-  dctx: DefContext<'l>,
-}
-
-impl<'xtor, 'l, 'tcx> BindingsCollector<'xtor, 'l, 'tcx> {
-  fn new(xtor: &'xtor mut Extractor<'l, 'tcx>, dctx: DefContext<'l>) -> Self {
-    Self { xtor, dctx }
-  }
-
-  fn into_def_context(self) -> DefContext<'l> {
-    self.dctx
-  }
-
-  fn populate_from(&mut self, body: &'tcx hir::Body<'tcx>) {
-    assert!(body.generator_kind.is_none());
-    for param in body.params {
-      self.visit_pat(&param.pat);
-    }
-    self.visit_expr(&body.value);
-  }
-}
-
-impl<'xtor, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'xtor, 'l, 'tcx> {
-  type Map = Map<'tcx>;
-
-  fn nested_visit_map(&mut self) -> NestedVisitorMap<Self::Map> {
-    NestedVisitorMap::None
-  }
-
-  fn visit_body(&mut self, _b: &'tcx hir::Body<'tcx>) {
-    unreachable!();
-  }
-
-  fn visit_pat(&mut self, pattern: &'tcx hir::Pat<'tcx>) {
-    match pattern.kind {
-      PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
-        // Extend DefContext with a new variable
-        self.xtor.extract_binding(hir_id, &mut self.dctx);
-
-        // Visit potential sub-patterns
-        rustc_ast::walk_list!(self, visit_pat, optional_subpattern);
-      }
-      _ => intravisit::walk_pat(self, pattern),
-    }
-  }
 }
 
 /// Top-level extraction
@@ -679,8 +609,7 @@ impl<'l, 'tcx> Extractor<'l, 'tcx> {
             let decl = tcx.hir().fn_decl_by_hir_id(hir_id).unwrap();
 
             // Build a DefContext that includes all variable bindings
-            let mut collector = BindingsCollector::new(bxtor.xtor(), DefContext::new());
-            collector.populate_from(body);
+            let mut collector = BindingsCollector::new(bxtor.xtor(), DefContext::new(), body);
             let mut dctx: DefContext = collector.into_def_context();
 
             // Extract the function signature and extract the signature
