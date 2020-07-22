@@ -1,6 +1,6 @@
 mod bindings;
 mod expr;
-mod extractor_rules;
+mod krate;
 mod ty;
 mod utils;
 
