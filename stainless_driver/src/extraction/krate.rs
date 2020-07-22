@@ -110,7 +110,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .collect::<Vec<DefId>>()
     });
     for def_id in external_functions {
-      self.extract_fn(def_id);
+      let was_external = self.extract_fn(def_id);
+      assert!(was_external);
     }
   }
 
@@ -127,7 +128,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract a function
-  fn extract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+  fn extract_fn(&mut self, def_id: DefId) -> bool {
     let f = self.factory();
 
     let is_external = !def_id.is_local();
@@ -194,7 +195,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let fun_id = self.extract_fn_ref(def_id);
     let fd = f.FunDef(fun_id, vec![], params, return_tpe, body_expr, flags);
     self.add_function(fun_id, fd);
-    fd
+    is_external
   }
 
   /// Extract an ADT (regardless of whether it is local or external)
