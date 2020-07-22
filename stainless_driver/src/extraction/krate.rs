@@ -136,8 +136,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let generics = self.tcx.generics_of(def_id);
     if generics.count() > 0 {
-      self.unsupported(span, "Type parameters on functions are unsupported");
-      unreachable!()
+      self.unsupported(
+        span,
+        format!(
+          "Type parameters on functions are unsupported: {:#?}",
+          generics
+        ),
+      );
+      return is_external;
     }
 
     // Extract the function signature
@@ -183,9 +189,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .collect();
 
         // Extract the body
-        let body_expr = bxtor.extract_expr(&bxtor.body.value);
-        // TODO: Switch over to extracting from HAIR expressions
-        // let body_expr = bxtor.xtor().extract_expr(bxtor.hcx().mirror(&body.value), &dctx);
+        let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
+        let body_expr = bxtor.extract_expr(body_expr);
         let flags = vec![];
 
         (params, return_tpe, body_expr, flags)

@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![feature(box_patterns)]
 #![allow(clippy::unused_unit, clippy::let_and_return)]
 
 pub mod extraction;
@@ -12,6 +13,7 @@ extern crate rustc_interface;
 extern crate rustc_middle;
 extern crate rustc_session;
 extern crate rustc_span;
+extern crate rustc_target;
 extern crate rustc_ty;
 
 use rustc_driver::{run_compiler, Callbacks, Compilation};

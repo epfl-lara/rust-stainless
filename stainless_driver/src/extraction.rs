@@ -1,6 +1,7 @@
 mod bindings;
 mod expr;
 mod krate;
+mod literal;
 mod ty;
 mod utils;
 
