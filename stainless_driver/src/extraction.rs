@@ -220,9 +220,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
     self.tcx.infer_ctxt().enter(|infcx| {
+      // Note that upon its creation, BodyExtractor moves out our Extraction
       let mut bxtor = BodyExtractor::new(self, &infcx, hir_id);
       let result = f(&mut bxtor);
-      self.extraction = bxtor.xtor.extraction;
+      // We reclaim the Extraction after the BodyExtractor's work is done
+      self.extraction = bxtor.base.extraction;
       result
     })
   }
@@ -240,7 +242,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 /// BodyExtractor is used to extract, for example, function bodies
 struct BodyExtractor<'a, 'l, 'tcx: 'l> {
-  xtor: BaseExtractor<'l, 'tcx>,
+  base: BaseExtractor<'l, 'tcx>,
   hcx: hair::cx::Cx<'a, 'tcx>,
   tables: &'a TypeckTables<'tcx>,
   body: &'tcx hir::Body<'tcx>,
@@ -249,13 +251,13 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn new(
-    xtor: &mut BaseExtractor<'l, 'tcx>,
+    base: &mut BaseExtractor<'l, 'tcx>,
     infcx: &'a InferCtxt<'a, 'tcx>,
     hir_id: HirId,
   ) -> Self {
-    let tcx = xtor.tcx;
-    let extraction = xtor.extraction.take();
-    let xtor = BaseExtractor::new(
+    let tcx = base.tcx;
+    let extraction = base.extraction.take();
+    let base = BaseExtractor::new(
       tcx,
       extraction.expect("Waiting for another BodyExtractor to finish"),
     );
@@ -273,7 +275,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let body = tcx.hir().body(body_id);
 
     let mut bxtor = BodyExtractor {
-      xtor,
+      base: base,
       hcx,
       tables,
       body,
@@ -291,7 +293,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   #[inline]
   fn factory(&self) -> &'l st::Factory {
-    self.xtor.factory()
+    self.base.factory()
   }
 
   fn fetch_var(&self, hir_id: HirId) -> &'l st::Variable<'l> {

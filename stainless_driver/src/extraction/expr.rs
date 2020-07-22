@@ -120,7 +120,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn try_extract_bigint_expr(&mut self, expr: &'tcx hir::Expr<'tcx>) -> Result<'l> {
     self.try_extract_bigint_lit(expr).or_else(|_| {
       let expr_ty = self.tables.node_type(expr.hir_id);
-      if self.xtor.is_bigint_type(expr_ty) {
+      if self.base.is_bigint_type(expr_ty) {
         Ok(self.extract_expr(expr))
       } else {
         Err("Not a BigInt-convertible expr")
@@ -133,8 +133,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let f = self.factory();
     if let hir::ExprKind::Unary(op, arg) = expr.kind {
       let arg_ty = self.tables.node_type(arg.hir_id);
-      let arg_is_bv = self.xtor.is_bv_type(arg_ty);
-      let arg_is_int = arg_is_bv || self.xtor.is_bigint_type(arg_ty);
+      let arg_is_bv = self.base.is_bv_type(arg_ty);
+      let arg_is_int = arg_is_bv || self.base.is_bigint_type(arg_ty);
       let arg = self.extract_expr(arg);
 
       match op {
@@ -158,7 +158,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     if let hir::ExprKind::Binary(op, arg1, arg2) = expr.kind {
       let arg1_ty = self.tables.node_type(arg1.hir_id);
       let arg2_ty = self.tables.node_type(arg2.hir_id);
-      let args_are_bv = self.xtor.is_bv_type(arg1_ty) && self.xtor.is_bv_type(arg2_ty);
+      let args_are_bv = self.base.is_bv_type(arg1_ty) && self.base.is_bv_type(arg2_ty);
       let args_are_bool = arg1_ty.is_bool() && arg2_ty.is_bool();
 
       let arg1_bigint_opt = self.try_extract_bigint_expr(arg1).ok();
@@ -205,7 +205,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         match qpath_res {
           Res::Def(DefKind::Fn, def_id) => {
             let args = self.extract_exprs(args);
-            let fd_id = self.xtor.extract_fn_ref(def_id);
+            let fd_id = self.base.extract_fn_ref(def_id);
             // TODO: Handle type arguments
             f.FunctionInvocation(fd_id, vec![], args).into()
           }
@@ -233,7 +233,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn can_treat_clone_as_identity(&mut self, expr: &'tcx hir::Expr<'tcx>) -> bool {
     let expr_ty = self.tables.node_type(expr.hir_id);
     match expr_ty.kind {
-      TyKind::Adt(adt_def, _) => self.xtor.is_bigint(adt_def),
+      TyKind::Adt(adt_def, _) => self.base.is_bigint(adt_def),
       _ => false,
     }
   }
@@ -246,7 +246,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let from_ty = self.tables.node_type(inner.hir_id);
     let to_ty = self.tables.node_type(outer.hir_id);
     match (&from_ty.kind, &to_ty.kind) {
-      (TyKind::Int(_), TyKind::Adt(adt_def, _)) if self.xtor.is_bigint(adt_def) => self
+      (TyKind::Int(_), TyKind::Adt(adt_def, _)) if self.base.is_bigint(adt_def) => self
         .try_extract_bigint_lit(inner)
         .unwrap_or_else(|reason| self.unsupported_expr(inner, reason)),
       _ => self.unsupported_expr(
@@ -262,7 +262,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     I: IntoIterator<Item = &'tcx hir::Expr<'tcx>>,
   {
     let f = self.factory();
-    let adt_id = self.xtor.extract_adt(def_id);
+    let adt_id = self.base.extract_adt(def_id);
     let args = self.extract_exprs(args);
     f.ADT(adt_id, vec![], args).into()
   }
@@ -329,7 +329,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       match stmt.kind {
         StmtKind::Local(local) => {
           let bail = |msg| -> st::Expr<'l> {
-            self.xtor.unsupported(local.span, msg);
+            self.base.unsupported(local.span, msg);
             f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
               .into()
           };
@@ -380,7 +380,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     expr: &'tcx hir::Expr<'tcx>,
     msg: M,
   ) -> st::Expr<'l> {
-    self.xtor.unsupported(expr.span, msg);
+    self.base.unsupported(expr.span, msg);
     let f = self.factory();
     f.NoTree(f.Untyped().into()).into()
   }

@@ -68,6 +68,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_ty(&self, ty: Ty<'tcx>, span: Span) -> st::Type<'l> {
-    self.xtor.extract_ty(ty, &self.dcx, span)
+    self.base.extract_ty(ty, &self.dcx, span)
   }
 }

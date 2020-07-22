@@ -20,7 +20,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extacted before.
   fn extract_binding(&mut self, hir_id: HirId) -> &'l st::Variable<'l> {
-    let xtor = &mut self.xtor;
+    let xtor = &mut self.base;
     let tcx = xtor.tcx;
     let dcx = &mut self.dcx;
 
