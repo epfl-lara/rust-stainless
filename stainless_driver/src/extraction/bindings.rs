@@ -7,7 +7,7 @@ use stainless_data::ast as st;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Build a DefContext that includes all variable bindings
-  pub(super) fn populate_def_context_and_params(&mut self) {
+  pub(super) fn populate_def_context(&mut self) {
     // Bindings from the body
     BindingsCollector::run(self);
 

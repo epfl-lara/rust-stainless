@@ -281,7 +281,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       body,
       dcx: DefContext::new(),
     };
-    bxtor.populate_def_context_and_params();
+    bxtor.populate_def_context();
 
     bxtor
   }

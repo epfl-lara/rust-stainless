@@ -10,12 +10,7 @@ use stainless_data::ast as st;
 /// Extraction of types
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  pub(super) fn extract_ty(
-    &self,
-    ty: Ty<'tcx>,
-    dctx: &DefContext<'l>,
-    span: Span,
-  ) -> st::Type<'l> {
+  pub(super) fn extract_ty(&self, ty: Ty<'tcx>, dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
     let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
