@@ -163,6 +163,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
+  #[inline]
+  fn get_id_from_def(&self, def_id: DefId) -> Option<StainlessSymId<'l>> {
+    self.with_extraction(|xt| xt.mapping.did_to_stid.get(&def_id).copied())
+  }
+
+  fn get_or_register_def(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+    self
+      .get_id_from_def(def_id)
+      .unwrap_or_else(|| self.register_def(def_id))
+  }
+
   fn register_hir(&mut self, hir_id: HirId, name: String) -> StainlessSymId<'l> {
     let mut symbol_path = self.symbol_path_from_def_id(hir_id.owner.to_def_id());
     symbol_path.push(name.clone());
@@ -172,27 +183,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       assert!(xt.mapping.hid_to_stid.insert(hir_id, id).is_none());
       id
     })
-  }
-
-  /// Conflates a Rust HIR identifier with the meaning of an existing Stainless id
-  #[allow(unused)]
-  fn register_hir_alias(&mut self, hir_id: HirId, id: StainlessSymId<'l>) -> () {
-    self.with_extraction_mut(|xt| {
-      assert!(xt.mapping.hid_to_stid.insert(hir_id, id).is_none());
-    })
-  }
-
-  #[inline]
-  fn get_id_from_def(&self, def_id: DefId) -> Option<StainlessSymId<'l>> {
-    self.with_extraction(|xt| xt.mapping.did_to_stid.get(&def_id).copied())
-  }
-
-  #[inline]
-  #[allow(unused)]
-  fn fetch_id_from_def(&self, def_id: DefId) -> StainlessSymId<'l> {
-    self
-      .get_id_from_def(def_id)
-      .expect("No Stainless id registered for the given definition id")
   }
 
   /// ADTs and Functions

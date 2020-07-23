@@ -7,22 +7,22 @@ use rustc_middle::mir::{BinOp, Mutability, UnOp};
 use rustc_middle::ty::TyKind;
 
 use rustc_hair::hair::{
-  Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, LogicalOp, Mirror, Pat, PatKind,
-  StmtKind, StmtRef,
+  Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
+  Mirror, Pat, PatKind, StmtKind, StmtRef,
 };
 
 use stainless_data::ast as st;
 
-// type Result<'l> = std::result::Result<st::Expr<'l>, &'static str>;
+type Result<T> = std::result::Result<T, &'static str>;
 
 /// Extraction of bodies (i.e., expressions, for the most part)
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     match expr.kind {
-      ExprKind::Literal { literal: konst, .. } => match Literal::try_from(konst).ok() {
-        Some(lit) => lit.as_st_literal(f),
-        None => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
+      ExprKind::Literal { literal: konst, .. } => match Literal::try_from(konst) {
+        Ok(lit) => lit.as_st_literal(f),
+        _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
       },
       ExprKind::Unary { .. } => self.extract_unary(expr),
       ExprKind::Binary { .. } => self.extract_binary(expr),
@@ -31,6 +31,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Field { .. } => self.extract_field(expr),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
       ExprKind::Call { .. } => self.extract_call(expr),
+      ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
         let block = self.mirror(ast_block);
         match block.safety_mode {
@@ -51,16 +52,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             let elze_opt = if has_elze { Some(elze) } else { None };
             self.extract_if(scrutinee_, then, elze_opt)
           }
-          None => self.unsupported_expr(expr.span, "Match expression"),
+          None => self.extract_match(scrutinee_, arms),
         }
       }
 
       // TODO: Handle method calls
-      // TODO: Handle ADT construction
-      // TODO: Handle match expressions
-      // TODO: Handle user-defined operators
       // TODO: Handle arbitrary-precision integers
-      // TODO: Handle Deref
+      // TODO: Handle Deref / Borrow
       ExprKind::Scope { value, .. } => self.extract_expr_ref(value),
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
@@ -161,6 +159,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
+  // TODO: Support field selection on structs
   fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Field { lhs, name } = expr.kind {
@@ -179,19 +178,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Call {
-      ty,
-      args,
-      from_hir_call,
-      ..
-    } = expr.kind
-    {
-      if !from_hir_call {
-        self.unsupported_expr(expr.span, "Cannot extract non-surface-syntax call")
-      } else if let TyKind::FnDef(def_id, _substs_ref) = ty.kind {
+    if let ExprKind::Call { ty, args, .. } = expr.kind {
+      if let TyKind::FnDef(def_id, _substs_ref) = ty.kind {
         let args = self.extract_expr_refs(args);
         let fd_id = self.base.extract_fn_ref(def_id);
-        // TODO: Extract type arguments
+        // TODO: Also consider type arguments
         f.FunctionInvocation(fd_id, vec![], args).into()
       } else {
         self.unsupported_expr(
@@ -264,17 +255,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     })
   }
 
-  // TODO: Extract type arguments in ADT constructors
-  fn extract_adt_construction<I>(&mut self, def_id: DefId, args: I) -> st::Expr<'l>
-  where
-    I: IntoIterator<Item = &'tcx hir::Expr<'tcx>>,
-  {
-    let f = self.factory();
-    let adt_id = self.base.extract_adt(def_id);
-    let args = self.extract_exprs(args);
-    f.ADT(adt_id, vec![], args).into()
-  }
-
   fn extract_method_call(&mut self, expr: &'tcx hir::Expr<'tcx>) -> st::Expr<'l> {
     if let ExprKind::MethodCall(_path_seg, _, args) = expr.kind {
       let def_path = self
@@ -298,6 +278,34 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
   */
 
+  fn extract_adt_construction(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+    let f = self.factory();
+    if let ExprKind::Adt {
+      adt_def,
+      variant_index,
+      mut fields,
+      base,
+      ..
+    } = expr.kind
+    {
+      if base.is_some() {
+        self.unsupported_expr(expr.span, "Cannot extract ADT constructions with bases")
+      } else {
+        // TODO: Also consider type arguments
+        let sort = self.base.extract_adt(adt_def.did);
+        let constructor = sort.constructors[variant_index.index()];
+        fields.sort_by_key(|field| field.name.index());
+        let args = fields
+          .into_iter()
+          .map(|field| self.extract_expr_ref(field.expr))
+          .collect();
+        f.ADT(constructor.id, vec![], args).into()
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
   fn extract_if(
     &mut self,
     cond: ExprRef<'tcx>,
@@ -316,8 +324,115 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     f.IfExpr(cond, then, elze).into()
   }
 
-  fn _extract_match(&mut self, _scrutinee: ExprRef<'tcx>, _arms: Vec<Arm<'tcx>>) -> st::Expr<'l> {
-    unimplemented!()
+  fn extract_match(&mut self, scrutinee: ExprRef<'tcx>, arms: Vec<Arm<'tcx>>) -> st::Expr<'l> {
+    let scrutinee = self.extract_expr_ref(scrutinee);
+    let cases = arms.into_iter().map(|arm| self.extract_arm(arm)).collect();
+    self.factory().MatchExpr(scrutinee, cases).into()
+  }
+
+  fn extract_arm(&mut self, arm: Arm<'tcx>) -> &'l st::MatchCase<'l> {
+    let Arm {
+      pattern,
+      guard,
+      body,
+      ..
+    } = arm;
+    let pattern = self.extract_pattern(pattern, None);
+    let guard = guard.map(|Guard::If(expr)| self.extract_expr_ref(expr));
+    let body = self.extract_expr_ref(body);
+    self.factory().MatchCase(pattern, guard, body)
+  }
+
+  fn extract_pattern(
+    &mut self,
+    pattern: Pat<'tcx>,
+    binder: Option<&'l st::ValDef<'l>>,
+  ) -> st::Pattern<'l> {
+    let f = self.factory();
+    match pattern.kind {
+      box PatKind::Wild => f.WildcardPattern(binder).into(),
+      box kind @ PatKind::Binding { .. } => {
+        assert!(binder.is_none());
+        match self.try_pattern_to_var(&kind, true) {
+          Ok(binder) => {
+            let binder = f.ValDef(binder);
+            match kind {
+              PatKind::Binding {
+                subpattern: Some(subpattern),
+                ..
+              } => self.extract_pattern(subpattern, Some(binder)),
+              PatKind::Binding {
+                subpattern: None, ..
+              } => f.WildcardPattern(Some(binder)).into(),
+              _ => unreachable!(),
+            }
+          }
+          Err(reason) => self.unsupported_pattern(
+            pattern.span,
+            format!("Unsupported pattern binding: {}", reason),
+          ),
+        }
+      }
+      box PatKind::Variant {
+        adt_def,
+        variant_index,
+        subpatterns,
+        ..
+      } => {
+        // TODO: Also consider type arguments
+        let sort = self.base.extract_adt(adt_def.did);
+        let constructor = sort.constructors[variant_index.index()];
+        let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
+        f.ADTPattern(binder, constructor.id, vec![], subpatterns)
+          .into()
+      }
+      box PatKind::Leaf { subpatterns } => {
+        // TODO: Also consider type arguments
+        if let TyKind::Adt(adt_def, _) = pattern.ty.kind {
+          let sort = self.base.extract_adt(adt_def.did);
+          assert_eq!(sort.constructors.len(), 1);
+          let constructor = sort.constructors[0];
+          let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
+          f.ADTPattern(binder, constructor.id, vec![], subpatterns)
+            .into()
+        } else {
+          unexpected(
+            pattern.span,
+            "Encountered Leaf pattern, but type is not an ADT",
+          );
+        }
+      }
+      box PatKind::Constant { value: konst } => match Literal::try_from(konst) {
+        Ok(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),
+        _ => self.unsupported_pattern(pattern.span, "Unsupported kind of literal in pattern"),
+      },
+      _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
+    }
+  }
+
+  fn extract_subpatterns(
+    &mut self,
+    mut field_pats: Vec<FieldPat<'tcx>>,
+    num_fields: usize,
+  ) -> Vec<st::Pattern<'l>> {
+    let f = self.factory();
+    field_pats.sort_by_key(|field| field.field.index());
+    field_pats.reverse();
+    let mut subpatterns = Vec::with_capacity(num_fields);
+    for i in 0..num_fields {
+      let next = if let Some(FieldPat { field, .. }) = field_pats.last() {
+        if field.index() == i {
+          let FieldPat { pattern, .. } = field_pats.pop().unwrap();
+          self.extract_pattern(pattern, None)
+        } else {
+          f.WildcardPattern(None).into()
+        }
+      } else {
+        f.WildcardPattern(None).into()
+      };
+      subpatterns.push(next);
+    }
+    subpatterns
   }
 
   #[allow(clippy::unnecessary_unwrap)]
@@ -352,18 +467,21 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           };
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
-          let var_opt = self.try_pattern_to_var(pattern);
+          let var_result = self.try_pattern_to_var(&pattern.kind, false);
 
           if has_abnormal_source {
             // TODO: Support for loops
             bail(self, "Cannot extract let that resulted from desugaring")
-          } else if var_opt.is_none() {
+          } else if let Err(reason) = var_result {
             // TODO: Desugar complex patterns
-            bail(self, "Cannot extract complex pattern in let")
+            bail(
+              self,
+              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
+            )
           } else if initializer.is_none() {
             bail(self, "Cannot extract let without initializer")
           } else {
-            let vd = f.ValDef(var_opt.unwrap());
+            let vd = f.ValDef(var_result.unwrap());
             let init = self.extract_expr_ref(initializer.unwrap());
             let exprs = acc_exprs.clone();
             acc_exprs.clear();
@@ -420,8 +538,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       && cond.ty.is_bool()
       && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
         (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
-          match Literal::try_from(*konst).ok() {
-            Some(Literal::Bool(true)) => true,
+          match Literal::try_from(*konst) {
+            Ok(Literal::Bool(true)) => true,
             _ => false,
           }
         }
@@ -443,17 +561,35 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn try_pattern_to_var(&mut self, pattern: Pat<'tcx>) -> Option<&'l st::Variable<'l>> {
-    match pattern.kind {
-      box PatKind::Binding {
-        mutability: Mutability::Not,
-        mode: BindingMode::ByValue,
+  fn try_pattern_to_var(
+    &mut self,
+    pat_kind: &PatKind<'tcx>,
+    allow_subpattern: bool,
+  ) -> Result<&'l st::Variable<'l>> {
+    match pat_kind {
+      PatKind::Binding {
+        mutability,
+        mode,
         var: hir_id,
-        subpattern: None,
-        is_primary: true,
+        subpattern,
         ..
-      } => Some(self.fetch_var(hir_id)),
-      _ => None,
+      } => {
+        let is_by_value = if let BindingMode::ByValue = mode {
+          true
+        } else {
+          false
+        };
+        if *mutability != Mutability::Not {
+          Err("Mutable bindings are not supported")
+        } else if !is_by_value {
+          Err("By-reference bindings are supported")
+        } else if !allow_subpattern && subpattern.is_some() {
+          Err("Subpatterns are not supported here")
+        } else {
+          Ok(self.fetch_var(*hir_id))
+        }
+      }
+      _ => Err("Expected a top-level binding"),
     }
   }
 
@@ -461,5 +597,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.unsupported(span, msg);
     let f = self.factory();
     f.NoTree(f.Untyped().into()).into()
+  }
+
+  fn unsupported_pattern<M: Into<String>>(&mut self, span: Span, msg: M) -> st::Pattern<'l> {
+    self.base.unsupported(span, msg);
+    self.factory().WildcardPattern(None).into()
   }
 }

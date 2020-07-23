@@ -63,14 +63,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      // Unsupported
+      /// Unsupported
+
       fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
         self.xtor.unsupported(trait_item.span, "Trait item");
       }
 
-      // Handled above
-      fn visit_impl_item(&mut self, _impl_item: &'tcx hir::ImplItem<'tcx>) {
-        unreachable!();
+      fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
+        self.xtor.unsupported(impl_item.span, "Impl item");
       }
     }
 
@@ -204,9 +204,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract an ADT (regardless of whether it is local or external)
-  pub(super) fn extract_adt(&mut self, def_id: DefId) -> StainlessSymId<'l> {
-    match self.get_id_from_def(def_id) {
-      Some(adt_id) => adt_id,
+  pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
+    let sort_opt = self.with_extraction(|xt| {
+      xt.mapping
+        .did_to_stid
+        .get(&def_id)
+        .and_then(|id| xt.adts.get(id).copied())
+    });
+    match sort_opt {
+      Some(sort) => sort,
       None => {
         let f = self.factory();
         let adt_id = self.register_def(def_id);
@@ -225,12 +231,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .variants
           .iter()
           .map(|variant| {
-            let cons_id = self.register_def(variant.def_id);
+            let cons_id = self.get_or_register_def(variant.def_id);
             let fields = variant
               .fields
               .iter()
               .map(|field| {
-                let field_id = self.register_def(field.did);
+                let field_id = self.get_or_register_def(field.did);
                 let field_ty = field.ty(self.tcx, List::empty());
                 let field_ty = self.extract_ty(field_ty, &DefContext::new(), field.ident.span);
                 // TODO: Extract flags on ADT fields
@@ -242,9 +248,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           })
           .collect();
 
-        let adt = f.ADTSort(adt_id, vec![], constructors, vec![]);
-        self.add_adt(adt_id, adt);
-        adt_id
+        let sort = f.ADTSort(adt_id, vec![], constructors, vec![]);
+        self.add_adt(adt_id, sort);
+        sort
       }
     }
   }

@@ -10,7 +10,12 @@ use stainless_data::ast as st;
 /// Extraction of types
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  pub(super) fn extract_ty(&self, ty: Ty<'tcx>, dctx: &DefContext<'l>, span: Span) -> st::Type<'l> {
+  pub(super) fn extract_ty(
+    &mut self,
+    ty: Ty<'tcx>,
+    dctx: &DefContext<'l>,
+    span: Span,
+  ) -> st::Type<'l> {
     let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
@@ -24,6 +29,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           f.TupleType(arg_tps).into()
         }
       }
+      TyKind::Adt(adt_def, _) => {
+        // TODO: Also consider type arguments
+        let sort = self.extract_adt(adt_def.did);
+        f.ADTType(sort.id, vec![]).into()
+      }
       _ => {
         self.unsupported(span, format!("Cannot extract type {:?}", ty.kind));
         f.Untyped().into()
@@ -31,7 +41,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  fn extract_tys<I>(&self, tys: I, dctx: &DefContext<'l>, span: Span) -> Vec<st::Type<'l>>
+  fn extract_tys<I>(&mut self, tys: I, dctx: &DefContext<'l>, span: Span) -> Vec<st::Type<'l>>
   where
     I: IntoIterator<Item = Ty<'tcx>>,
   {
@@ -62,7 +72,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 }
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
-  pub(super) fn extract_ty(&self, ty: Ty<'tcx>, span: Span) -> st::Type<'l> {
+  pub(super) fn extract_ty(&mut self, ty: Ty<'tcx>, span: Span) -> st::Type<'l> {
     self.base.extract_ty(ty, &self.dcx, span)
   }
 }
