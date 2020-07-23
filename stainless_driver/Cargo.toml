@@ -7,6 +7,7 @@ description = "Data structures and serializer for Stainless ASTs"
 categories = ["development-tools"]
 
 [dependencies]
+rustc_hair = { git = "https://github.com/gsps/librustc_hair.git", branch = "nightly-2020-06-10" }
 stainless_data = { path = "../stainless_data" }
 clap = "2.33.1"
 env_logger = "0.7.1"

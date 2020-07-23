@@ -1,4 +1,5 @@
 #![feature(rustc_private)]
+#![feature(box_patterns)]
 #![allow(clippy::unused_unit, clippy::let_and_return)]
 
 pub mod extraction;
@@ -7,10 +8,12 @@ extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_hir_pretty;
+extern crate rustc_infer;
 extern crate rustc_interface;
 extern crate rustc_middle;
 extern crate rustc_session;
 extern crate rustc_span;
+extern crate rustc_target;
 extern crate rustc_ty;
 
 use rustc_driver::{run_compiler, Callbacks, Compilation};
@@ -64,9 +67,9 @@ impl Callbacks for ExtractionCallbacks {
 
     queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
       tcx.dep_graph.with_ignore(|| {
-        println!("=== Analysing crate '{}' ===\n", crate_name);
+        eprintln!("=== Analysing crate '{}' ===\n", crate_name);
         tcx.analysis(LOCAL_CRATE).unwrap();
-        extraction::playground(tcx, crate_name);
+        extraction::extract_and_output_crate(tcx, crate_name);
       });
     });
 
