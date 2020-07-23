@@ -276,7 +276,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let body = tcx.hir().body(body_id);
 
     let mut bxtor = BodyExtractor {
-      base: base,
+      base,
       hcx,
       tables,
       body,

@@ -320,6 +320,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     unimplemented!()
   }
 
+  #[allow(clippy::unnecessary_unwrap)]
   fn extract_block_(
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
@@ -413,7 +414,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Try to detect whether the given match corresponds to an if expression.
   /// Returns None if it is not an if expression and Some(has_elze) otherwise.
-  fn looks_like_if(&mut self, scrutinee: ExprRef<'tcx>, arms: &Vec<Arm<'tcx>>) -> Option<bool> {
+  fn looks_like_if(&mut self, scrutinee: ExprRef<'tcx>, arms: &[Arm<'tcx>]) -> Option<bool> {
     let cond = self.mirror(scrutinee);
     let is_if = arms.len() == 2
       && cond.ty.is_bool()
