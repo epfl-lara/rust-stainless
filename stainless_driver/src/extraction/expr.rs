@@ -159,17 +159,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  // TODO: Support field selection on structs
   fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Field { lhs, name } = expr.kind {
       let lhs = self.mirror(lhs);
       let lhs_ty = lhs.ty;
       let lhs = self.extract_expr(lhs);
-      let index = name.index() as i32;
+      let index = name.index();
       match lhs_ty.kind {
-        TyKind::Tuple(_) => f.TupleSelect(lhs, index + 1).into(),
-        _ => self.unsupported_expr(expr.span, "Cannot select field on non-tuple"),
+        TyKind::Tuple(_) => f.TupleSelect(lhs, (index as i32) + 1).into(),
+        TyKind::Adt(adt_def, _) => {
+          let sort = self.base.extract_adt(adt_def.did);
+          assert_eq!(sort.constructors.len(), 1);
+          let constructor = sort.constructors[0];
+          assert!(index < constructor.fields.len());
+          f.ADTSelector(lhs, constructor.fields[index].v.id).into()
+        }
+        _ => unexpected(expr.span, "Unexpected kind of field selection"),
       }
     } else {
       unreachable!()
