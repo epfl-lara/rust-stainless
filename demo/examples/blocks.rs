@@ -1,3 +1,5 @@
+extern crate stainless;
+
 fn foo(_n: i32) -> () {}
 
 pub fn bar(x: i32) -> i32 {

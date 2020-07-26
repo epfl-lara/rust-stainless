@@ -1,0 +1,15 @@
+[package]
+name = "stainless"
+version = "0.0.1"
+edition = "2018"
+authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
+description = "Stainless library"
+categories = ["development-tools"]
+
+[lib]
+name = "stainless"
+path = "lib.rs"
+doctest = false
+
+[dependencies]
+num-bigint = "0.2.6"

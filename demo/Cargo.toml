@@ -3,5 +3,5 @@ name = "demo"
 version = "0.0.1"
 
 [dev-dependencies]
-num-bigint = "0.2.6"
+stainless = { path = "../libstainless" }
 stainless_contracts = { path = "../stainless_contracts"}
