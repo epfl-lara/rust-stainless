@@ -24,11 +24,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       match item.kind {
         ItemKind::ExternCrate(_) => {
           let name = item.ident.name.to_string();
-          name == "std" || name == "num_bigint"
+          name == "std" || name == "stainless"
         }
         ItemKind::Use(ref path, _) => {
           let path_str = pretty_path(path);
-          path_str.starts_with("::std::prelude::v") || path_str.starts_with("num_bigint::")
+          path_str.starts_with("::std::prelude::v") || path_str.starts_with("stainless::")
         }
         // TODO: Quick fix to filter our synthetic functions
         ItemKind::Fn(..) if !item.attrs.is_empty() => true,

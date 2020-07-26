@@ -1,3 +1,5 @@
+extern crate stainless;
+
 pub enum IntOption {
   None,
   Some(i32),

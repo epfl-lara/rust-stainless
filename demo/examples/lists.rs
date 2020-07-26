@@ -1,7 +1,6 @@
 #![feature(box_patterns)]
-
-extern crate num_bigint;
-use num_bigint::BigInt;
+extern crate stainless;
+use stainless::BigInt;
 
 extern crate stainless_contracts as st;
 

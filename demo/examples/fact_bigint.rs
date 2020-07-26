@@ -1,5 +1,5 @@
-extern crate num_bigint;
-use num_bigint::BigInt;
+extern crate stainless;
+use stainless::BigInt;
 
 pub fn fact(x: BigInt) -> BigInt {
   if x <= 0.into() {
