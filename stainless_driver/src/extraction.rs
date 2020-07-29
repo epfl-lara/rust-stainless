@@ -206,13 +206,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Get a BodyExtractor for some item with a body (like a function)
-  fn enter_body<T, F>(&mut self, hir_id: HirId, txtcx: TyExtractionCtxt<'l>, f: F) -> T
+  fn enter_body<T, F>(
+    &mut self,
+    hir_id: HirId,
+    txtcx: TyExtractionCtxt<'l>,
+    captures: Captures<'l>,
+    f: F,
+  ) -> T
   where
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
     self.tcx.infer_ctxt().enter(|infcx| {
       // Note that upon its creation, BodyExtractor moves out our Extraction
-      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx);
+      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx, captures);
       let result = f(&mut bxtor);
       // We reclaim the Extraction after the BodyExtractor's work is done
       self.extraction = bxtor.base.extraction;
@@ -231,6 +237,32 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 }
 
+/// Pre-extracted expressions of captured variables for closures
+#[derive(Clone, Debug)]
+struct Captures<'l> {
+  map: HashMap<DefId, Vec<st::Expr<'l>>>,
+}
+
+impl<'l> Captures<'l> {
+  fn new() -> Self {
+    Self {
+      map: HashMap::new(),
+    }
+  }
+
+  fn extend(&self, closure_id: DefId, captures: Vec<st::Expr<'l>>) -> Self {
+    let mut this = self.clone();
+    this.map.insert(closure_id, captures);
+    this
+  }
+}
+
+impl<'l> Default for Captures<'l> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 /// BodyExtractor is used to extract, for example, function bodies
 struct BodyExtractor<'a, 'l, 'tcx: 'l> {
   base: BaseExtractor<'l, 'tcx>,
@@ -238,6 +270,7 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
   tables: &'a TypeckTables<'tcx>,
   body: &'tcx hir::Body<'tcx>,
   txtcx: TyExtractionCtxt<'l>,
+  captures: Captures<'l>,
   dcx: DefContext<'l>,
 }
 
@@ -247,6 +280,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     infcx: &'a InferCtxt<'a, 'tcx>,
     hir_id: HirId,
     txtcx: TyExtractionCtxt<'l>,
+    captures: Captures<'l>,
   ) -> Self {
     let tcx = base.tcx;
     let extraction = base.extraction.take();
@@ -273,6 +307,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       tables,
       body,
       txtcx,
+      captures,
       dcx: DefContext::new(),
     };
 

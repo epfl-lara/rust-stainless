@@ -5,7 +5,7 @@ use rustc_hir::lang_items::{
   FnMutTraitLangItem, FnOnceTraitLangItem, FnTraitLangItem, SizedTraitLangItem,
 };
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, Ty, TyKind,
+  AdtDef, FnSig, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -70,6 +70,26 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .get(&param_ty.index)
         .expect("Missing type parameter identifier")
         .into(),
+      // TyKind::Projection(..) => {
+      //   let param_env = tcx.param_env(txtcx.def_id);
+      //   let ty = tcx.normalize_erasing_regions(param_env, ty);
+      //   if let TyKind::Projection(..) = ty.kind {
+      //     self.unsupported(
+      //       span,
+      //       format!("Cannot extract projection type {:?}", ty.kind),
+      //     );
+      //     f.Untyped().into()
+      //   } else {
+      //     self.extract_ty(ty, txtcx, span)
+      //   }
+      // }
+      TyKind::Closure(def_id, substs) => {
+        let poly_fn_sig = substs.as_closure().sig();
+        let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
+        self.extract_ty_from_sig(fn_sig, txtcx, span)
+      }
+      // FIXME: REMOVE THIS UNTIL MUTABILITY CHECKS ARE ADDED (just here to test Eq)
+      TyKind::Ref(_, ty, _) => self.extract_ty(ty, txtcx, span),
       _ => {
         self.unsupported(span, format!("Cannot extract type {:?}", ty.kind));
         f.Untyped().into()
@@ -90,6 +110,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .into_iter()
       .map(|ty| self.extract_ty(ty, txtcx, span))
       .collect()
+  }
+
+  fn extract_ty_from_sig(
+    &mut self,
+    fn_sig: FnSig<'tcx>,
+    txtcx: &TyExtractionCtxt<'l>,
+    span: Span,
+  ) -> st::Type<'l> {
+    let param_tps = self.extract_tys(fn_sig.inputs().iter().copied(), txtcx, span);
+    let return_tpe = self.extract_ty(fn_sig.output(), txtcx, span);
+    self.factory().FunctionType(param_tps, return_tpe).into()
   }
 
   /// Generics
