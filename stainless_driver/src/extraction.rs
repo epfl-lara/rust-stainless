@@ -19,6 +19,7 @@ use rustc_span::{MultiSpan, Span};
 use stainless_data::ast as st;
 
 use bindings::DefContext;
+use ty::TyExtractionCtxt;
 use utils::UniqueCounter;
 
 /// The entrypoint into extraction
@@ -206,13 +207,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Get a BodyExtractor for some item with a body (like a function)
-  fn enter_body<T, F>(&mut self, hir_id: HirId, f: F) -> T
+  fn enter_body<T, F>(&mut self, hir_id: HirId, txtcx: TyExtractionCtxt<'l>, f: F) -> T
   where
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
     self.tcx.infer_ctxt().enter(|infcx| {
       // Note that upon its creation, BodyExtractor moves out our Extraction
-      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id);
+      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx);
       let result = f(&mut bxtor);
       // We reclaim the Extraction after the BodyExtractor's work is done
       self.extraction = bxtor.base.extraction;
@@ -237,6 +238,7 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
   hcx: hair::cx::Cx<'a, 'tcx>,
   tables: &'a TypeckTables<'tcx>,
   body: &'tcx hir::Body<'tcx>,
+  txtcx: TyExtractionCtxt<'l>,
   dcx: DefContext<'l>,
 }
 
@@ -245,6 +247,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     base: &mut BaseExtractor<'l, 'tcx>,
     infcx: &'a InferCtxt<'a, 'tcx>,
     hir_id: HirId,
+    txtcx: TyExtractionCtxt<'l>,
   ) -> Self {
     let tcx = base.tcx;
     let extraction = base.extraction.take();
@@ -265,14 +268,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let body_id = tcx.hir().body_owned_by(hir_id);
     let body = tcx.hir().body(body_id);
 
-    let mut bxtor = BodyExtractor {
+    let bxtor = BodyExtractor {
       base,
       hcx,
       tables,
       body,
+      txtcx,
       dcx: DefContext::new(),
     };
-    bxtor.populate_def_context();
 
     bxtor
   }

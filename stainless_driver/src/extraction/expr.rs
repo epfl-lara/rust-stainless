@@ -4,7 +4,7 @@ use super::*;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, Mutability, UnOp};
-use rustc_middle::ty::TyKind;
+use rustc_middle::ty::{subst::SubstsRef, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -18,16 +18,15 @@ type Result<T> = std::result::Result<T, &'static str>;
 /// Extraction of bodies (i.e., expressions, for the most part)
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
-    let f = self.factory();
     match expr.kind {
       ExprKind::Literal { literal: konst, .. } => match Literal::try_from(konst) {
-        Ok(lit) => lit.as_st_literal(f),
+        Ok(lit) => lit.as_st_literal(self.factory()),
         _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
       },
       ExprKind::Unary { .. } => self.extract_unary(expr),
       ExprKind::Binary { .. } => self.extract_binary(expr),
       ExprKind::LogicalOp { .. } => self.extract_logical_op(expr),
-      ExprKind::Tuple { fields } => f.Tuple(self.extract_expr_refs(fields)).into(),
+      ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { .. } => self.extract_field(expr),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
       ExprKind::Call { .. } => self.extract_call(expr),
@@ -159,6 +158,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
+  fn extract_tuple(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+    let f = self.factory();
+    if let ExprKind::Tuple { fields } = expr.kind {
+      match fields.len() {
+        0 => f.UnitLiteral().into(),
+        1 => self.unsupported_expr(expr.span, "Cannot extract one-tuples"),
+        _ => f.Tuple(self.extract_expr_refs(fields)).into(),
+      }
+    } else {
+      unreachable!()
+    }
+  }
+
   fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Field { lhs, name } = expr.kind {
@@ -185,11 +197,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Call { ty, args, .. } = expr.kind {
-      if let TyKind::FnDef(def_id, _substs_ref) = ty.kind {
-        let args = self.extract_expr_refs(args);
+      if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
+        // Normal function call
         let fd_id = self.base.extract_fn_ref(def_id);
-        // TODO: Also consider type arguments
-        f.FunctionInvocation(fd_id, vec![], args).into()
+        let arg_tps = self.extract_arg_types(substs_ref, expr.span);
+        let args = self.extract_expr_refs(args);
+        f.FunctionInvocation(fd_id, arg_tps, args).into()
       } else {
         self.unsupported_expr(
           expr.span,
@@ -199,6 +212,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     } else {
       unreachable!()
     }
+  }
+
+  fn extract_arg_types(&mut self, substs: SubstsRef<'tcx>, span: Span) -> Vec<st::Type<'l>> {
+    // Remove closure type parameters (they were already replaced by FunctionTypes)
+    let arg_tys = substs.types().filter(|ty| match ty.kind {
+      TyKind::Closure(..) => false,
+      _ => true,
+    });
+    self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
   /*
@@ -289,6 +311,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     if let ExprKind::Adt {
       adt_def,
       variant_index,
+      substs,
       mut fields,
       base,
       ..
@@ -300,12 +323,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         // TODO: Also consider type arguments
         let sort = self.base.extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
+        let arg_tps = self.extract_arg_types(substs, expr.span);
         fields.sort_by_key(|field| field.name.index());
         let args = fields
           .into_iter()
           .map(|field| self.extract_expr_ref(field.expr))
           .collect();
-        f.ADT(constructor.id, vec![], args).into()
+        f.ADT(constructor.id, arg_tps, args).into()
       }
     } else {
       unreachable!()
@@ -383,23 +407,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         adt_def,
         variant_index,
         subpatterns,
-        ..
+        substs,
       } => {
-        // TODO: Also consider type arguments
         let sort = self.base.extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
+        let arg_tps = self.extract_arg_types(substs, pattern.span);
         let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
-        f.ADTPattern(binder, constructor.id, vec![], subpatterns)
+        f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
           .into()
       }
       box PatKind::Leaf { subpatterns } => {
-        // TODO: Also consider type arguments
-        if let TyKind::Adt(adt_def, _) = pattern.ty.kind {
+        if let TyKind::Adt(adt_def, substs) = pattern.ty.kind {
           let sort = self.base.extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
+          let arg_tps = self.extract_arg_types(substs, pattern.span);
           let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
-          f.ADTPattern(binder, constructor.id, vec![], subpatterns)
+          f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
             .into()
         } else {
           unexpected(
