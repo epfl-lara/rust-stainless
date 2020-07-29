@@ -1,0 +1,18 @@
+[package]
+name = "stainless_specs"
+version = "0.0.1"
+edition = "2018"
+authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
+description = "Stainless specification macros"
+categories = ["development-tools"]
+
+[lib]
+name = "stainless_specs"
+path = "lib.rs"
+doctest = false
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = ["extra-traits", "full", "visit-mut"] }
+quote = "1.0"
+proc-macro2 = "1.0"
