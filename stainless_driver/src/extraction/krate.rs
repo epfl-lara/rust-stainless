@@ -1,4 +1,3 @@
-use super::bindings::DefContext;
 use super::*;
 
 use rustc_hir::def_id::DefId;
@@ -28,10 +27,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
         ItemKind::Use(ref path, _) => {
           let path_str = pretty_path(path);
-          path_str.starts_with("::std::prelude::v") || path_str.starts_with("stainless::")
+          path_str.starts_with("::std::prelude::v") || path_str.starts_with("stainless")
         }
         // TODO: Quick fix to filter our synthetic functions
-        ItemKind::Fn(..) if !item.attrs.is_empty() => true,
+        // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
         _ => false,
       }
     }
@@ -90,11 +89,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (adts, functions) = (visitor.adts, visitor.functions);
     for item in adts {
       let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
-      self.extract_adt(def_id);
+      let sort = self.extract_adt(def_id);
+      self.add_adt(sort.id, sort);
     }
     for item in functions {
       let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
-      self.extract_fn(def_id);
+      let fd = self.extract_local_fn(def_id);
+      self.add_function(fd.id, fd);
     }
 
     // Extract external items as stubs
@@ -102,20 +103,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       // Find all those functions that have been referenced, but not yet extracted
       xt.function_refs
         .iter()
-        .filter(|def_id| {
-          let fun_id = xt.mapping.did_to_stid.get(def_id).unwrap();
-          !xt.functions.contains_key(fun_id)
-        })
+        .filter(|def_id| !def_id.is_local())
         .copied()
         .collect::<Vec<DefId>>()
     });
     for def_id in external_functions {
-      let was_external = self.extract_fn(def_id);
-      assert!(was_external);
+      let fd = self.extract_extern_fn(def_id);
+      self.add_function(fd.id, fd);
     }
   }
 
-  /// Extract a function declaration (regardless of whether it is local or external)
+  /// Extract a function reference (regardless of whether it is local or external)
   // TODO: Extract flags on functions and parameters
   pub(super) fn extract_fn_ref(&mut self, def_id: DefId) -> StainlessSymId<'l> {
     match self.get_id_from_def(def_id) {
@@ -127,59 +125,63 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  /// Extract a function
-  fn extract_fn(&mut self, def_id: DefId) -> bool {
+  /// Extract an external function
+  pub(super) fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
     let f = self.factory();
-
-    let is_external = !def_id.is_local();
-    let span = self.tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
-
-    let generics = self.tcx.generics_of(def_id);
-    if generics.count() > 0 {
-      self.unsupported(
-        span,
-        format!(
-          "Type parameters on functions are unsupported: {:#?}",
-          generics
-        ),
-      );
-      return is_external;
-    }
+    assert!(
+      !def_id.is_local(),
+      "Expected non-local def id, got: {:?}",
+      def_id
+    );
 
     // Extract the function signature
+    let (tparams, txtcx) = self.extract_generics(def_id);
+    let poly_fn_sig = self.tcx.fn_sig(def_id);
+    let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
+    let params: Params<'l> = fn_sig
+      .inputs()
+      .iter()
+      .enumerate()
+      .map(|(i, ty)| {
+        let id = self.fresh_param_id(i);
+        let tpe = self.extract_ty(ty, &txtcx, DUMMY_SP);
+        let var = f.Variable(id, tpe, vec![]);
+        &*f.ValDef(var)
+      })
+      .collect();
+    let return_tpe = self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP);
+
+    // Attach an empty body
+    let body_expr = f.NoTree(return_tpe).into();
+
+    let flags = vec![f.Extern().into()];
+    let fun_id = self.extract_fn_ref(def_id);
+    f.FunDef(fun_id, tparams, params, return_tpe, body_expr, flags)
+  }
+
+  /// Extract a local function
+  pub(super) fn extract_local_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+    let f = self.factory();
+    let tcx = self.tcx;
+    assert!(def_id.is_local());
+
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>, Vec<st::Flag<'l>>);
 
-    let (params, return_tpe, body_expr, flags): Parts<'l> = if is_external {
-      let poly_fn_sig = self.tcx.fn_sig(def_id);
-      let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
-      let dcx = DefContext::new();
-      let params: Params<'l> = fn_sig
-        .inputs()
-        .iter()
-        .enumerate()
-        .map(|(i, ty)| {
-          let id = self.fresh_param_id(i);
-          let tpe = self.extract_ty(ty, &dcx, DUMMY_SP);
-          let var = f.Variable(id, tpe, vec![]);
-          &*f.ValDef(var)
-        })
-        .collect();
-      let return_tpe = self.extract_ty(fn_sig.output(), &dcx, DUMMY_SP);
+    // Extract the function itself
+    let (tparams, txtcx) = self.extract_generics(def_id);
+    let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
+    let (params, return_tpe, body_expr, flags): Parts<'l> =
+      self.enter_body(hir_id, txtcx.clone(), |bxtor| {
+        // Register parameters and local bindings in the DefContext
+        bxtor.populate_def_context();
 
-      // Attach an empty body
-      let body_expr = f.NoTree(return_tpe).into();
-      let flags = vec![f.Extern().into()];
-
-      (params, return_tpe, body_expr, flags)
-    } else {
-      let tcx = self.tcx;
-      let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
-      self.enter_body(hir_id, |bxtor| {
-        // Extract the function signature and extract the signature
+        // Extract the function signature
         let sigs = bxtor.tables.liberated_fn_sigs();
         let sig = sigs.get(hir_id).unwrap();
         let decl = tcx.hir().fn_decl_by_hir_id(hir_id).unwrap();
-        let return_tpe = bxtor.extract_ty(sig.output(), decl.output.span());
+        let return_tpe = bxtor
+          .base
+          .extract_ty(sig.output(), &bxtor.txtcx, decl.output.span());
 
         let params: Params<'l> = bxtor
           .body
@@ -194,13 +196,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let flags = vec![];
 
         (params, return_tpe, body_expr, flags)
-      })
-    };
+      });
 
     let fun_id = self.extract_fn_ref(def_id);
-    let fd = f.FunDef(fun_id, vec![], params, return_tpe, body_expr, flags);
-    self.add_function(fun_id, fd);
-    is_external
+    f.FunDef(fun_id, tparams, params, return_tpe, body_expr, flags)
   }
 
   /// Extract an ADT (regardless of whether it is local or external)
@@ -217,15 +216,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let f = self.factory();
         let adt_id = self.register_def(def_id);
         let adt_def = self.tcx.adt_def(def_id);
-        let span = self.tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
 
-        // TODO: Support type parameters on ADTs
-        // TODO: Extract flags on ADTs
-        let generics = self.tcx.generics_of(def_id);
-        if generics.count() > 0 {
-          self.unsupported(span, "Type parameters on ADT are unsupported");
-          unreachable!()
-        }
+        let (tparams, txtcx) = self.extract_generics(def_id);
 
         let constructors = adt_def
           .variants
@@ -238,7 +230,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .map(|field| {
                 let field_id = self.get_or_register_def(field.did);
                 let field_ty = field.ty(self.tcx, List::empty());
-                let field_ty = self.extract_ty(field_ty, &DefContext::new(), field.ident.span);
+                let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
                 // TODO: Extract flags on ADT fields
                 let field = f.Variable(field_id, field_ty, vec![]);
                 &*f.ValDef(field)
@@ -248,9 +240,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           })
           .collect();
 
-        let sort = f.ADTSort(adt_id, vec![], constructors, vec![]);
-        self.add_adt(adt_id, sort);
-        sort
+        // TODO: Extract flags on ADTs
+        let flags = vec![];
+
+        f.ADTSort(adt_id, tparams, constructors, flags)
       }
     }
   }

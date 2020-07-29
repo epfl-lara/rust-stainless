@@ -59,7 +59,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         // Build a Variable node
         // TODO: Extract flags on bindings
-        let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.dcx, span);
+        let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
         let var = xtor.factory().Variable(id, tpe, vec![]);
         self.dcx.add_var(hir_id, var);
         var
@@ -69,7 +69,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 }
 
 /// DefContext tracks available bindings
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
 }
@@ -81,7 +81,7 @@ impl<'l> DefContext<'l> {
     }
   }
 
-  fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
     assert!(!self.vars.contains_key(&hir_id));
     self.vars.insert(hir_id, var);
     self
