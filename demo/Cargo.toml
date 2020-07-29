@@ -4,4 +4,3 @@ version = "0.0.1"
 
 [dev-dependencies]
 stainless = { path = "../libstainless" }
-stainless_contracts = { path = "../stainless_contracts"}
