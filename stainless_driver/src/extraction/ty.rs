@@ -51,10 +51,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), txtcx, span);
-        if arg_tps.is_empty() {
-          f.UnitType().into()
-        } else {
-          f.TupleType(arg_tps).into()
+        match arg_tps.len() {
+          0 => f.UnitType().into(),
+          1 => {
+            self.unsupported(span, "Cannot extract type of one-tuples");
+            f.Untyped().into()
+          }
+          _ => f.TupleType(arg_tps).into(),
         }
       }
       TyKind::Adt(adt_def, substs) => {

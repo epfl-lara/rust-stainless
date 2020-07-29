@@ -229,7 +229,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .iter()
               .map(|field| {
                 let field_id = self.get_or_register_def(field.did);
-                let field_ty = field.ty(self.tcx, List::empty());
+                let substs = List::identity_for_item(self.tcx, def_id);
+                let field_ty = field.ty(self.tcx, substs);
                 let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
                 // TODO: Extract flags on ADT fields
                 let field = f.Variable(field_id, field_ty, vec![]);
