@@ -67,11 +67,21 @@ name = "stainless"
 version = "0.0.1"
 dependencies = [
  "num-bigint",
+ "stainless_specs",
 ]
 
 [[package]]
 name = "stainless_contracts"
 version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "stainless_specs"
+version = "0.0.1"
 dependencies = [
  "proc-macro2",
  "quote",

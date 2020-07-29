@@ -120,14 +120,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Extract all generic parameters
 
-    // // TODO: Generalize to generics with parent
-    // if generics.parent.is_some() {
-    //   unexpected(
-    //     span,
-    //     format!("Found generics with parent at {}", tcx.def_path_str(def_id)),
-    //   );
-    // }
-    // let all_params = &generics.params;
     let all_params = all_generic_params_of(tcx, def_id);
 
     // Certain unextracted traits we don't complain about at all.
@@ -155,7 +147,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             if self.is_fn_like_trait(trait_did) {
               let params_ty = trait_ref.substs[1].expect_ty();
               let param_tys = params_ty.tuple_fields().collect();
-              // let param_tps = self.extract_tys(param_tys, &pre_txtcx, span);
               assert!(tparam_to_fun_params
                 .insert(param_def.index, (param_tys, *span))
                 .is_none());
@@ -166,13 +157,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         PredicateKind::Projection(ref data) => {
           let trait_ref = data.skip_binder().projection_ty.trait_ref(tcx);
           let trait_did = trait_ref.def_id;
-          // data.skip_binder().projection_ty.trait_ref(tcx).substs[1..]
 
           if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
             let param_def = generics.type_param(&param_ty, tcx);
             if self.is_fn_like_trait(trait_did) {
               let return_ty = data.skip_binder().ty;
-              // let return_tpe = self.extract_ty(return_ty, &pre_txtcx, span);
               assert!(tparam_to_fun_return
                 .insert(param_def.index, (return_ty, *span))
                 .is_none());

@@ -176,18 +176,24 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     if let ExprKind::Field { lhs, name } = expr.kind {
       let lhs = self.mirror(lhs);
       let lhs_ty = lhs.ty;
-      let lhs = self.extract_expr(lhs);
       let index = name.index();
       match lhs_ty.kind {
-        TyKind::Tuple(_) => f.TupleSelect(lhs, (index as i32) + 1).into(),
+        TyKind::Tuple(_) => {
+          let lhs = self.extract_expr(lhs);
+          f.TupleSelect(lhs, (index as i32) + 1).into()
+        }
         TyKind::Adt(adt_def, _) => {
           let sort = self.base.extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
           assert!(index < constructor.fields.len());
+          let lhs = self.extract_expr(lhs);
           f.ADTSelector(lhs, constructor.fields[index].v.id).into()
         }
-        _ => unexpected(expr.span, "Unexpected kind of field selection"),
+        ref kind => unexpected(
+          expr.span,
+          format!("Unexpected kind of field selection: {:?}", kind),
+        ),
       }
     } else {
       unreachable!()

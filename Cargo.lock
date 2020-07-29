@@ -243,12 +243,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3757cb9d89161a2f24e1cf78efa0c1fcff485d18e3f55e0aa3480824ddaa0f3f"
 
 [[package]]
-name = "stainless_contracts"
-version = "0.1.0"
+name = "stainless"
+version = "0.0.1"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "num-bigint",
+ "stainless_specs",
 ]
 
 [[package]]
@@ -270,6 +269,15 @@ dependencies = [
  "rustc_hair",
  "serde_json",
  "stainless_data",
+]
+
+[[package]]
+name = "stainless_specs"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
