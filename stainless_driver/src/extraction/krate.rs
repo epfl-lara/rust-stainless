@@ -123,7 +123,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
       let pre_spec_functions = pre_spec_functions.remove(&def_id);
       let post_spec_functions = post_spec_functions.remove(&def_id);
-      let fd = self.extract_local_fn(def_id, pre_spec_functions, post_spec_functions);
+      let fd = self.extract_local_fn(
+        def_id,
+        Captures::default(),
+        pre_spec_functions,
+        post_spec_functions,
+      );
       self.add_function(fd.id, fd);
     }
 
@@ -192,12 +197,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_local_fn(
     &mut self,
     def_id: DefId,
+    captures: Captures<'l>,
     pre_spec_functions: Option<Vec<DefId>>,
     post_spec_functions: Option<Vec<DefId>>,
   ) -> &'l st::FunDef<'l> {
     let f = self.factory();
     let tcx = self.tcx;
+    let is_closure = tcx.is_closure(def_id);
     assert!(def_id.is_local());
+    assert_eq!(is_closure, captures.map.contains_key(&def_id));
 
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>, Vec<st::Flag<'l>>);
 
@@ -205,7 +213,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (tparams, txtcx) = self.extract_generics(def_id);
     let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
     let (params, return_tpe, mut body_expr, flags): Parts<'l> =
-      self.enter_body(hir_id, txtcx.clone(), |bxtor| {
+      self.enter_body(hir_id, txtcx.clone(), captures, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context();
 
@@ -300,7 +308,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       index_to_tparam,
     };
 
-    self.enter_body(hir_id, txtcx, |bxtor| {
+    self.enter_body(hir_id, txtcx, Captures::default(), |bxtor| {
       // Correlate term parameters
       let mut param_hir_ids: Vec<HirId> = bxtor
         .body

@@ -4,7 +4,7 @@ use super::*;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, DefIdTree, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -54,6 +54,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           None => self.extract_match(scrutinee_, arms),
         }
       }
+      ExprKind::Closure {
+        closure_id, upvars, ..
+      } => {
+        let captures = self.extract_expr_refs(upvars);
+        let captures = self.captures.extend(closure_id, captures);
+        let fd = self.base.extract_local_fn(closure_id, captures, None, None);
+        self.factory().Lambda(fd.params.clone(), fd.fullBody).into()
+      }
+
+      // FIXME: REMOVE THIS UNTIL MUTABILITY CHECKS ARE ADDED (just here to test closures)
+      ExprKind::Borrow { arg, .. } => self.extract_expr_ref(arg),
+      ExprKind::Deref { arg } => self.extract_expr_ref(arg),
 
       // TODO: Handle method calls
       // TODO: Handle arbitrary-precision integers
@@ -190,6 +202,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           let lhs = self.extract_expr(lhs);
           f.ADTSelector(lhs, constructor.fields[index].v.id).into()
         }
+        TyKind::Closure(def_id, _) => {
+          let captures = &self
+            .captures
+            .map
+            .get(&def_id)
+            .expect("Missing captures map for surrounding closure");
+          *captures.get(index).expect("Missing capture expression")
+        }
         ref kind => unexpected(
           expr.span,
           format!("Unexpected kind of field selection: {:?}", kind),
@@ -202,13 +222,25 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Call { ty, args, .. } = expr.kind {
+    if let ExprKind::Call { ty, mut args, .. } = expr.kind {
       if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-        // Normal function call
-        let fd_id = self.base.extract_fn_ref(def_id);
-        let arg_tps = self.extract_arg_types(substs_ref, expr.span);
-        let args = self.extract_expr_refs(args);
-        f.FunctionInvocation(fd_id, arg_tps, args).into()
+        if self.is_closure_call(def_id) {
+          // Closure call
+          assert_eq!(args.len(), 2);
+          // Here we undo some of the desugaring.
+          let fun = self.extract_expr_ref(args.remove(0));
+          let args = match self.mirror(args.remove(0)).kind {
+            ExprKind::Tuple { fields } => self.extract_expr_refs(fields),
+            _ => unreachable!(),
+          };
+          f.Application(fun, args).into()
+        } else {
+          // Normal function call
+          let fd_id = self.base.extract_fn_ref(def_id);
+          let arg_tps = self.extract_arg_types(substs_ref, expr.span);
+          let args = self.extract_expr_refs(args);
+          f.FunctionInvocation(fd_id, arg_tps, args).into()
+        }
       } else {
         self.unsupported_expr(
           expr.span,
@@ -227,6 +259,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       _ => true,
     });
     self.base.extract_tys(arg_tys, &self.txtcx, span)
+  }
+
+  fn is_closure_call(&self, fun_did: DefId) -> bool {
+    let tcx = self.tcx();
+    if let Some(parent_did) = tcx.parent(fun_did) {
+      self.base.is_fn_like_trait(parent_did)
+    } else {
+      false
+    }
   }
 
   /*
