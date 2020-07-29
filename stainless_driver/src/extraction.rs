@@ -35,9 +35,11 @@ pub fn extract_and_output_crate(tcx: TyCtxt<'_>, crate_name: String) -> () {
   eprintln!("[ Extracted ADTs and functions ]");
   for adt in &adts {
     eprintln!(" - ADT {}", adt.id);
+    // eprintln!(" > {:#?}", adt);
   }
   for fd in &functions {
     eprintln!(" - Fun {}", fd.id);
+    // eprintln!(" > {:#?}", fd);
   }
 
   let output_path = std::path::Path::new("./output.inoxser");
@@ -137,11 +139,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Identifier mappings
 
-  fn fresh_param_id(&mut self, index: usize) -> StainlessSymId<'l> {
-    self.with_extraction_mut(|xt| {
-      let name = format!("param{}", index);
-      xt.fresh_id(name.clone(), vec![name])
-    })
+  fn fresh_id(&mut self, name: String) -> StainlessSymId<'l> {
+    self.with_extraction_mut(|xt| xt.fresh_id(name.clone(), vec![name]))
   }
 
   fn symbol_path_from_def_id(&self, def_id: DefId) -> Vec<String> {
@@ -259,7 +258,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // Set up HAIR context
     let hcx = hair::cx::Cx::new(infcx, hir_id);
 
-    // Set up typing tables
+    // Set up typing tables and signature
     let def_id = tcx.hir().local_def_id(hir_id);
     assert!(tcx.has_typeck_tables(def_id));
     let tables = tcx.typeck_tables_of(def_id);

@@ -1,6 +1,7 @@
 [workspace]
 members = [
-  "stainless_contracts",
+  "libstainless",
+  "libstainless_specs",
   "stainless_data",
   "stainless_driver",
 ]
