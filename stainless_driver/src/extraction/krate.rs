@@ -198,16 +198,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
     let tcx = self.tcx;
     assert!(def_id.is_local());
+    let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
 
-    type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>, Vec<st::Flag<'l>>);
+    // Extract flags
+    let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
+    let flags = carrier_flags.to_stainless(f);
 
     // Extract the function itself
+    type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
     let (tparams, txtcx) = self.extract_generics(def_id);
-    let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
-    let (params, return_tpe, mut body_expr, flags): Parts<'l> =
+    let (params, return_tpe, mut body_expr): Parts<'l> =
       self.enter_body(hir_id, txtcx.clone(), |bxtor| {
         // Register parameters and local bindings in the DefContext
-        bxtor.populate_def_context();
+        bxtor.populate_def_context(&mut flags_by_symbol);
 
         // Extract the function signature
         let sigs = bxtor.tables.liberated_fn_sigs();
@@ -227,10 +230,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
-        let flags = vec![];
 
-        (params, return_tpe, body_expr, flags)
+        (params, return_tpe, body_expr)
       });
+
+    self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Extract specs, if any, and wrap them around the body
     let make_and = |mut exprs: Vec<st::Expr<'l>>| {
@@ -329,7 +333,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
 
       // Pick up any additional local bindings
-      bxtor.populate_def_context();
+      bxtor.populate_def_context(&mut HashMap::new());
 
       // Extract the spec function's body
       let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
@@ -352,8 +356,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let adt_id = self.register_def(def_id);
         let adt_def = self.tcx.adt_def(def_id);
 
+        // Extract flags
+        let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
+        let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
+        let flags = carrier_flags.to_stainless(f);
+
+        // Extract generics
         let (tparams, txtcx) = self.extract_generics(def_id);
 
+        // Extract constructors
         let constructors = adt_def
           .variants
           .iter()
@@ -364,11 +375,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .iter()
               .map(|field| {
                 let field_id = self.get_or_register_def(field.did);
+
                 let substs = List::identity_for_item(self.tcx, def_id);
                 let field_ty = field.ty(self.tcx, substs);
                 let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
-                // TODO: Extract flags on ADT fields
-                let field = f.Variable(field_id, field_ty, vec![]);
+
+                let flags = flags_by_symbol.remove(&field.ident.name);
+                let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
+
+                let field = f.Variable(field_id, field_ty, flags);
                 &*f.ValDef(field)
               })
               .collect();
@@ -376,8 +391,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           })
           .collect();
 
-        // TODO: Extract flags on ADTs
-        let flags = vec![];
+        self.report_unused_flags(hir_id, &flags_by_symbol);
 
         f.ADTSort(adt_id, tparams, constructors, flags)
       }
