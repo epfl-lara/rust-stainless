@@ -1,16 +1,19 @@
 use proc_macro::TokenStream;
-mod specs;
+mod implementation;
+use implementation::*;
+
+/// Specs
 
 /// Precondition
 #[proc_macro_attribute]
 pub fn pre(attr: TokenStream, item: TokenStream) -> TokenStream {
-  specs::extract_specs_and_expand(specs::SpecType::Pre, attr.into(), item.into()).into()
+  extract_specs_and_expand(SpecType::Pre, attr.into(), item.into()).into()
 }
 
 /// Postcondition
 #[proc_macro_attribute]
 pub fn post(attr: TokenStream, item: TokenStream) -> TokenStream {
-  specs::extract_specs_and_expand(specs::SpecType::Post, attr.into(), item.into()).into()
+  extract_specs_and_expand(SpecType::Post, attr.into(), item.into()).into()
 }
 
 /// Flags
@@ -20,7 +23,7 @@ macro_rules! define_flags {
     $(
       #[proc_macro_attribute]
       pub fn $flag(attr: TokenStream, item: TokenStream) -> TokenStream {
-        specs::rewrite_flag(stringify!($flag), attr.into(), item.into()).into()
+        rewrite_flag(stringify!($flag), attr.into(), item.into()).into()
       }
     )*
   }
