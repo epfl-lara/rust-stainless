@@ -5,7 +5,6 @@ edition = "2018"
 authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
 description = "A Rust frontend for the Stainless program verifier"
 categories = ["development-tools"]
-autotests = false
 
 [[bin]]
 name = "rustc_to_stainless"
@@ -18,7 +17,6 @@ test = false
 doctest = false
 
 [lib]
-test = false
 doctest = false
 
 [dependencies]
@@ -27,6 +25,10 @@ stainless_extraction = { path = "../stainless_extraction" }
 clap = "2.33.1"
 env_logger = "0.7.1"
 serde_json = "1.0"
+
+[dev-dependencies]
+stainless = { path = "../libstainless" }
+tempfile = "3"
 
 [features]
 default = []
