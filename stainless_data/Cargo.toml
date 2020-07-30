@@ -6,6 +6,9 @@ authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
 description = "Stainless driver for rustc"
 categories = ["development-tools"]
 
+[lib]
+doctest = false
+
 [dependencies]
 bumpalo = "3.1.2"
 env_logger = "0.7"

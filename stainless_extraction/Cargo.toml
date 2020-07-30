@@ -6,6 +6,10 @@ authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
 description = "Extraction from rustc to stainless trees"
 categories = ["development-tools"]
 
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 rustc_hair = { git = "https://github.com/gsps/librustc_hair.git", branch = "nightly-2020-06-10" }
 stainless_data = { path = "../stainless_data" }
