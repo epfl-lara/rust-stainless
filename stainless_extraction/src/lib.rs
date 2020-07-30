@@ -1,3 +1,21 @@
+#![feature(rustc_private)]
+#![feature(box_patterns)]
+
+#[macro_use]
+extern crate lazy_static;
+
+extern crate rustc_ast;
+extern crate rustc_driver;
+extern crate rustc_hir;
+extern crate rustc_hir_pretty;
+extern crate rustc_infer;
+extern crate rustc_interface;
+extern crate rustc_middle;
+extern crate rustc_session;
+extern crate rustc_span;
+extern crate rustc_target;
+extern crate rustc_ty;
+
 mod bindings;
 mod expr;
 mod flags;
@@ -261,16 +279,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let body_id = tcx.hir().body_owned_by(hir_id);
     let body = tcx.hir().body(body_id);
 
-    let bxtor = BodyExtractor {
+    BodyExtractor {
       base,
       hcx,
       tables,
       body,
       txtcx,
       dcx: DefContext::new(),
-    };
-
-    bxtor
+    }
   }
 
   #[inline]

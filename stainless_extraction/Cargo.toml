@@ -1,0 +1,15 @@
+[package]
+name = "stainless_extraction"
+version = "0.0.1"
+edition = "2018"
+authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
+description = "Extraction from rustc to stainless trees"
+categories = ["development-tools"]
+
+[dependencies]
+rustc_hair = { git = "https://github.com/gsps/librustc_hair.git", branch = "nightly-2020-06-10" }
+stainless_data = { path = "../stainless_data" }
+lazy_static = "1.4.0"
+
+[features]
+default = []

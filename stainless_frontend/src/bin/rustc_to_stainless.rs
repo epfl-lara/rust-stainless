@@ -1,6 +1,6 @@
 fn main() -> Result<(), ()> {
-  stainless_driver::run(|symbols| {
+  stainless_frontend::run(|symbols| {
     let output_path = std::path::Path::new("./output.inoxser");
-    stainless_driver::output_program(output_path, symbols);
+    stainless_frontend::output_program(output_path, symbols);
   })
 }
