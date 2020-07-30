@@ -261,15 +261,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "stainless_driver"
+name = "stainless_extraction"
+version = "0.0.1"
+dependencies = [
+ "lazy_static",
+ "rustc_hair",
+ "stainless_data",
+]
+
+[[package]]
+name = "stainless_frontend"
 version = "0.0.1"
 dependencies = [
  "clap",
  "env_logger",
- "lazy_static",
- "rustc_hair",
  "serde_json",
  "stainless_data",
+ "stainless_extraction",
 ]
 
 [[package]]

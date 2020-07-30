@@ -3,7 +3,8 @@ members = [
   "libstainless",
   "libstainless_macros",
   "stainless_data",
-  "stainless_driver",
+  "stainless_extraction",
+  "stainless_frontend",
 ]
 exclude = [
   "demo",
