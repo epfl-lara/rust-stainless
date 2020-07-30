@@ -24,15 +24,18 @@ use ty::TyExtractionCtxt;
 use utils::UniqueCounter;
 
 /// The entrypoint into extraction
-pub fn extract_and_output_crate(tcx: TyCtxt<'_>, crate_name: String) -> () {
-  let factory = st::Factory::new();
-  let mut extraction = Extraction::new(&factory);
-  let mut xtor = BaseExtractor::new(tcx, &mut extraction);
+pub fn extract_crate<'l, 'tcx: 'l>(
+  tcx: TyCtxt<'tcx>,
+  factory: &'l st::Factory,
+  crate_name: String,
+) -> st::Symbols<'l> {
+  let extraction = Box::new(Extraction::new(factory));
+  let mut xtor = BaseExtractor::new(tcx, extraction);
   xtor.process_crate(crate_name);
 
-  // Output extracted Stainless program
   let (adts, functions) = xtor.into_result();
 
+  // Output extracted Stainless program
   eprintln!("[ Extracted ADTs and functions ]");
   for adt in &adts {
     eprintln!(" - ADT {}", adt.id);
@@ -43,17 +46,7 @@ pub fn extract_and_output_crate(tcx: TyCtxt<'_>, crate_name: String) -> () {
     // eprintln!(" > {:#?}", fd);
   }
 
-  let output_path = std::path::Path::new("./output.inoxser");
-  output_program(output_path, st::Symbols::new(adts, functions));
-}
-
-fn output_program<P: AsRef<std::path::Path>>(path: P, symbols: st::Symbols) -> () {
-  use stainless_data::ser::{BufferSerializer, Serializable};
-  let mut ser = BufferSerializer::new();
-  symbols
-    .serialize(&mut ser)
-    .expect("Unable to serialize stainless program");
-  std::fs::write(path, ser.as_slice()).expect("Unable to write serialized stainless program");
+  st::Symbols::new(adts, functions)
 }
 
 /// Helpful type aliases
@@ -104,11 +97,11 @@ impl<'l> Extraction<'l> {
 /// Extractor combines rustc state with extraction state
 struct BaseExtractor<'l, 'tcx: 'l> {
   tcx: TyCtxt<'tcx>,
-  extraction: Option<&'l mut Extraction<'l>>,
+  extraction: Option<Box<Extraction<'l>>>,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  fn new(tcx: TyCtxt<'tcx>, extraction: &'l mut Extraction<'l>) -> Self {
+  fn new(tcx: TyCtxt<'tcx>, extraction: Box<Extraction<'l>>) -> Self {
     Self {
       tcx,
       extraction: Some(extraction),
@@ -130,7 +123,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   #[inline]
   fn with_extraction_mut<T, F: FnOnce(&mut Extraction<'l>) -> T>(&mut self, f: F) -> T {
-    f(*self.extraction.as_mut().expect("BodyExtractor active"))
+    f(self.extraction.as_mut().expect("BodyExtractor active"))
   }
 
   #[inline]
