@@ -9,6 +9,7 @@ categories = ["development-tools"]
 [lib]
 name = "stainless_macros"
 path = "lib.rs"
+test = false
 doctest = false
 proc-macro = true
 

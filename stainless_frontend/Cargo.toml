@@ -6,12 +6,29 @@ authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
 description = "A Rust frontend for the Stainless program verifier"
 categories = ["development-tools"]
 
+[[bin]]
+name = "rustc_to_stainless"
+test = false
+doctest = false
+
+[[bin]]
+name = "cargo-stainless"
+test = false
+doctest = false
+
+[lib]
+doctest = false
+
 [dependencies]
 stainless_data = { path = "../stainless_data" }
 stainless_extraction = { path = "../stainless_extraction" }
 clap = "2.33.1"
 env_logger = "0.7.1"
 serde_json = "1.0"
+
+[dev-dependencies]
+stainless = { path = "../libstainless" }
+tempfile = "3"
 
 [features]
 default = []
