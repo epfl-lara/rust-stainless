@@ -9,6 +9,7 @@ categories = ["development-tools"]
 [dependencies]
 rustc_hair = { git = "https://github.com/gsps/librustc_hair.git", branch = "nightly-2020-06-10" }
 stainless_data = { path = "../stainless_data" }
+lazy_static = "1.4.0"
 clap = "2.33.1"
 env_logger = "0.7.1"
 serde_json = "1.0"

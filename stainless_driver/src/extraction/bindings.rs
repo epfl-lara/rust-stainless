@@ -1,25 +1,31 @@
+use super::flags::Flags;
 use super::*;
 
 use rustc_hir::{self as hir, HirId, PatKind};
 use rustc_middle::ty;
+use rustc_span::symbol::Symbol;
 
 use stainless_data::ast as st;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Build a DefContext that includes all variable bindings
-  pub(super) fn populate_def_context(&mut self) {
-    // Bindings from the body
-    BindingsCollector::run(self);
-
+  pub(super) fn populate_def_context(&mut self, flags_by_symbol: &mut HashMap<Symbol, Flags>) {
     // Bindings from the params
     for param in self.body.params {
-      self.extract_binding(param.pat.hir_id);
+      let flags = param
+        .pat
+        .simple_ident()
+        .and_then(|ident| flags_by_symbol.remove(&ident.name));
+      self.extract_binding(param.pat.hir_id, flags);
     }
+
+    // Bindings from the body
+    BindingsCollector::run(self);
   }
 
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extacted before.
-  fn extract_binding(&mut self, hir_id: HirId) -> &'l st::Variable<'l> {
+  fn extract_binding(&mut self, hir_id: HirId, flags: Option<Flags>) -> &'l st::Variable<'l> {
     let xtor = &mut self.base;
     let tcx = xtor.tcx;
     let dcx = &mut self.dcx;
@@ -58,9 +64,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         };
 
         // Build a Variable node
-        // TODO: Extract flags on bindings
+        let f = xtor.factory();
         let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
-        let var = xtor.factory().Variable(id, tpe, vec![]);
+        let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
+        let var = f.Variable(id, tpe, flags);
         self.dcx.add_var(hir_id, var);
         var
       }
@@ -127,7 +134,7 @@ impl<'bxtor, 'a, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'bxtor, 'a, 'l, '
     match pattern.kind {
       hir::PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
         // Extend DefContext with a new variable
-        self.bxtor.extract_binding(hir_id);
+        self.bxtor.extract_binding(hir_id, None);
 
         // Visit potential sub-patterns
         rustc_ast::walk_list!(self, visit_pat, optional_subpattern);

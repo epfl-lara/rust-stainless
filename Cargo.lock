@@ -266,6 +266,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "env_logger",
+ "lazy_static",
  "rustc_hair",
  "serde_json",
  "stainless_data",

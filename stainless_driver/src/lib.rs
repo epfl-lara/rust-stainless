@@ -4,6 +4,9 @@
 
 pub mod extraction;
 
+#[macro_use]
+extern crate lazy_static;
+
 extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;

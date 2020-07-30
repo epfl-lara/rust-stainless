@@ -1,9 +1,11 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 use syn::{parse_quote, Attribute, Expr, Item, ItemFn, Result, ReturnType, Stmt, Type};
 
 use std::convert::TryFrom;
 use std::iter;
+
+/// Pre- and postconditions
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpecType {
@@ -143,5 +145,27 @@ pub fn extract_specs_and_expand(
       item_fn.to_token_stream()
     }
     Err(err) => err.to_compile_error(),
+  }
+}
+
+/// Flags
+/// Note that we simply want to attach some attributes to the item in question. Currently,
+/// Rust doesn't permit user-defined attributes that stay around until the later phases of
+/// rustc. However, any attribute in the `clippy::` group is accepted, and clippy itself
+/// doesn't seem to complain about unknown attributes. We therefore abuse this to attach
+/// some attributes of our own for the stainless extraction pass to detect.
+
+pub fn rewrite_flag(
+  flag_name: &'static str,
+  mut args: TokenStream,
+  item: TokenStream,
+) -> TokenStream {
+  let flag_name = Ident::new(flag_name, Span::call_site());
+  if !args.is_empty() {
+    args = quote! { ( #args ) };
+  }
+  quote! {
+    #[clippy::stainless::#flag_name#args]
+    #item
   }
 }

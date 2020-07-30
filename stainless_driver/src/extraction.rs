@@ -1,5 +1,6 @@
 mod bindings;
 mod expr;
+mod flags;
 mod krate;
 mod literal;
 mod ty;
