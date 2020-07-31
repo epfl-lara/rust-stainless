@@ -70,12 +70,3 @@ impl<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send> Callbacks for ExtractionCall
     Compilation::Stop
   }
 }
-
-pub fn output_program<P: AsRef<std::path::Path>>(path: P, symbols: st::Symbols) {
-  use stainless_data::ser::{BufferSerializer, Serializable};
-  let mut ser = BufferSerializer::new();
-  symbols
-    .serialize(&mut ser)
-    .expect("Unable to serialize stainless program");
-  std::fs::write(path, ser.as_slice()).expect("Unable to write serialized stainless program");
-}

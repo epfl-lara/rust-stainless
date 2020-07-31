@@ -63,6 +63,7 @@ pub fn extract_crate<'l, 'tcx: 'l>(
     eprintln!(" - Fun {}", fd.id);
     // eprintln!(" > {:#?}", fd);
   }
+  eprintln!();
 
   st::Symbols::new(adts, functions)
 }

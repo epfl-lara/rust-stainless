@@ -12,6 +12,7 @@ use std::process::*;
 struct Config {
   debug: bool,
   example_opt: Option<String>,
+  export_path_opt: Option<String>,
 }
 
 #[derive(Debug)]
@@ -203,19 +204,26 @@ fn main() -> ! {
         .long("debug")
         .help("Print the read build plan and the chosen target"),
     )
+    .arg(
+      Arg::with_name("export")
+        .long("export")
+        .takes_value(true)
+        .help("Do not verify, but only export the extracted program to the given path"),
+    )
     .get_matches();
 
   let config = Config {
     debug: matches.is_present("debug"),
     example_opt: matches.value_of("example").map(|s| s.into()),
+    export_path_opt: matches.value_of("export").map(|s| s.into()),
   };
 
   // Parse build plan
   let build_output = fetch_build_plan(&config);
 
   // NOTE: When no example is specified we currently just pick the last build
-  // invocation, which should work well enough for simple, single target builds.
-  let build = parse_build(&config, &build_output.stdout);
+  // invocation, which should work well enough for simple, single-target builds.
+  let mut build = parse_build(&config, &build_output.stdout);
 
   // Run extraction
   if config.debug {
@@ -228,6 +236,10 @@ fn main() -> ! {
       "cargo-stainless: Found default target '{}'.\n",
       build.package_name
     ),
+  }
+
+  if let Some(export_path) = config.export_path_opt {
+    build.env.insert("RUSTSTAINLESS_EXPORT".into(), export_path);
   }
 
   let status = Command::new("rustc_to_stainless")

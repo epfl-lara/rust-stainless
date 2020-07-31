@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::fmt;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "status")]
@@ -54,6 +55,17 @@ impl VerificationStatus {
     match self {
       VerificationStatus::Valid {} | VerificationStatus::ValidFromCache {} => true,
       _ => false,
+    }
+  }
+}
+
+impl fmt::Display for VerificationStatus {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      VerificationStatus::Valid {} => write!(f, "Valid"),
+      VerificationStatus::ValidFromCache {} => write!(f, "Valid from cache"),
+      VerificationStatus::Inconclusive {} => write!(f, "Unknown"),
+      VerificationStatus::Invalid {} => write!(f, "Invalid"),
     }
   }
 }
