@@ -19,19 +19,19 @@ fn reponse_has_no_errors(response: Response) -> bool {
 #[test]
 fn test_one_query() {
   let f = Factory::new();
-  let mut backend = Backend::create(Config::default()).unwrap();
   let symbols = examples::identity_symbols(&f);
-  let response = backend.query_for_program(symbols).unwrap();
+  let mut backend = Backend::create(Config::default()).unwrap();
+  let response = backend.query_for_program(&symbols).unwrap();
   assert!(reponse_has_no_errors(response));
 }
 
 #[test]
 fn test_many_queries() {
   let f = Factory::new();
+  let symbols = examples::identity_symbols(&f);
   let mut backend = Backend::create(Config::default()).unwrap();
   for _ in 0..5 {
-    let symbols = examples::identity_symbols(&f);
-    let response = backend.query_for_program(symbols).unwrap();
+    let response = backend.query_for_program(&symbols).unwrap();
     assert!(reponse_has_no_errors(response));
   }
 }

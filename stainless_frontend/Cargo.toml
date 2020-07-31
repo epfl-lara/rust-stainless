@@ -8,18 +8,17 @@ categories = ["development-tools"]
 
 [[bin]]
 name = "rustc_to_stainless"
-test = false
 doctest = false
 
 [[bin]]
 name = "cargo-stainless"
-test = false
 doctest = false
 
 [lib]
 doctest = false
 
 [dependencies]
+stainless_backend = { path = "../stainless_backend" }
 stainless_data = { path = "../stainless_data" }
 stainless_extraction = { path = "../stainless_extraction" }
 clap = "2.33.1"

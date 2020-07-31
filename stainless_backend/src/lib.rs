@@ -17,6 +17,7 @@ pub struct Config {
   print_types: bool,
   debug_trees: bool,
   debug_phases: Vec<String>,
+  strict_arithmetic: bool,
 }
 
 impl Default for Config {
@@ -27,6 +28,7 @@ impl Default for Config {
       print_types: false,
       debug_trees: false,
       debug_phases: vec![],
+      strict_arithmetic: false,
     }
   }
 }
@@ -55,7 +57,8 @@ impl Backend {
       .arg("--vc-cache=false")
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
-      .arg(format!("--print-types={}", config.print_types));
+      .arg(format!("--print-types={}", config.print_types))
+      .arg(format!("--strict-arithmetic={}", config.strict_arithmetic));
     if config.debug_trees {
       cmd
         .arg("--debug=trees")
@@ -101,7 +104,7 @@ impl Backend {
       .map_err(|err| format!("Failed to parse response: {}", err))
   }
 
-  pub fn query_for_program(&mut self, symbols: st::Symbols<'_>) -> Result<Response, String> {
+  pub fn query_for_program(&mut self, symbols: &st::Symbols) -> Result<Response, String> {
     use stainless_data::ser::*;
     use tempfile::NamedTempFile;
 

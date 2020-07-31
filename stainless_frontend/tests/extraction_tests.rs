@@ -2,27 +2,76 @@
 extern crate stainless_frontend;
 
 pub mod utilities;
+use utilities::*;
+use Outcome::*;
+
+macro_rules! emit_check {
+  ($verify:expr, $outcome:expr, $test_path:ident) => {
+    assert_eq!(run_extraction_test($test_path, $verify), $outcome);
+  };
+}
+
+macro_rules! select_check {
+  (pass, extraction, $test_path:ident) => {
+    emit_check!(false, Success { verified: false }, $test_path)
+  };
+  (pass, verification, $test_path:ident) => {
+    emit_check!(true, Success { verified: true }, $test_path)
+  };
+  (fail, extraction, $test_path:ident) => {
+    emit_check!(false, ErrorInExtraction, $test_path)
+  };
+  (fail, verification, $test_path:ident) => {
+    emit_check!(true, ErrorInVerification, $test_path)
+  };
+}
+
+macro_rules! define_test {
+  ($pass_or_fail:ident, $stage:ident, $test_name:ident, $name:ident) => {
+    #[test]
+    fn $test_name() {
+      let relative_path = format!(
+        "tests/{}/{}.rs",
+        stringify!($pass_or_fail),
+        stringify!($name)
+      );
+      let test_path = manifest_relative_path(relative_path);
+      select_check!($pass_or_fail, $stage, test_path);
+    }
+  };
+}
+
+macro_rules! select_test {
+  (pass, $name:ident) => {
+    mod $name {
+      use super::*;
+      define_test!(pass, extraction, extraction, $name);
+      define_test!(pass, verification, verification, $name);
+    }
+  };
+  (fail_extraction, $name:ident) => {
+    define_test!(fail, extraction, $name, $name);
+  };
+  (fail_verification, $name:ident) => {
+    define_test!(fail, verification, $name, $name);
+  };
+}
 
 macro_rules! define_tests {
   ($($kind:ident : $name:ident),*) => {
-    #[cfg(test)]
-    mod tests {
-      use tempfile::tempdir;
-      use super::utilities::*;
-
-      $(
-        #[test]
-        fn $name() {
-          let output_dir = tempdir().expect("Failed to create temporary output dir");
-          let relative_path = format!("tests/{}/{}.rs", stringify!($kind), stringify!($name));
-          let test_path = manifest_relative_path(relative_path);
-          assert!(extract_without_errors(test_path, output_dir.path().to_owned()));
-        }
-      )*
-    }
+    $(
+      select_test!($kind, $name);
+    )*
   }
 }
 
+// Defines all the individual test cases to be run.
+// Test cases are found in the `tests/pass` and `tests/fail` subdirectories.
+// E.g. `pass: adts` refers to the test case in `tests/pass/adts.rs`.
+// Tests can be defined in one of three modes:
+//  - pass: ensures that both extraction and verification succeed
+//  - fail_extraction: ensures that extraction rejects the program
+//  - fail_verification: ensures that verification rejects the program
 define_tests!(
   pass: adts,
   pass: blocks,
@@ -31,5 +80,7 @@ define_tests!(
   pass: generic_id,
   pass: generic_option,
   pass: int_option,
-  pass: tuples
+  pass: tuples,
+  fail_extraction: switch_ref,
+  fail_extraction: switch_int
 );
