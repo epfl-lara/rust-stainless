@@ -1,23 +1,67 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
-pub fn extract_without_errors<P: AsRef<Path>>(source_path: P, output_path: P) -> bool {
-  let args = compiler_args(source_path, output_path);
+use stainless_backend::messages::Report;
+use stainless_backend::{Backend, Config};
+use stainless_data::ast as st;
 
-  let mut had_errors = true;
-  let had_crashes = stainless_frontend::run(args, |tcx, _symbols| {
-    had_errors = tcx.sess.has_errors();
+#[derive(Debug, PartialEq, Eq)]
+pub enum Outcome {
+  Success { verified: bool },
+  CrashInExtraction,
+  ErrorInExtraction,
+  CrashInVerification,
+  ErrorInVerification,
+}
+
+pub fn run_extraction_test<S: AsRef<Path>>(source_path: S, verify: bool) -> Outcome {
+  let args = compiler_args(source_path);
+
+  let mut outcome: Outcome = Outcome::CrashInExtraction;
+  let had_xt_crashes = stainless_frontend::run(args, |tcx, symbols| {
+    if tcx.sess.has_errors() {
+      outcome = Outcome::ErrorInExtraction;
+    } else if !verify {
+      outcome = Outcome::Success { verified: false };
+    } else {
+      outcome = run_verification_test(&symbols);
+    }
   })
   .is_err();
 
-  !had_crashes && !had_errors
+  assert!(!had_xt_crashes || outcome == Outcome::CrashInExtraction);
+  outcome
 }
 
-pub fn manifest_relative_path<P: AsRef<Path>>(relative_path: P) -> PathBuf {
+fn run_verification_test(symbols: &st::Symbols) -> Outcome {
+  if let Ok(mut backend) = Backend::create(Config::default()) {
+    if let Ok(response) = backend.query_for_program(symbols) {
+      let all_valid = match response.into_verification_report() {
+        Some(Report::Verification { results, .. }) => {
+          results.iter().all(|result| result.status.is_valid())
+        }
+        None => false,
+      };
+      if all_valid {
+        Outcome::Success { verified: true }
+      } else {
+        Outcome::ErrorInVerification
+      }
+    } else {
+      Outcome::CrashInVerification
+    }
+  } else {
+    Outcome::CrashInVerification
+  }
+}
+
+pub fn manifest_relative_path<S: AsRef<Path>>(relative_path: S) -> PathBuf {
   PathBuf::new()
     .join(env!("CARGO_MANIFEST_DIR"))
     .join(relative_path)
 }
+
+/// Helpers
 
 fn _find_tests() -> Vec<PathBuf> {
   let mut test_paths = std::fs::read_dir(".")
@@ -38,7 +82,17 @@ fn find_sysroot() -> PathBuf {
   }
 }
 
-fn compiler_args<P: AsRef<Path>>(source_path: P, output_path: P) -> Vec<String> {
+fn compiler_args<S: AsRef<Path>>(source_path: S) -> Vec<String> {
+  use tempfile::tempdir;
+  let output_dir = tempdir().expect("Failed to create temporary output dir");
+  compiler_args_with_output(source_path, output_dir.path())
+}
+
+fn compiler_args_with_output<S, O>(source_path: S, output_path: O) -> Vec<String>
+where
+  S: AsRef<Path>,
+  O: AsRef<Path>,
+{
   let sysroot_path = find_sysroot();
 
   let deps_path = manifest_relative_path("../target/debug/deps");

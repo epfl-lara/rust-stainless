@@ -374,6 +374,7 @@ dependencies = [
  "env_logger",
  "serde_json",
  "stainless",
+ "stainless_backend",
  "stainless_data",
  "stainless_extraction",
  "tempfile",
