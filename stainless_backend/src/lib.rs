@@ -102,13 +102,17 @@ impl Backend {
   }
 
   pub fn query_for_program(&mut self, symbols: st::Symbols<'_>) -> Result<Response, String> {
-    use tempfile::NamedTempFile;
     use stainless_data::ser::*;
+    use tempfile::NamedTempFile;
 
     let mut file = NamedTempFile::new().expect("Unable to create temporary example file");
     let mut s = BufferSerializer::new();
-    symbols.serialize(&mut s).expect("Failed to serialize stainless program");
-    file.write_all(s.as_slice()).expect("Unable to write example file");
+    symbols
+      .serialize(&mut s)
+      .expect("Failed to serialize stainless program");
+    file
+      .write_all(s.as_slice())
+      .expect("Unable to write example file");
 
     self.query(file.path())
   }
