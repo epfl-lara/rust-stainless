@@ -3,4 +3,4 @@ save-analysis-temp/
 .vscode
 .metals
 *.inoxser
-
+stainless.log

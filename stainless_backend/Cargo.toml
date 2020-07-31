@@ -1,0 +1,19 @@
+[package]
+name = "stainless_backend"
+version = "0.0.1"
+edition = "2018"
+authors = ["Georg Schmid <georg.schmid@epfl.ch>"]
+description = "A wrapper around the backend of the Stainless verifier"
+categories = ["development-tools"]
+
+[lib]
+doctest = false
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+stainless_data = { path = "../stainless_data" }
+tempfile = "3"
+
+[features]
+default = []
