@@ -1,5 +1,7 @@
 extern crate stainless_backend;
 
+use stainless_data::ast::Factory;
+
 use stainless_backend::messages::{Report, Response};
 use stainless_backend::{Backend, Config};
 
@@ -16,19 +18,20 @@ fn reponse_has_no_errors(response: Response) -> bool {
 
 #[test]
 fn test_one_query() {
-  let query_path = examples::identity_symbols();
+  let f = Factory::new();
   let mut backend = Backend::create(Config::default()).unwrap();
-  let response = backend.query(query_path).unwrap();
+  let symbols = examples::identity_symbols(&f);
+  let response = backend.query_for_program(symbols).unwrap();
   assert!(reponse_has_no_errors(response));
 }
 
 #[test]
 fn test_many_queries() {
-  let query_path = examples::identity_symbols();
-  let query_path = query_path.path();
+  let f = Factory::new();
   let mut backend = Backend::create(Config::default()).unwrap();
   for _ in 0..5 {
-    let response = backend.query(query_path).unwrap();
+    let symbols = examples::identity_symbols(&f);
+    let response = backend.query_for_program(symbols).unwrap();
     assert!(reponse_has_no_errors(response));
   }
 }

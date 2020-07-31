@@ -1,28 +1,6 @@
-use std::io::Write;
-use tempfile::NamedTempFile;
-
 use stainless_data::ast::*;
 use stainless_data::ser::*;
 use types::*;
-
-macro_rules! test_gen {
-  ($name:ident, $s:ident => $body:block) => {
-    pub fn $name() -> NamedTempFile {
-      let mut file = NamedTempFile::new().expect("Unable to create temporary example file");
-      let mut s = BufferSerializer::new();
-      let $s = &mut s;
-      $body
-      file.write_all(s.as_slice()).expect("Unable to write example file");
-      file
-    }
-  };
-}
-
-macro_rules! ser {
-  ($v:expr, $s:ident) => {
-    $v.serialize($s).unwrap()
-  };
-}
 
 fn make_sym<'a, N: Into<String>>(f: &'a Factory, gid: i32, name: N) -> &'a SymbolIdentifier<'a> {
   let name = name.into();
@@ -52,14 +30,12 @@ fn make_identity_fundef<'a>(f: &'a Factory) -> &'a FunDef<'a> {
   f.FunDef(id_f, vec![], vec![&param], tpe_int, body, vec![])
 }
 
-test_gen!(identity_symbols, s => {
-  let f = Factory::new();
+pub fn identity_symbols<'a>(f: &'a Factory) -> Symbols<'a> {
   let fd = make_identity_fundef(&f);
   let mut functions = Map::new();
   functions.insert(fd.id, fd);
-  let symbols = Symbols {
+  Symbols {
     sorts: Map::new(),
     functions
-  };
-  ser!(symbols, s)
-});
+  }
+}

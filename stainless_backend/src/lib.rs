@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::result::Result;
 
+use stainless_data::ast as st;
+
 pub mod messages;
 use messages::Response;
 
@@ -97,6 +99,18 @@ impl Backend {
       .next()
       .ok_or("Stainless stopped before responding")?
       .map_err(|err| format!("Failed to parse response: {}", err))
+  }
+
+  pub fn query_for_program(&mut self, symbols: st::Symbols<'_>) -> Result<Response, String> {
+    use tempfile::NamedTempFile;
+    use stainless_data::ser::*;
+
+    let mut file = NamedTempFile::new().expect("Unable to create temporary example file");
+    let mut s = BufferSerializer::new();
+    symbols.serialize(&mut s).expect("Failed to serialize stainless program");
+    file.write_all(s.as_slice()).expect("Unable to write example file");
+
+    self.query(file.path())
   }
 }
 
