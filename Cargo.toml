@@ -2,6 +2,7 @@
 members = [
   "libstainless",
   "libstainless_macros",
+  "stainless_backend",
   "stainless_data",
   "stainless_extraction",
   "stainless_frontend",
