@@ -84,5 +84,5 @@ pub fn main() -> () {
 
   get_i32_from_bar(make_bar1());
   get_bool_from_bar(make_bar2());
-  make_bar3();
+  &make_bar3();
 }
