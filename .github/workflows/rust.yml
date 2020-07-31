@@ -4,35 +4,11 @@ name: Continous Integration
 
 jobs:
   check:
-    name: Check
+    name: Check & Lints
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          components: rustc-dev, llvm-tools-preview
-
-      - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          components: rustc-dev, llvm-tools-preview
 
       - name: Cargo Cache
         uses: actions/cache@v1
@@ -52,6 +28,48 @@ jobs:
             ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.toml') }}
             ${{ runner.os }}-cargo-target
 
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          components: rustc-dev, llvm-tools-preview, rustfmt, clippy
+
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Cargo Cache
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+            ${{ runner.os }}-cargo
+
+      - name: Cargo Target Cache
+        uses: actions/cache@v1
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.toml') }}
+            ${{ runner.os }}-cargo-target
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          override: true
+          components: rustc-dev, llvm-tools-preview, rustfmt, clippy
+
       - name: Run cargo build
         uses: actions-rs/cargo@v1
         with:
@@ -61,28 +79,3 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-
-  lints:
-    name: Lints
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v2
-
-      - name: Install toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          override: true
-          components: rustc-dev, llvm-tools-preview, rustfmt, clippy
-
-      - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
