@@ -2,7 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use stainless_backend::messages::Report;
-use stainless_backend::{Backend, Config};
+use stainless_backend::{verify_program, Config};
 use stainless_data::ast as st;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -34,21 +34,14 @@ pub fn run_extraction_test<S: AsRef<Path>>(source_path: S, verify: bool) -> Outc
 }
 
 fn run_verification_test(symbols: &st::Symbols) -> Outcome {
-  if let Ok(mut backend) = Backend::create(Config::default()) {
-    if let Ok(response) = backend.query_for_program(symbols) {
-      let all_valid = match response.into_verification_report() {
-        Some(Report::Verification { results, .. }) => {
-          results.iter().all(|result| result.status.is_valid())
-        }
-        None => false,
-      };
-      if all_valid {
-        Outcome::Success { verified: true }
-      } else {
-        Outcome::ErrorInVerification
-      }
+  if let Ok(report) = verify_program(Config::default(), symbols) {
+    let all_valid = match report {
+      Report::Verification { results, .. } => results.iter().all(|result| result.status.is_valid()),
+    };
+    if all_valid {
+      Outcome::Success { verified: true }
     } else {
-      Outcome::CrashInVerification
+      Outcome::ErrorInVerification
     }
   } else {
     Outcome::CrashInVerification
