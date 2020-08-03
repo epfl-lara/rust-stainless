@@ -252,6 +252,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
+  pub(super) fn is_signed_bv_type(&self, ty: Ty<'tcx>) -> bool {
+    match ty.kind {
+      TyKind::Int(_) => true,
+      _ => false,
+    }
+  }
+
   pub(super) fn is_bigint_type(&self, ty: Ty<'tcx>) -> bool {
     match ty.kind {
       TyKind::Adt(adt_def, _) => self.is_bigint(adt_def),

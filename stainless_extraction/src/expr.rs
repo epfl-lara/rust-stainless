@@ -114,6 +114,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     {
       let (arg1, arg2) = (self.mirror(arg1), self.mirror(arg2));
       let args_are_bv = self.base.is_bv_type(arg1.ty) && self.base.is_bv_type(arg2.ty);
+      let arg1_is_signed = self.base.is_signed_bv_type(arg1.ty);
       let args_are_bool = arg1.ty.is_bool() && arg2.ty.is_bool();
       assert!(args_are_bv || args_are_bool);
       let (arg1, arg2) = (self.extract_expr(arg1), self.extract_expr(arg2));
@@ -124,12 +125,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         BinOp::Sub if args_are_bv => f.Minus(arg1, arg2).into(),
         BinOp::Mul if args_are_bv => f.Times(arg1, arg2).into(),
         BinOp::Div if args_are_bv => f.Division(arg1, arg2).into(),
+        BinOp::Rem if args_are_bv => f.Remainder(arg1, arg2).into(),
         BinOp::Lt if args_are_bv => f.LessThan(arg1, arg2).into(),
         BinOp::Le if args_are_bv => f.LessEquals(arg1, arg2).into(),
         BinOp::Ge if args_are_bv => f.GreaterEquals(arg1, arg2).into(),
         BinOp::Gt if args_are_bv => f.GreaterThan(arg1, arg2).into(),
+        BinOp::BitXor if args_are_bv => f.BVXor(arg1, arg2).into(),
+        BinOp::BitAnd if args_are_bv => f.BVAnd(arg1, arg2).into(),
+        BinOp::BitOr if args_are_bv => f.BVOr(arg1, arg2).into(),
+        BinOp::Shl if args_are_bv => f.BVShiftLeft(arg1, arg2).into(),
+        BinOp::Shr if args_are_bv && arg1_is_signed => f.BVAShiftRight(arg1, arg2).into(),
+        BinOp::Shr if args_are_bv => f.BVLShiftRight(arg1, arg2).into(),
         _ => {
-          // TODO: Handle Rem, BitXor, BitAnd, BitOr, Shl, Shr
+          // TODO: Support pointer offset BinOp?
           self.unsupported_expr(expr.span, format!("Cannot extract binary op {:?}", op))
         }
       }
