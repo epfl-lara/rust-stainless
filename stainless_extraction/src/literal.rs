@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 
-use rustc_middle::ty::{self, TyKind};
+use rustc_middle::mir::interpret::ConstValue;
+use rustc_middle::ty::{self, ConstKind, TyKind};
 use rustc_target::abi;
 
 use stainless_data::ast as st;
@@ -11,6 +12,7 @@ pub(super) enum Literal {
   Bool(bool),
   Int { value: i128, size: u64 },
   Uint { value: u128, size: u64 },
+  String(String),
 }
 
 impl Literal {
@@ -25,6 +27,7 @@ impl Literal {
       Literal::Uint { value, size } => f
         .BVLiteral(false, (*value).into(), *size as st_types::Int)
         .into(),
+      Literal::String(value) => f.StringLiteral(value.clone()).into(),
     }
   }
 }
@@ -57,6 +60,20 @@ impl<'tcx> TryFrom<&'tcx ty::Const<'tcx>> for Literal {
           value.map(|value| Literal::Uint { value, size })
         })
         .ok_or(()),
+      TyKind::Ref(
+        _,
+        ty::TyS {
+          kind: TyKind::Str, ..
+        },
+        _,
+      ) => match konst.val {
+        ConstKind::Value(ConstValue::Slice { data, start, end }) => {
+          let slice = data.inspect_with_undef_and_ptr_outside_interpreter(start..end);
+          let s = ::std::str::from_utf8(slice).expect("Expected UTF8 str in ConstValue");
+          Ok(Literal::String(s.into()))
+        }
+        _ => Err(()),
+      },
       _ => Err(()),
     }
   }

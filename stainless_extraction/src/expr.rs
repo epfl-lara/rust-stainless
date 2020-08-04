@@ -1,10 +1,11 @@
 use super::literal::Literal;
+use super::std_items::StdItem::*;
 use super::*;
 
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -29,7 +30,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { .. } => self.extract_field(expr),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
-      ExprKind::Call { .. } => self.extract_call(expr),
+      ExprKind::Call { .. } => self.extract_call_like(expr),
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
         let block = self.mirror(ast_block);
@@ -113,9 +114,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     } = expr.kind
     {
       let (arg1, arg2) = (self.mirror(arg1), self.mirror(arg2));
-      let args_are_bv = self.base.is_bv_type(arg1.ty) && self.base.is_bv_type(arg2.ty);
-      let arg1_is_signed = self.base.is_signed_bv_type(arg1.ty);
-      let args_are_bool = arg1.ty.is_bool() && arg2.ty.is_bool();
+      let (arg1_ty, arg2_ty) = (arg1.ty, arg2.ty);
+      let args_are_bv = self.base.is_bv_type(arg1_ty) && self.base.is_bv_type(arg2_ty);
+      let args_are_bool = arg1_ty.is_bool() && arg2_ty.is_bool();
       assert!(args_are_bv || args_are_bool);
       let (arg1, arg2) = (self.extract_expr(arg1), self.extract_expr(arg2));
       match op {
@@ -133,9 +134,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         BinOp::BitXor if args_are_bv => f.BVXor(arg1, arg2).into(),
         BinOp::BitAnd if args_are_bv => f.BVAnd(arg1, arg2).into(),
         BinOp::BitOr if args_are_bv => f.BVOr(arg1, arg2).into(),
-        BinOp::Shl if args_are_bv => f.BVShiftLeft(arg1, arg2).into(),
-        BinOp::Shr if args_are_bv && arg1_is_signed => f.BVAShiftRight(arg1, arg2).into(),
-        BinOp::Shr if args_are_bv => f.BVLShiftRight(arg1, arg2).into(),
+        BinOp::Shl | BinOp::Shr if args_are_bv => {
+          self.extract_shift(arg1, arg2, arg1_ty, arg2_ty, op == BinOp::Shl, expr.span)
+        }
         _ => {
           // TODO: Support pointer offset BinOp?
           self.unsupported_expr(expr.span, format!("Cannot extract binary op {:?}", op))
@@ -143,6 +144,68 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       }
     } else {
       unreachable!()
+    }
+  }
+
+  /// Stainless requires matching bitvector types on all operations, so we insert appropriate
+  /// widenings, where possible. Stainless currently doesn't support mixing operands of
+  /// different signedness, however, so we reject such cases.
+  fn extract_shift(
+    &mut self,
+    arg1: st::Expr<'l>,
+    mut arg2: st::Expr<'l>,
+    arg1_ty: Ty<'tcx>,
+    arg2_ty: Ty<'tcx>,
+    is_shl: bool,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let bail = |bxtor: &mut BodyExtractor<'_, 'l, 'tcx>, msg| bxtor.unsupported_expr(span, msg);
+    match (&arg1_ty.kind, &arg2_ty.kind) {
+      (kind1, kind2) if kind1 == kind2 => {} // No need to adapt anything,
+      (TyKind::Int(int_ty1), TyKind::Int(int_ty2)) => {
+        match (int_ty1.bit_width(), int_ty2.bit_width()) {
+          (Some(width1), Some(width2)) => {
+            if width1 > width2 {
+              arg2 = f.BVWideningCast(arg2, f.BVType(true, width1 as i32)).into();
+            } else {
+              return bail(self, "Adapting lhs shift argument would change result type");
+            }
+          }
+          _ => {
+            return bail(self, "Cannot adapt shift arguments of unknown bit widths");
+          }
+        }
+      }
+      (TyKind::Uint(uint_ty1), TyKind::Uint(uint_ty2)) => {
+        match (uint_ty1.bit_width(), uint_ty2.bit_width()) {
+          (Some(width1), Some(width2)) => {
+            if width1 > width2 {
+              arg2 = f
+                .BVWideningCast(arg2, f.BVType(false, width1 as i32))
+                .into();
+            } else {
+              return bail(self, "Adapting lhs shift argument would change result type");
+            }
+          }
+          _ => {
+            return bail(self, "Cannot adapt shift arguments of unknown bit widths");
+          }
+        }
+      }
+      _ => {
+        return bail(
+          self,
+          "Cannot extract shift mixing signed and unsigned operands",
+        );
+      }
+    };
+    if is_shl {
+      f.BVShiftLeft(arg1, arg2).into()
+    } else if self.base.is_signed_bv_type(arg1_ty) {
+      f.BVAShiftRight(arg1, arg2).into()
+    } else {
+      f.BVLShiftRight(arg1, arg2).into()
     }
   }
 
@@ -208,6 +271,22 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
+  fn extract_call_like(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+    let def_id_opt = match &expr.kind {
+      ExprKind::Call { ty, .. } => match ty.kind {
+        TyKind::FnDef(def_id, ..) => Some(def_id),
+        _ => None,
+      },
+      _ => None,
+    };
+    let std_item_opt = def_id_opt.and_then(|def_id| self.base.std_items.def_to_item_opt(def_id));
+    match std_item_opt {
+      Some(BeginPanicFn) => self.extract_panic(expr, false),
+      Some(BeginPanicFmtFn) => self.extract_panic(expr, true),
+      _ => self.extract_call(expr),
+    }
+  }
+
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Call { ty, args, .. } = expr.kind {
@@ -235,6 +314,31 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       _ => true,
     });
     self.base.extract_tys(arg_tys, &self.txtcx, span)
+  }
+
+  fn extract_panic(&mut self, expr: Expr<'tcx>, is_fmt: bool) -> st::Expr<'l> {
+    let f = self.factory();
+    if let ExprKind::Call { mut args, .. } = expr.kind {
+      assert_eq!(args.len(), 1);
+      let arg = args.pop().unwrap();
+      // FIXME: It seems that for expressions encoding panics, `expr.ty` always gives us the
+      // `never` type, rather than the expected one. We currently just use the Unit type here,
+      // because this is correct for panics resulting from asserts, but we should really recover,
+      // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
+      // programs.)
+      let tpe = f.UnitType().into();
+      let error_expr = f.Error(tpe, "Panic".into());
+
+      if is_fmt {
+        // TODO: Implement panic! with formatted message
+        self.unsupported_expr(expr.span, "Cannot extract panic with formatted message")
+      } else {
+        let arg = self.extract_expr_ref(arg);
+        self.keep_for_effects(error_expr.into(), vec![arg])
+      }
+    } else {
+      unreachable!()
+    }
   }
 
   /*
@@ -556,6 +660,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
     stmts.reverse();
     self.extract_block_(&mut stmts, &mut vec![], final_expr)
+  }
+
+  /// Factory helpers
+
+  fn keep_for_effects(&mut self, expr: st::Expr<'l>, exprs: Vec<st::Expr<'l>>) -> st::Expr<'l> {
+    self.factory().Block(exprs, expr).into()
   }
 
   /// Various helpers

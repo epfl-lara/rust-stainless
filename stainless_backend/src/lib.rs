@@ -1,6 +1,7 @@
 extern crate serde;
 extern crate serde_json;
 
+use std::env;
 use std::io::{LineWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -63,6 +64,9 @@ impl Backend {
       cmd
         .arg("--debug=trees")
         .arg(format!("--debug-phases={}", config.debug_phases.join(",")));
+    }
+    if let Ok(extra_flags) = env::var("STAINLESS_FLAGS") {
+      cmd.args(extra_flags.split(' '));
     }
 
     let child = cmd
