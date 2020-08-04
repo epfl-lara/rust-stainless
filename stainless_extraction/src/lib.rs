@@ -21,10 +21,12 @@ mod expr;
 mod flags;
 mod krate;
 mod literal;
+mod std_items;
 mod ty;
 mod utils;
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use rustc_hair::hair;
 use rustc_hir::def_id::DefId;
@@ -38,6 +40,7 @@ use rustc_span::{MultiSpan, Span};
 use stainless_data::ast as st;
 
 use bindings::DefContext;
+use std_items::StdItems;
 use ty::TyExtractionCtxt;
 use utils::UniqueCounter;
 
@@ -48,7 +51,8 @@ pub fn extract_crate<'l, 'tcx: 'l>(
   crate_name: String,
 ) -> st::Symbols<'l> {
   let extraction = Box::new(Extraction::new(factory));
-  let mut xtor = BaseExtractor::new(tcx, extraction);
+  let std_items = Rc::new(StdItems::collect(tcx));
+  let mut xtor = BaseExtractor::new(tcx, std_items, extraction);
   xtor.process_crate(crate_name);
 
   let (adts, functions) = xtor.into_result();
@@ -116,13 +120,15 @@ impl<'l> Extraction<'l> {
 /// Extractor combines rustc state with extraction state
 struct BaseExtractor<'l, 'tcx: 'l> {
   tcx: TyCtxt<'tcx>,
+  std_items: Rc<StdItems>,
   extraction: Option<Box<Extraction<'l>>>,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  fn new(tcx: TyCtxt<'tcx>, extraction: Box<Extraction<'l>>) -> Self {
+  fn new(tcx: TyCtxt<'tcx>, std_items: Rc<StdItems>, extraction: Box<Extraction<'l>>) -> Self {
     Self {
       tcx,
+      std_items,
       extraction: Some(extraction),
     }
   }
@@ -265,6 +271,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let extraction = base.extraction.take();
     let base = BaseExtractor::new(
       tcx,
+      base.std_items.clone(),
       extraction.expect("Waiting for another BodyExtractor to finish"),
     );
 

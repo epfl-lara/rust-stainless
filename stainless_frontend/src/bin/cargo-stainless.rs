@@ -4,6 +4,7 @@ extern crate serde_json;
 use clap::{App, Arg};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::*;
@@ -240,6 +241,14 @@ fn main() -> ! {
 
   if let Some(export_path) = config.export_path_opt {
     build.env.insert("RUSTSTAINLESS_EXPORT".into(), export_path);
+  }
+
+  // Pass through certain flags
+  for &var_name in &["STAINLESS_FLAGS"] {
+    if let Ok(value) = env::var(var_name) {
+      let var_name: String = var_name.into();
+      build.env.entry(var_name).or_insert(value);
+    }
   }
 
   let status = Command::new("rustc_to_stainless")

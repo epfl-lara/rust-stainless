@@ -1,9 +1,7 @@
+use super::std_items::StdItem::*;
 use super::*;
 
 use rustc_ast::ast;
-use rustc_hir::lang_items::{
-  FnMutTraitLangItem, FnOnceTraitLangItem, FnTraitLangItem, SizedTraitLangItem,
-};
 use rustc_middle::ty::{
   AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, Ty, TyKind,
 };
@@ -47,8 +45,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
+
       TyKind::Adt(adt_def, _) if self.is_bigint(adt_def) => f.IntegerType().into(),
+      TyKind::Int(ast::IntTy::I8) => f.BVType(true, 8).into(),
+      TyKind::Int(ast::IntTy::I16) => f.BVType(true, 16).into(),
       TyKind::Int(ast::IntTy::I32) => f.BVType(true, 32).into(),
+      TyKind::Int(ast::IntTy::I64) => f.BVType(true, 64).into(),
+      TyKind::Int(ast::IntTy::I128) => f.BVType(true, 128).into(),
+      TyKind::Uint(ast::UintTy::U8) => f.BVType(false, 8).into(),
+      TyKind::Uint(ast::UintTy::U16) => f.BVType(false, 16).into(),
+      TyKind::Uint(ast::UintTy::U32) => f.BVType(false, 32).into(),
+      TyKind::Uint(ast::UintTy::U64) => f.BVType(false, 64).into(),
+      TyKind::Uint(ast::UintTy::U128) => f.BVType(false, 128).into(),
+
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), txtcx, span);
         match arg_tps.len() {
@@ -60,11 +69,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           _ => f.TupleType(arg_tps).into(),
         }
       }
+
       TyKind::Adt(adt_def, substs) => {
         let sort = self.extract_adt(adt_def.did);
         let arg_tps = self.extract_tys(substs.types(), txtcx, span);
         f.ADTType(sort.id, arg_tps).into()
       }
+
       TyKind::Param(param_ty) => txtcx
         .index_to_tparam
         .get(&param_ty.index)
@@ -123,10 +134,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let all_params = all_generic_params_of(tcx, def_id);
 
     // Certain unextracted traits we don't complain about at all.
-    let should_silently_ignore_trait = |trait_did: DefId| {
-      let check = |lang_item| trait_did == tcx.require_lang_item(lang_item, None);
-      check(SizedTraitLangItem)
-    };
+    let should_silently_ignore_trait =
+      |trait_did: DefId| self.std_items.is_one_of(trait_did, &[SizedTrait]);
 
     // Discovering HOF parameters.
     // We extract `F: Fn*(S) -> T` trait predicates by replacing `F` by `S => T`.
@@ -240,14 +249,21 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Various helpers
 
   pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    let tcx = self.tcx;
-    let check = |lang_item| def_id == tcx.require_lang_item(lang_item, None);
-    check(FnTraitLangItem) || check(FnMutTraitLangItem) || check(FnOnceTraitLangItem)
+    self
+      .std_items
+      .is_one_of(def_id, &[FnTrait, FnMutTrait, FnOnceTrait])
   }
 
   pub(super) fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
     match ty.kind {
       TyKind::Int(_) | TyKind::Uint(_) => true,
+      _ => false,
+    }
+  }
+
+  pub(super) fn is_signed_bv_type(&self, ty: Ty<'tcx>) -> bool {
+    match ty.kind {
+      TyKind::Int(_) => true,
       _ => false,
     }
   }

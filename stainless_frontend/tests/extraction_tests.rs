@@ -79,6 +79,7 @@ define_tests!(
   pass: fact,
   pass: generic_id,
   pass: generic_option,
+  pass: int_operators,
   pass: int_option,
   pass: tuples,
   fail_extraction: switch_ref,
