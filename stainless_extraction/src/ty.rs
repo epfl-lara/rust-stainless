@@ -46,6 +46,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
 
+      // Integer types
       TyKind::Adt(adt_def, _) if self.is_bigint(adt_def) => f.IntegerType().into(),
       TyKind::Int(ast::IntTy::I8) => f.BVType(true, 8).into(),
       TyKind::Int(ast::IntTy::I16) => f.BVType(true, 16).into(),
@@ -70,10 +71,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      TyKind::Adt(adt_def, substs) => {
-        let sort = self.extract_adt(adt_def.did);
-        let arg_tps = self.extract_tys(substs.types(), txtcx, span);
-        f.ADTType(sort.id, arg_tps).into()
+      // Box type
+      //
+      // We erase the indirection the box provides and replace it by
+      // the contained type.
+      TyKind::Adt(adt_def, substitutions) if adt_def.is_box() => {
+        self.extract_ty(substitutions.type_at(0), txtcx, span)
+      }
+
+      // All other ADTs
+      TyKind::Adt(adt_def, substitutions) => {
+        let sort_id = self.extract_adt_id(adt_def.did);
+        let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+        f.ADTType(sort_id, arg_tps).into()
       }
 
       TyKind::Param(param_ty) => txtcx
