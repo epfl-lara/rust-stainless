@@ -96,9 +96,10 @@ fn verify_program_and_report(tcx: TyCtxt, symbols: st::Symbols) {
       }
       print_results(tcx, &symbols, results);
     }
+
     Err(msg) => sess.fatal(
       format!(
-        "An error occur while trying to verify the extracted program: {}",
+        "An error occurred while trying to verify the extracted program: {}",
         msg,
       )
       .as_str(),

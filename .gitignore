@@ -1,6 +1,7 @@
 target/
 save-analysis-temp/
 .vscode
+.idea
 .metals
 *.inoxser
 stainless.log
