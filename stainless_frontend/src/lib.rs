@@ -54,7 +54,7 @@ impl<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send> Callbacks for ExtractionCall
     _compiler: &interface::Compiler,
     queries: &'tcx Queries<'tcx>,
   ) -> Compilation {
-    let crate_name = queries.crate_name().unwrap().peek().clone();
+    let crate_name: String = queries.crate_name().unwrap().peek().clone();
 
     queries.global_ctxt().unwrap().peek_mut().enter(|tcx| {
       tcx.dep_graph.with_ignore(|| {
