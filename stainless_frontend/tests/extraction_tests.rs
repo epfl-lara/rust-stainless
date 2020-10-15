@@ -75,6 +75,7 @@ macro_rules! define_tests {
 define_tests!(
   pass: adts,
   pass: blocks,
+  pass: boxes,
   pass: external_fn,
   pass: fact,
   pass: generic_id,
