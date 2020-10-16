@@ -58,10 +58,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       // TODO: Handle method calls
       // TODO: Handle arbitrary-precision integers
-      // TODO: Handle Deref / Borrow
+      // TODO: Handle Borrow
       ExprKind::Scope { value, .. } => self.extract_expr_ref(value),
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
+
+      // Deref (of boxes for now)
+      // Just return the contained expression.
+      ExprKind::Deref { arg } => {
+        let arg_expr = self.mirror(arg);
+        self.extract_expr(arg_expr)
+      }
 
       _ => self.unsupported_expr(
         expr.span,
@@ -289,10 +296,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
+
     if let ExprKind::Call { ty, args, .. } = expr.kind {
+      // Normal function call
       if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-        // Normal function call
         let fd_id = self.base.extract_fn_ref(def_id);
+
+        // Special case for Box::new, erase it and return the argument directly.
+        if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
+          return *self.extract_expr_refs(args).first().unwrap();
+        }
+
         let arg_tps = self.extract_arg_types(substs_ref, expr.span);
         let args = self.extract_expr_refs(args);
         f.FunctionInvocation(fd_id, arg_tps, args).into()
