@@ -10,29 +10,55 @@ pub enum IntOption {
   None,
   Some(i32),
 }
+/* Already translated tests/functions from Scala (see below).
 
-/* Already translated size function
-
-#[post(ret >= 0)]
-pub fn size(l: &List) -> i32 {
+pub fn size(l: List) -> u32 {
   match l {
     List::Nil => 0,
-    List::Cons(_, tail) => 1 + size(tail),
+    List::Cons(_, tail) => 1 + size(*tail),
   }
 }
 
-#[test]
-fn main() {
+pub fn is_sorted(l: List) -> bool {
+  // decreases(l)
+  match l {
+    List::Nil => true,
+    List::Cons(x, tail) => match *tail {
+      List::Nil => true,
+      List::Cons(y, ys) => x <= y && is_sorted(List::Cons(y, ys)),
+    },
+  }
+}
+
+pub fn min(l: List) -> IntOption {
+  // decreases(l)
+  match l {
+    List::Nil => IntOption::None,
+    List::Cons(x, xs) => match min(*xs) {
+      IntOption::None => IntOption::Some(x),
+      IntOption::Some(y) => {
+        if x < y {
+          IntOption::Some(x)
+        } else {
+          IntOption::Some(y)
+        }
+      }
+    },
+  }
+}
+
+pub fn main() {
   let list = List::Cons(
     12,
     Box::new(List::Cons(3, Box::new(List::Cons(-1, Box::new(List::Nil))))),
   );
 
-  assert_eq!(size(&list), 3)
+  assert!(size(list) == 3);
 }
- */
 
-/* Scala test copied from
+*/
+
+/* Scala tests (not yet translated) copied from
   https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
 
   def contents(l: List): Set[Int] = {
@@ -40,26 +66,6 @@ fn main() {
     l match {
       case Nil() => Set.empty
       case Cons(x,xs) => contents(xs) ++ Set(x)
-    }
-  }
-
-  def min(l : List) : OptInt = {
-    decreases(l)
-    l match {
-      case Nil() => None()
-      case Cons(x, xs) => min(xs) match {
-        case None() => Some(x)
-        case Some(x2) => if(x < x2) Some(x) else Some(x2)
-      }
-    }
-  }
-
-  def isSorted(l: List): Boolean = {
-    decreases(l)
-    l match {
-      case Nil() => true
-      case Cons(x, Nil()) => true
-      case Cons(x, Cons(y, ys)) => x <= y && isSorted(Cons(y, ys))
     }
   }
 
