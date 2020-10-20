@@ -65,6 +65,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       ExprKind::Deref { .. } => self.extract_deref(expr),
 
+      // Pointer
+      // (needed for measures and therefore only performed on boxes as well)
+      ExprKind::Pointer { source, .. } => {
+        let src_expr = self.mirror(source);
+        if src_expr.ty.is_box() {
+          self.extract_expr(src_expr)
+        } else {
+          self.unsupported_expr(
+            expr.span,
+            format!(
+              "Cannot extract Pointer for types other than Box, was {:?}",
+              src_expr.kind
+            ),
+          )
+        }
+      }
+
       _ => self.unsupported_expr(
         expr.span,
         format!("Cannot extract expr kind {:?}", expr.kind),

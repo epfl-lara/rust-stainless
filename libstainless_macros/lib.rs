@@ -16,6 +16,11 @@ pub fn post(attr: TokenStream, item: TokenStream) -> TokenStream {
   extract_specs_and_expand(SpecType::Post, attr.into(), item.into()).into()
 }
 
+#[proc_macro_attribute]
+pub fn measure(attr: TokenStream, item: TokenStream) -> TokenStream {
+  extract_specs_and_expand(SpecType::Measure, attr.into(), item.into()).into()
+}
+
 /// Flags
 
 macro_rules! define_flags {
