@@ -53,7 +53,7 @@ impl<'a> TryFrom<&'a Attribute> for SpecType {
 #[derive(Debug)]
 struct Spec {
   typ: SpecType,
-  cond: Expr,
+  expr: Expr,
 }
 
 /// Parse the decorated function and all specs
@@ -85,7 +85,7 @@ fn try_parse(
     .into_iter()
     .map(|(typ, cond)| Spec {
       typ,
-      cond: cond.unwrap(),
+      expr: cond.unwrap(),
     })
     .collect();
 
@@ -102,22 +102,22 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
 
   let make_spec_fn = |(index, spec): (usize, Spec)| -> Stmt {
     let fn_ident = format_ident!("__{}{}", spec.typ.name(), index + 1);
-    let cond = spec.cond;
     let ret_param: TokenStream = match spec.typ {
       SpecType::Post => quote! { , ret: #fn_return_ty },
       _ => quote! {},
     };
 
-    let (return_type, condition): (Type, TokenStream) = match spec.typ {
-      SpecType::Measure => (parse_quote!(()), parse_quote! { #cond; }),
-      _ => (parse_quote!(bool), parse_quote! { #cond }),
+    let expr = spec.expr;
+    let (return_type, body): (Type, TokenStream) = match spec.typ {
+      SpecType::Measure => (parse_quote!(()), parse_quote! { #expr; }),
+      _ => (parse_quote!(bool), parse_quote! { #expr }),
     };
 
     let spec_fn: ItemFn = parse_quote! {
       #[doc(hidden)]
       #[allow(unused_variables)]
       fn #fn_ident#fn_generics(#fn_arg_tys#ret_param) -> #return_type {
-        #condition
+        #body
       }
     };
     Stmt::Item(Item::Fn(spec_fn))
