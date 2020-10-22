@@ -67,7 +67,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // Just return the contained expression.
       ExprKind::Deref { arg } => {
         let arg_expr = self.mirror(arg);
-        self.extract_expr(arg_expr)
+
+        if arg_expr.ty.is_box() {
+          self.extract_expr(arg_expr)
+        } else {
+          self.unsupported_expr(
+            expr.span,
+            format!(
+              "Cannot extract Deref for types other than Box, was {:?}",
+              arg_expr.kind
+            ),
+          )
+        }
       }
 
       _ => self.unsupported_expr(

@@ -85,5 +85,6 @@ define_tests!(
   pass: int_option,
   pass: tuples,
   fail_extraction: switch_ref,
-  fail_extraction: switch_int
+  fail_extraction: switch_int,
+  fail_extraction: deref_non_box
 );
