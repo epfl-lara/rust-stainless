@@ -8,10 +8,10 @@ pub enum List {
 
 pub enum IntOption {
   None,
-  Some(i32),
+  Some { value: i32 },
 }
 
-#[measure(Box::new(l))]
+#[measure(l)]
 pub fn size(l: List) -> u32 {
   match l {
     List::Nil => 0,
@@ -19,7 +19,7 @@ pub fn size(l: List) -> u32 {
   }
 }
 
-#[measure(Box::new(l))]
+#[measure(l)]
 pub fn is_sorted(l: List) -> bool {
   match l {
     List::Nil => true,
@@ -30,17 +30,17 @@ pub fn is_sorted(l: List) -> bool {
   }
 }
 
-#[measure(Box::new(l))]
+#[measure(l)]
 pub fn min(l: List) -> IntOption {
   match l {
     List::Nil => IntOption::None,
     List::Cons { head: x, tail: xs } => match min(*xs) {
-      IntOption::None => IntOption::Some(x),
-      IntOption::Some(y) => {
+      IntOption::None => IntOption::Some { value: x },
+      IntOption::Some { value: y } => {
         if x < y {
-          IntOption::Some(x)
+          IntOption::Some { value: x }
         } else {
-          IntOption::Some(y)
+          IntOption::Some { value: y }
         }
       }
     },

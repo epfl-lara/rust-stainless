@@ -104,21 +104,20 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
     let fn_ident = format_ident!("__{}{}", spec.typ.name(), index + 1);
     let cond = spec.cond;
     let ret_param: TokenStream = match spec.typ {
-      SpecType::Pre => quote! {},
       SpecType::Post => quote! { , ret: #fn_return_ty },
-      SpecType::Measure => quote! {},
+      _ => quote! {},
     };
 
-    let return_type: Type = match spec.typ {
-      SpecType::Measure => parse_quote!(Box<dyn std::any::Any>),
-      _ => parse_quote!(bool),
+    let (return_type, condition): (Type, TokenStream) = match spec.typ {
+      SpecType::Measure => (parse_quote!(()), parse_quote! { #cond; }),
+      _ => (parse_quote!(bool), parse_quote! { #cond }),
     };
 
     let spec_fn: ItemFn = parse_quote! {
       #[doc(hidden)]
       #[allow(unused_variables)]
       fn #fn_ident#fn_generics(#fn_arg_tys#ret_param) -> #return_type {
-        #cond
+        #condition
       }
     };
     Stmt::Item(Item::Fn(spec_fn))
