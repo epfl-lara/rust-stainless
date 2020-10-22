@@ -63,29 +63,33 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
 
-      // Deref (of boxes for now)
-      // Just return the contained expression.
-      ExprKind::Deref { arg } => {
-        let arg_expr = self.mirror(arg);
-
-        if arg_expr.ty.is_box() {
-          self.extract_expr(arg_expr)
-        } else {
-          self.unsupported_expr(
-            expr.span,
-            format!(
-              "Cannot extract Deref for types other than Box, was {:?}",
-              arg_expr.kind
-            ),
-          )
-        }
-      }
+      ExprKind::Deref { .. } => self.extract_deref(expr),
 
       _ => self.unsupported_expr(
         expr.span,
         format!("Cannot extract expr kind {:?}", expr.kind),
       ),
     }
+  }
+
+  /// Extract a dereference of a box or fail.
+  ///
+  /// For a box the deref is erased and the contained expression is returned.
+  fn extract_deref(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+    if let ExprKind::Deref { arg } = &expr.kind {
+      let arg_expr = self.mirror(arg.clone());
+      if arg_expr.ty.is_box() {
+        return self.extract_expr(arg_expr);
+      }
+    }
+
+    self.unsupported_expr(
+      expr.span,
+      format!(
+        "Cannot extract Deref for types other than Box, was {:?}",
+        expr.kind
+      ),
+    )
   }
 
   fn extract_expr_ref(&mut self, expr: ExprRef<'tcx>) -> st::Expr<'l> {
@@ -314,8 +318,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         let fd_id = self.base.extract_fn_ref(def_id);
 
         // Special case for Box::new, erase it and return the argument directly.
+        // TODO: turn Box::new to a StdItem and use that. Tracked here:
+        //  https://github.com/epfl-lara/rust-stainless/issues/34
         if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
-          return *self.extract_expr_refs(args).first().unwrap();
+          return self.extract_expr_ref(args.first().cloned().unwrap());
         }
 
         let arg_tps = self.extract_arg_types(substs_ref, expr.span);
