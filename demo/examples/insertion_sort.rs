@@ -1,0 +1,1 @@
+tests/pass/insertion_sort.rs
