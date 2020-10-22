@@ -341,6 +341,18 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
+  /// Extract the definition ID of an ADT.
+  ///
+  /// If the ADT is already in the mappings, it will reuse the ID, otherwise the
+  /// function first parses the ADT, then uses the ID.
+  pub(super) fn extract_adt_id(&mut self, def_id: DefId) -> &'l st::SymbolIdentifier<'l> {
+    self
+      // get known ID
+      .with_extraction(|xt| xt.mapping.did_to_stid.get(&def_id).copied())
+      // otherwise extract ADT, then get the ID
+      .unwrap_or_else(|| &self.extract_adt(def_id).id)
+  }
+
   /// Extract an ADT (regardless of whether it is local or external)
   pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
     let sort_opt = self.with_extraction(|xt| {
@@ -349,6 +361,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .get(&def_id)
         .and_then(|id| xt.adts.get(id).copied())
     });
+
     match sort_opt {
       Some(sort) => sort,
       None => {
