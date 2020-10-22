@@ -3,44 +3,44 @@ use stainless::*;
 
 pub enum List {
   Nil,
-  Cons(i32, Box<List>),
+  Cons { head: i32, tail: Box<List> },
 }
 
 pub enum IntOption {
   None,
-  Some(i32),
+  Some { value: i32 },
 }
-/* Already translated tests/functions from Scala (see below).
 
+#[measure(l)]
 pub fn size(l: List) -> u32 {
   match l {
     List::Nil => 0,
-    List::Cons(_, tail) => 1 + size(*tail),
+    List::Cons { tail, .. } => 1 + size(*tail),
   }
 }
 
+#[measure(l)]
 pub fn is_sorted(l: List) -> bool {
-  // decreases(l)
   match l {
     List::Nil => true,
-    List::Cons(x, tail) => match *tail {
+    List::Cons { head: x, tail } => match *tail {
       List::Nil => true,
-      List::Cons(y, ys) => x <= y && is_sorted(List::Cons(y, ys)),
+      List::Cons { head: y, tail: ys } => x <= y && is_sorted(List::Cons { head: y, tail: ys }),
     },
   }
 }
 
+#[measure(l)]
 pub fn min(l: List) -> IntOption {
-  // decreases(l)
   match l {
     List::Nil => IntOption::None,
-    List::Cons(x, xs) => match min(*xs) {
-      IntOption::None => IntOption::Some(x),
-      IntOption::Some(y) => {
+    List::Cons { head: x, tail: xs } => match min(*xs) {
+      IntOption::None => IntOption::Some { value: x },
+      IntOption::Some { value: y } => {
         if x < y {
-          IntOption::Some(x)
+          IntOption::Some { value: x }
         } else {
-          IntOption::Some(y)
+          IntOption::Some { value: y }
         }
       }
     },
@@ -48,15 +48,19 @@ pub fn min(l: List) -> IntOption {
 }
 
 pub fn main() {
-  let list = List::Cons(
-    12,
-    Box::new(List::Cons(3, Box::new(List::Cons(-1, Box::new(List::Nil))))),
-  );
+  let list = List::Cons {
+    head: 12,
+    tail: Box::new(List::Cons {
+      head: 3,
+      tail: Box::new(List::Cons {
+        head: -1,
+        tail: Box::new(List::Nil),
+      }),
+    }),
+  };
 
   assert!(size(list) == 3);
 }
-
-*/
 
 /* Scala tests (not yet translated) copied from
   https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala

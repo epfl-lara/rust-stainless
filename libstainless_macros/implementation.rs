@@ -5,12 +5,13 @@ use syn::{parse_quote, Attribute, Expr, Item, ItemFn, Result, ReturnType, Stmt, 
 use std::convert::TryFrom;
 use std::iter;
 
-/// Specs (pre- and postconditions)
+/// Specs (pre-, postconditions, ...)
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpecType {
   Pre,
   Post,
+  Measure,
 }
 
 impl SpecType {
@@ -18,6 +19,7 @@ impl SpecType {
     match self {
       SpecType::Pre => "pre",
       SpecType::Post => "post",
+      SpecType::Measure => "measure",
     }
   }
 }
@@ -29,6 +31,7 @@ impl TryFrom<String> for SpecType {
     match name.as_str() {
       "pre" => Ok(SpecType::Pre),
       "post" => Ok(SpecType::Post),
+      "measure" => Ok(SpecType::Measure),
       _ => Err(()),
     }
   }
@@ -50,7 +53,7 @@ impl<'a> TryFrom<&'a Attribute> for SpecType {
 #[derive(Debug)]
 struct Spec {
   typ: SpecType,
-  cond: Expr,
+  expr: Expr,
 }
 
 /// Parse the decorated function and all specs
@@ -82,7 +85,7 @@ fn try_parse(
     .into_iter()
     .map(|(typ, cond)| Spec {
       typ,
-      cond: cond.unwrap(),
+      expr: cond.unwrap(),
     })
     .collect();
 
@@ -99,27 +102,41 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
 
   let make_spec_fn = |(index, spec): (usize, Spec)| -> Stmt {
     let fn_ident = format_ident!("__{}{}", spec.typ.name(), index + 1);
-    let cond = spec.cond;
     let ret_param: TokenStream = match spec.typ {
-      SpecType::Pre => quote! {},
       SpecType::Post => quote! { , ret: #fn_return_ty },
+      _ => quote! {},
     };
+
+    let expr = spec.expr;
+    let (return_type, body): (Type, TokenStream) = match spec.typ {
+      SpecType::Measure => (parse_quote!(()), parse_quote! { #expr; }),
+      _ => (parse_quote!(bool), parse_quote! { #expr }),
+    };
+
     let spec_fn: ItemFn = parse_quote! {
       #[doc(hidden)]
       #[allow(unused_variables)]
-      fn #fn_ident#fn_generics(#fn_arg_tys#ret_param) -> bool {
-        #cond
+      fn #fn_ident#fn_generics(#fn_arg_tys#ret_param) -> #return_type {
+        #body
       }
     };
     Stmt::Item(Item::Fn(spec_fn))
   };
-  let (pre_specs, post_specs): (Vec<Spec>, Vec<Spec>) = specs
+  let (pre_specs, other): (Vec<Spec>, Vec<Spec>) = specs
     .into_iter()
     .partition(|spec| spec.typ == SpecType::Pre);
+
+  let (post_specs, measure_specs): (Vec<Spec>, Vec<Spec>) = other
+    .into_iter()
+    .partition(|spec| spec.typ == SpecType::Post);
+
   let pre_spec_fns = pre_specs.into_iter().enumerate().map(make_spec_fn);
   let post_spec_fns = post_specs.into_iter().enumerate().map(make_spec_fn);
+  let measure_spec_fns = measure_specs.into_iter().enumerate().map(make_spec_fn);
+
   #[allow(clippy::reversed_empty_ranges)]
   {
+    item_fn.block.stmts.splice(0..0, measure_spec_fns);
     item_fn.block.stmts.splice(0..0, post_spec_fns);
     item_fn.block.stmts.splice(0..0, pre_spec_fns);
   }
