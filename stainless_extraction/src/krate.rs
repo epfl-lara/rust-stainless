@@ -1,5 +1,6 @@
 use super::*;
 
+use rustc_hir::def::CtorKind;
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, ItemKind};
@@ -436,7 +437,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .fields
               .iter()
               .map(|field| {
-                let field_id = self.get_or_register_def(field.did);
+                let reg_field_id = self.get_or_register_def(field.did);
+
+                // Map a tuple enum type's field names from 0,1,2... to _0,_1,_2...
+                // Tuple constructor kind
+                let field_id = match variant.ctor_kind {
+                  CtorKind::Fn => self.map_tuple_field_names(reg_field_id),
+                  _ => reg_field_id,
+                };
 
                 let substs = List::identity_for_item(self.tcx, def_id);
                 let field_ty = field.ty(self.tcx, substs);
@@ -457,5 +465,30 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         f.ADTSort(adt_id, tparams, constructors, flags)
       }
     }
+  }
+
+  fn map_tuple_field_names(
+    &self,
+    field_id: &'l st::SymbolIdentifier<'l>,
+  ) -> &'l st::SymbolIdentifier<'l> {
+    let f = self.factory();
+    let st::SymbolIdentifier {
+      symbol_path,
+      id: st::Identifier {
+        name,
+        globalId: gid,
+        id,
+      },
+    } = field_id;
+
+    let new_name = format!("_{}", name);
+    let new_path = symbol_path
+      .iter()
+      .take(symbol_path.len() - 1)
+      .chain(std::iter::once(&new_name))
+      .cloned()
+      .collect();
+
+    f.SymbolIdentifier(f.Identifier(new_name, *gid, *id), new_path)
   }
 }
