@@ -3,7 +3,7 @@ pub use stainless_macros::*;
 
 use std::marker::PhantomData;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Set<T> {
   phantom: PhantomData<T>,
 }

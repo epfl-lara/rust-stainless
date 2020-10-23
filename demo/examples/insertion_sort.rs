@@ -1,6 +1,11 @@
 extern crate stainless;
 use stainless::*;
 
+/// This test case was translated in a quite literal fashion from this Scala
+/// test case: [1].
+///
+/// [1]: https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
+
 pub enum List {
   Nil,
   Cons { head: i32, tail: Box<List> },
@@ -55,57 +60,74 @@ pub fn contents(l: List) -> Set<i32> {
   }
 }
 
+/// Inserting element 'e' into a sorted list 'l' produces a sorted list with
+/// the expected content and size
+
+// #[pre(is_sorted(l))]
+#[measure(l)]
+// #[post(
+//     contents(ret) == contents(l).union(Set::singleton(e)) &&
+//     is_sorted(ret) &&
+//     size(ret) == size(l) + 1
+//   )]
+pub fn sorted_insert(e: i32, l: List) -> List {
+  match l {
+    List::Nil => List::Cons {
+      head: e,
+      tail: Box::new(List::Nil),
+    },
+    List::Cons { head: x, tail: xs } => {
+      if x <= e {
+        List::Cons {
+          head: x,
+          tail: Box::new(sorted_insert(e, *xs)),
+        }
+      } else {
+        List::Cons {
+          head: e,
+          tail: Box::new(List::Cons { head: x, tail: xs }),
+        }
+      }
+    }
+  }
+}
+
+/// Insertion sort yields a sorted list of same size and content as the input
+/// list
+#[measure(l)]
+// #[post(
+//     contents(ret) == contents(l) &&
+//     is_sorted(ret) &&
+//     size(ret) == size(l)
+//   )]
+pub fn sort(l: List) -> List {
+  match l {
+    List::Nil => l,
+    List::Cons { head: x, tail: xs } => sorted_insert(x, sort(*xs)),
+  }
+}
+
+#[external]
 pub fn main() {
   let list = List::Cons {
-    head: 12,
+    head: 5,
     tail: Box::new(List::Cons {
-      head: 3,
+      head: 2,
       tail: Box::new(List::Cons {
-        head: -1,
-        tail: Box::new(List::Nil),
+        head: 4,
+        tail: Box::new(List::Cons {
+          head: 5,
+          tail: Box::new(List::Cons {
+            head: -1,
+            tail: Box::new(List::Cons {
+              head: 8,
+              tail: Box::new(List::Nil),
+            }),
+          }),
+        }),
       }),
     }),
   };
 
-  assert!(size(list) == 3);
+  assert!(is_sorted(sort(list)))
 }
-
-/* Scala tests (not yet translated) copied from
-  https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
-
-  /* Inserting element 'e' into a sorted list 'l' produces a sorted list with
-   * the expected content and size */
-  def sortedIns(e: Int, l: List): List = {
-    require(isSorted(l))
-    decreases(l)
-    l match {
-      case Nil() => Cons(e,Nil())
-      case Cons(x,xs) => if (x <= e) Cons(x,sortedIns(e, xs)) else Cons(e, l)
-    }
-  } ensuring(res => contents(res) == contents(l) ++ Set::singleton(e)
-                    && isSorted(res)
-                    && size(res) == size(l) + 1
-            )
-
-  /* Insertion sort yields a sorted list of same size and content as the input
-   * list */
-  def sort(l: List): List = {
-    decreases(l)
-    l match {
-      case Nil() => Nil()
-      case Cons(x,xs) => sortedIns(x, sort(xs))
-    }
-  } ensuring(res => contents(res) == contents(l)
-                     && isSorted(res)
-                     && size(res) == size(l)
-             )
-
-  @extern
-  def main(args: Array[String]): Unit = {
-    val ls: List = Cons(5, Cons(2, Cons(4, Cons(5, Cons(1, Cons(8,Nil()))))))
-
-    println(ls)
-    println(sort(ls))
-  }
-}
- */
