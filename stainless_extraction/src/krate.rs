@@ -408,9 +408,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let adt_def = self.tcx.adt_def(def_id);
 
         // Extract flags
-        let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
-        let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
-        let flags = carrier_flags.to_stainless(f);
+        let local_def_id_opt = def_id.as_local();
+
+        // Extract flags for local def ids.
+        let (flags, mut flags_by_symbol, hir_id_opt) = match local_def_id_opt {
+          Some(local_def_id) => {
+            let hir_id = self.tcx.hir().as_local_hir_id(local_def_id);
+            let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
+            (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
+          }
+          // TODO: Extract external (non-local) flags. Tracked here:
+          //   https://github.com/epfl-lara/rust-stainless/issues/36
+          // Currently, we just return empty flags for non-local ADTs.
+          _ => (vec![], HashMap::new(), None),
+        };
 
         // Extract generics
         let (tparams, txtcx) = self.extract_generics(def_id);
@@ -442,8 +453,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           })
           .collect();
 
-        self.report_unused_flags(hir_id, &flags_by_symbol);
-
+        hir_id_opt.map(|hir_id| self.report_unused_flags(hir_id, &flags_by_symbol));
         f.ADTSort(adt_id, tparams, constructors, flags)
       }
     }

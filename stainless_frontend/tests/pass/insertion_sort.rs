@@ -47,6 +47,14 @@ pub fn min(l: List) -> IntOption {
   }
 }
 
+#[measure(l)]
+pub fn contents(l: List) -> Set<i32> {
+  match l {
+    List::Nil => Set::empty(),
+    List::Cons { head, tail } => contents(*tail).add(head),
+  }
+}
+
 pub fn main() {
   let list = List::Cons {
     head: 12,
@@ -65,14 +73,6 @@ pub fn main() {
 /* Scala tests (not yet translated) copied from
   https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
 
-  def contents(l: List): Set[Int] = {
-    decreases(l)
-    l match {
-      case Nil() => Set.empty
-      case Cons(x,xs) => contents(xs) ++ Set(x)
-    }
-  }
-
   /* Inserting element 'e' into a sorted list 'l' produces a sorted list with
    * the expected content and size */
   def sortedIns(e: Int, l: List): List = {
@@ -82,7 +82,7 @@ pub fn main() {
       case Nil() => Cons(e,Nil())
       case Cons(x,xs) => if (x <= e) Cons(x,sortedIns(e, xs)) else Cons(e, l)
     }
-  } ensuring(res => contents(res) == contents(l) ++ Set(e)
+  } ensuring(res => contents(res) == contents(l) ++ Set::singleton(e)
                     && isSorted(res)
                     && size(res) == size(l) + 1
             )

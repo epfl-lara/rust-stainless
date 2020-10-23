@@ -301,6 +301,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       },
       _ => None,
     };
+
     let std_item_opt = def_id_opt.and_then(|def_id| self.base.std_items.def_to_item_opt(def_id));
     match std_item_opt {
       Some(BeginPanicFn) => self.extract_panic(expr, false),
