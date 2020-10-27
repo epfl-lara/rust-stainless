@@ -64,9 +64,10 @@ pub fn contents(l: List) -> Set<i32> {
 /// the expected content and size
 #[pre(is_sorted(l))]
 #[measure(l)]
-#[post(contents(ret).difference(contents(l).union(Set::singleton(e))).is_empty())]
-#[post(is_sorted(ret))]
 #[post(size(ret) == size(l) + 1)]
+#[post(is_sorted(ret))]
+#[post(contents(ret).is_subset_of(contents(l).union(Set::singleton(e))))]
+#[post(contents(l).union(Set::singleton(e)).is_subset_of(contents(ret)))]
 pub fn sorted_insert(e: i32, l: List) -> List {
   match l {
     List::Nil => List::Cons {
@@ -92,9 +93,10 @@ pub fn sorted_insert(e: i32, l: List) -> List {
 /// Insertion sort yields a sorted list of same size and content as the input
 /// list
 #[measure(l)]
-#[post(contents(ret).difference(contents(l)).is_empty())]
-#[post(is_sorted(ret))]
 #[post(size(ret) == size(l))]
+#[post(is_sorted(ret))]
+#[post(contents(ret).is_subset_of(contents(l)))]
+#[post(contents(l).is_subset_of(contents(ret)))]
 pub fn sort(l: List) -> List {
   match l {
     List::Nil => l,

@@ -1,4 +1,5 @@
 use super::literal::Literal;
+use super::std_items::StdItem;
 use super::std_items::StdItem::*;
 use super::*;
 
@@ -294,20 +295,57 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn extract_call_like(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
-    let def_id_opt = match &expr.kind {
-      ExprKind::Call { ty, .. } => match ty.kind {
-        TyKind::FnDef(def_id, ..) => Some(def_id),
-        _ => None,
-      },
-      _ => None,
-    };
-
-    let std_item_opt = def_id_opt.and_then(|def_id| self.base.std_items.def_to_item_opt(def_id));
-    match std_item_opt {
-      Some(BeginPanicFn) => self.extract_panic(expr, false),
-      Some(BeginPanicFmtFn) => self.extract_panic(expr, true),
-      _ => self.extract_call(expr),
+    if let ExprKind::Call { ty, args, .. } = &expr.kind {
+      if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
+        // If the call is a std item
+        if let Some(std_item) = self.base.std_items.def_to_item_opt(def_id) {
+          match std_item {
+            BeginPanicFn => return self.extract_panic(expr, false),
+            BeginPanicFmtFn => return self.extract_panic(expr, true),
+            FiniteSetCall => return self.extract_set_creation(args, substs_ref, expr.span),
+            SetAddCall | SetDifferenceCall | SetIntersectionCall | SetUnionCall | SubsetOfCall => {
+              return self.extract_set_op(std_item, args, expr.span)
+            }
+            _ => (),
+          };
+        }
+      }
     }
+
+    self.extract_call(expr)
+  }
+
+  fn extract_set_op(
+    &mut self,
+    std_item: StdItem,
+    args: &Vec<ExprRef<'tcx>>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
+      return match std_item {
+        SetAddCall => self.factory().SetAdd(*set, *arg).into(),
+        SetDifferenceCall => self.factory().SetDifference(*set, *arg).into(),
+        SetIntersectionCall => self.factory().SetIntersection(*set, *arg).into(),
+        SetUnionCall => self.factory().SetUnion(*set, *arg).into(),
+        SubsetOfCall => self.factory().SubsetOf(*set, *arg).into(),
+        _ => unreachable!(),
+      };
+    }
+    self.unsupported_expr(
+      span,
+      "Cannot extract set operation with less than two arguments.",
+    )
+  }
+
+  fn extract_set_creation(
+    &mut self,
+    args: &Vec<ExprRef<'tcx>>,
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let args = self.extract_expr_refs(args.to_vec());
+    let ty = self.base.extract_ty(substs.type_at(0), &self.txtcx, span);
+    self.factory().FiniteSet(args, ty).into()
   }
 
   fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
