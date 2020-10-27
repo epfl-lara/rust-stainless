@@ -37,4 +37,7 @@ impl<T> Set<T> {
   pub fn is_subset_of(self, _other: Set<T>) -> bool {
     unimplemented!()
   }
+  pub fn is_empty(self) -> bool {
+    unimplemented!()
+  }
 }
