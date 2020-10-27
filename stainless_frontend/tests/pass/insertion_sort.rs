@@ -66,8 +66,8 @@ pub fn contents(l: List) -> Set<i32> {
 #[measure(l)]
 #[post(size(ret) == size(l) + 1)]
 #[post(is_sorted(ret))]
-#[post(contents(ret).is_subset_of(contents(l).union(Set::singleton(e))))]
-#[post(contents(l).union(Set::singleton(e)).is_subset_of(contents(ret)))]
+#[post(contents(ret).is_subset_of(contents(l).add(e)))]
+#[post(contents(l).add(e).is_subset_of(contents(ret)))]
 pub fn sorted_insert(e: i32, l: List) -> List {
   match l {
     List::Nil => List::Cons {
