@@ -15,9 +15,10 @@ impl<T> Set<T> {
 
   // TODO: Only take 'self' as a reference and also take the other parameters
   //   only by reference.
-  pub fn singleton(_t: T) -> Self {
-    unimplemented!()
+  pub fn singleton(t: T) -> Self {
+    Self::empty().add(t)
   }
+
   pub fn add(self, _t: T) -> Set<T> {
     unimplemented!()
   }
@@ -35,9 +36,6 @@ impl<T> Set<T> {
     unimplemented!()
   }
   pub fn is_subset_of(self, _other: Set<T>) -> bool {
-    unimplemented!()
-  }
-  pub fn is_empty(self) -> bool {
     unimplemented!()
   }
 }

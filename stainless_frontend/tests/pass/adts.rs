@@ -1,3 +1,5 @@
+extern crate stainless;
+
 // In rustc's HIR all of the following make_* functions contain somewhat
 // distinct trees. Here's a succinct overview of the cases I think we'd like to
 // consider in the short term:
@@ -14,13 +16,13 @@ pub struct Foo2(i32, bool);
 
 pub struct Foo3 {
   a: i32,
-  b: bool
+  b: bool,
 }
 
 pub enum Bar {
   Bar1,
   Bar2(i32, bool),
-  Bar3 { c: i32, d: bool }
+  Bar3 { c: i32, d: bool },
 }
 
 fn make_foo1() -> Foo1 {
@@ -51,7 +53,7 @@ fn get_i32_from_bar(bar: Bar) -> i32 {
   match bar {
     Bar::Bar1 => 0,
     Bar::Bar2(c, _) => c,
-    Bar::Bar3 { c, .. } => c
+    Bar::Bar3 { c, .. } => c,
   }
 }
 
@@ -59,27 +61,27 @@ fn get_bool_from_bar(bar: Bar) -> bool {
   match bar {
     Bar::Bar1 => false,
     Bar::Bar2(_, d) => d,
-    Bar::Bar3 { d, .. } => d
+    Bar::Bar3 { d, .. } => d,
   }
 }
 
 pub fn main() -> () {
   match make_foo1() {
-    Foo1 => ()
+    Foo1 => (),
   };
 
   let foo2 = make_foo2();
   foo2.0;
   foo2.1;
   match foo2 {
-    Foo2(a, b) => (a, b)
+    Foo2(a, b) => (a, b),
   };
 
   let foo3 = make_foo3();
   foo3.a;
   foo3.b;
   match foo3 {
-    Foo3 { a, b } => (a, b)
+    Foo3 { a, b } => (a, b),
   };
 
   get_i32_from_bar(make_bar1());
