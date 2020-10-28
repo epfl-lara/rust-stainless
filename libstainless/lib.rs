@@ -15,10 +15,9 @@ impl<T> Set<T> {
 
   // TODO: Only take 'self' as a reference and also take the other parameters
   //   only by reference.
-  pub fn singleton(t: T) -> Self {
-    Self::empty().add(t)
+  pub fn singleton(_t: T) -> Self {
+    unimplemented!()
   }
-
   pub fn add(self, _t: T) -> Set<T> {
     unimplemented!()
   }

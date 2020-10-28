@@ -15,28 +15,32 @@ pub(super) enum StdItem {
   BeginPanicFn,
   BeginPanicFmtFn,
   // Set things,
-  SetAddCall,
-  SetDifferenceCall,
-  SetIntersectionCall,
-  SetUnionCall,
-  SubsetOfCall,
-  FiniteSetCall,
+  SetType,
+  SetAddFn,
+  SetDifferenceFn,
+  SetIntersectionFn,
+  SetUnionFn,
+  SubsetOfFn,
+  SetEmptyFn,
+  SetSingletonFn,
 }
 
 const RUST_LANG_ITEMS: &[StdItem] = &[FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn];
 
 const STAINLESS_ITEMS: &[StdItem] = &[
-  SetAddCall,
-  SetDifferenceCall,
-  SetIntersectionCall,
-  SetUnionCall,
-  SubsetOfCall,
-  FiniteSetCall,
+  SetType,
+  SetAddFn,
+  SetDifferenceFn,
+  SetIntersectionFn,
+  SetUnionFn,
+  SubsetOfFn,
+  SetEmptyFn,
+  SetSingletonFn,
 ];
 
 use StdItem::*;
 
-const NUM_STD_ITEMS: usize = 12;
+const NUM_STD_ITEMS: usize = 14;
 
 impl StdItem {
   fn index(self) -> usize {
@@ -47,12 +51,14 @@ impl StdItem {
       SizedTrait => 3,
       BeginPanicFn => 4,
       BeginPanicFmtFn => 5,
-      SetAddCall => 6,
-      SetDifferenceCall => 7,
-      SetIntersectionCall => 8,
-      SetUnionCall => 9,
-      SubsetOfCall => 10,
-      FiniteSetCall => NUM_STD_ITEMS - 1,
+      SetType => 6,
+      SetAddFn => 7,
+      SetDifferenceFn => 8,
+      SetIntersectionFn => 9,
+      SetUnionFn => 10,
+      SubsetOfFn => 11,
+      SetEmptyFn => 12,
+      SetSingletonFn => NUM_STD_ITEMS - 1,
     }
   }
 
@@ -64,12 +70,14 @@ impl StdItem {
       SizedTrait => "Sized",
       BeginPanicFn => "begin_panic",
       BeginPanicFmtFn => "begin_panic_fmt",
-      SetAddCall => "add",
-      SetDifferenceCall => "difference",
-      SetIntersectionCall => "intersection",
-      SetUnionCall => "union",
-      SubsetOfCall => "is_subset_of",
-      FiniteSetCall => "empty",
+      SetType => "Set",
+      SetAddFn => "add",
+      SetDifferenceFn => "difference",
+      SetIntersectionFn => "intersection",
+      SetUnionFn => "union",
+      SubsetOfFn => "is_subset_of",
+      SetEmptyFn => "empty",
+      SetSingletonFn => "singleton",
     }
   }
 

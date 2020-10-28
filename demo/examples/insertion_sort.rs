@@ -56,7 +56,7 @@ pub fn min(l: List) -> IntOption {
 pub fn contents(l: List) -> Set<i32> {
   match l {
     List::Nil => Set::empty(),
-    List::Cons { head, tail } => contents(*tail).add(head),
+    List::Cons { head, tail } => contents(*tail).union(Set::singleton(head)),
   }
 }
 

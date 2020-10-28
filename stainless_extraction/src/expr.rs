@@ -306,8 +306,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         match std_item {
           BeginPanicFn => return self.extract_panic(args, span, false),
           BeginPanicFmtFn => return self.extract_panic(args, span, true),
-          FiniteSetCall => return self.extract_set_creation(args, substs_ref, span),
-          SetAddCall | SetDifferenceCall | SetIntersectionCall | SetUnionCall | SubsetOfCall => {
+
+          SetEmptyFn | SetSingletonFn => return self.extract_set_creation(args, substs_ref, span),
+          SetAddFn | SetDifferenceFn | SetIntersectionFn | SetUnionFn | SubsetOfFn => {
             return self.extract_set_op(std_item, args, span)
           }
           _ => (),
@@ -326,11 +327,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
       return match std_item {
-        SetAddCall => self.factory().SetAdd(*set, *arg).into(),
-        SetDifferenceCall => self.factory().SetDifference(*set, *arg).into(),
-        SetIntersectionCall => self.factory().SetIntersection(*set, *arg).into(),
-        SetUnionCall => self.factory().SetUnion(*set, *arg).into(),
-        SubsetOfCall => self.factory().SubsetOf(*set, *arg).into(),
+        SetAddFn => self.factory().SetAdd(*set, *arg).into(),
+        SetDifferenceFn => self.factory().SetDifference(*set, *arg).into(),
+        SetIntersectionFn => self.factory().SetIntersection(*set, *arg).into(),
+        SetUnionFn => self.factory().SetUnion(*set, *arg).into(),
+        SubsetOfFn => self.factory().SubsetOf(*set, *arg).into(),
         _ => unreachable!(),
       };
     }
