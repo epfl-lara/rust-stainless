@@ -5,3 +5,4 @@ save-analysis-temp/
 .metals
 *.inoxser
 stainless.log
+.stainless-cache

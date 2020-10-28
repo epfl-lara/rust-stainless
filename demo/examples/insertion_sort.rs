@@ -34,31 +34,27 @@ impl<T> List<T> {
   }
 }
 
-impl List<i32> {
+impl<T: PartialOrd> List<T> {
   #[measure(self)]
   pub fn is_sorted(&self) -> bool {
     match self {
       List::Nil => true,
       List::Cons(x, tail) => match &**tail {
         List::Nil => true,
-
-        // FIXME: We *have* to deref the two integers here, because otherwise
-        //   their type is &i32 which we can't extract to primitive '<=' for the
-        //   moment.
         List::Cons(y, ..) => *x <= *y && tail.is_sorted(),
       },
     }
   }
 
   #[measure(self)]
-  pub fn min(&self) -> Option<i32> {
+  pub fn min(&self) -> Option<&T> {
     match self {
       List::Nil => Option::None,
       List::Cons(x, xs) => match xs.min() {
-        Option::None => Option::Some(*x),
+        Option::None => Option::Some(x),
         Option::Some(y) => {
-          if *x < y {
-            Option::Some(*x)
+          if x < y {
+            Option::Some(x)
           } else {
             Option::Some(y)
           }
@@ -77,7 +73,7 @@ impl List<i32> {
     ret.contents().is_subset_of(&self.contents().add(&e)) &&
     self.contents().add(&e).is_subset_of(&ret.contents())
   )]
-  pub fn sorted_insert(self, e: i32) -> List<i32> {
+  pub fn sorted_insert(self, e: T) -> List<T> {
     match self {
       List::Cons(head, tail) if head <= e => List::Cons(head, Box::new(tail.sorted_insert(e))),
       _ => List::Cons(e, Box::new(self)),
@@ -93,7 +89,7 @@ impl List<i32> {
     ret.contents().is_subset_of(&self.contents()) &&
     self.contents().is_subset_of(&ret.contents())
   )]
-  pub fn sort(self) -> List<i32> {
+  pub fn sort(self) -> List<T> {
     match self {
       List::Nil => self,
       List::Cons(x, xs) => xs.sort().sorted_insert(x),
