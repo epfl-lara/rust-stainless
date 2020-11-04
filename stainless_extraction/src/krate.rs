@@ -2,9 +2,10 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, ItemKind};
+use rustc_hir::{self as hir, BodyId, FnSig, Generics, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{DefIdTree, List};
+use rustc_span::symbol::Ident;
 use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
@@ -35,10 +36,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
     }
 
+    struct FnItem<'tcx> {
+      ident: Ident,
+      hir_id: HirId,
+      span: Span,
+      _sig: &'tcx FnSig<'tcx>,
+      _generics: &'tcx Generics<'tcx>,
+      _body_id: BodyId,
+    }
+
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
       adts: Vec<&'tcx hir::Item<'tcx>>,
-      functions: Vec<&'tcx hir::Item<'tcx>>,
+      functions: Vec<FnItem<'tcx>>,
     }
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
@@ -48,14 +58,30 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           ItemKind::Enum(..) | ItemKind::Struct(..) | ItemKind::Fn(..) => {
             let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
             let def_path_str = self.xtor.tcx.def_path_str(def_id);
-            if let ItemKind::Fn(..) = item.kind {
+
+            if let hir::Item {
+              ident,
+              hir_id,
+              kind: ItemKind::Fn(sig, generics, body_id),
+              span,
+              ..
+            } = item
+            {
               eprintln!("  - Fun {}", def_path_str);
-              self.functions.push(&item);
+              self.functions.push(FnItem {
+                ident: *ident,
+                hir_id: *hir_id,
+                _sig: sig,
+                _generics: generics,
+                _body_id: *body_id,
+                span: *span,
+              });
             } else {
               eprintln!("  - ADT {}", def_path_str);
               self.adts.push(&item);
             }
           }
+
           _ => {
             self.xtor.unsupported(item.span, "Other kind of item");
           }
@@ -63,7 +89,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
 
       /// Unsupported
-
       fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
         self.xtor.unsupported(trait_item.span, "Trait item");
       }
@@ -83,7 +108,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     };
     eprintln!("[ Discovering local definitions ]");
     krate.visit_all_item_likes(&mut visitor);
-    eprintln!("");
+    eprintln!();
 
     let (adts, mut functions) = (visitor.adts, visitor.functions);
 
@@ -91,10 +116,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut pre_spec_functions: HashMap<DefId, Vec<DefId>> = HashMap::new();
     let mut post_spec_functions: HashMap<DefId, Vec<DefId>> = HashMap::new();
     let mut measure_spec_function: HashMap<DefId, DefId> = HashMap::new();
+
     functions.retain(|item| {
       let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
       if item.span.from_expansion() {
         let ident_str = item.ident.as_str();
+
         if let Some(parent_def_id) = self.tcx.parent(def_id) {
           if ident_str.starts_with("__pre") {
             pre_spec_functions
