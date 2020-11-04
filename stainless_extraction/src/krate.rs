@@ -2,7 +2,7 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, BodyId, FnSig, Generics, ItemKind};
+use rustc_hir::{self as hir, BodyId, FnSig, Generics, ImplItemKind, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{DefIdTree, List};
 use rustc_span::symbol::Ident;
@@ -55,6 +55,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
         match item.kind {
           _ if should_ignore(item) => {}
+
           ItemKind::Enum(..) | ItemKind::Struct(..) | ItemKind::Fn(..) => {
             let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
             let def_path_str = self.xtor.tcx.def_path_str(def_id);
@@ -82,6 +83,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             }
           }
 
+          // Don't fail on the impl block, but do nothing either.
+          // The functions of the block will be treated in #visit_impl_item.
+          ItemKind::Impl { .. } => {}
+
           _ => {
             self.xtor.unsupported(item.span, "Other kind of item");
           }
@@ -94,7 +99,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
 
       fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
-        self.xtor.unsupported(impl_item.span, "Impl item");
+        match impl_item {
+          hir::ImplItem {
+            ident,
+            hir_id,
+            generics,
+            kind: ImplItemKind::Fn(sig, body_id),
+            span,
+            ..
+          } => {
+            self.functions.push(FnItem {
+              ident: *ident,
+              hir_id: *hir_id,
+              _sig: sig,
+              _generics: generics,
+              _body_id: *body_id,
+              span: *span,
+            });
+          }
+
+          _ => self.xtor.unsupported(impl_item.span, "Impl item"),
+        }
       }
     }
 
