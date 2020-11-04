@@ -2,6 +2,7 @@ use super::std_items::StdItem::*;
 use super::*;
 
 use rustc_ast::ast;
+use rustc_hir::Mutability;
 use rustc_middle::ty::{
   AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, Ty, TyKind,
 };
@@ -94,11 +95,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         f.ADTType(sort_id, arg_tps).into()
       }
 
+      // Immutable (!) references
+      TyKind::Ref(_, ty, Mutability::Not) => match ty.kind {
+        // Forbid double references
+        TyKind::Ref(..) => {
+          self.unsupported(span, "Cannot extract double references");
+          f.Untyped().into()
+        }
+        // Erase references for other types
+        _ => self.extract_ty(ty, txtcx, span),
+      },
+
       TyKind::Param(param_ty) => txtcx
         .index_to_tparam
         .get(&param_ty.index)
         .expect("Missing type parameter identifier")
         .into(),
+
       _ => {
         self.unsupported(span, format!("Cannot extract type {:?}", ty.kind));
         f.Untyped().into()

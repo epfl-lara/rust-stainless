@@ -5,7 +5,7 @@ use super::*;
 
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BinOp, Mutability, UnOp};
+use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use rustc_hair::hair::{
@@ -59,38 +59,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       // TODO: Handle method calls
       // TODO: Handle arbitrary-precision integers
-      // TODO: Handle Borrow
       ExprKind::Scope { value, .. } => self.extract_expr_ref(value),
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
 
-      ExprKind::Deref { .. } => self.extract_deref(expr),
+      // General purpose derefs
+      // (we build on the fact that no illicit refs can be created)
+      ExprKind::Deref { arg } => {
+        let arg_expr = self.mirror(arg);
+        self.extract_expr(arg_expr)
+      }
+
+      // Borrow an immutable and aliasable value (i.e. the meaning of
+      // BorrowKind::Shared). Handle this safe case with erasure.
+      ExprKind::Borrow {
+        borrow_kind: BorrowKind::Shared,
+        arg,
+      } => {
+        let arg_expr = self.mirror(arg);
+        self.extract_expr(arg_expr)
+      }
 
       _ => self.unsupported_expr(
         expr.span,
         format!("Cannot extract expr kind {:?}", expr.kind),
       ),
     }
-  }
-
-  /// Extract a dereference of a box or fail.
-  ///
-  /// For a box the deref is erased and the contained expression is returned.
-  fn extract_deref(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
-    if let ExprKind::Deref { arg } = &expr.kind {
-      let arg_expr = self.mirror(arg.clone());
-      if arg_expr.ty.is_box() {
-        return self.extract_expr(arg_expr);
-      }
-    }
-
-    self.unsupported_expr(
-      expr.span,
-      format!(
-        "Cannot extract Deref for types other than Box, was {:?}",
-        expr.kind
-      ),
-    )
   }
 
   fn extract_expr_ref(&mut self, expr: ExprRef<'tcx>) -> st::Expr<'l> {
@@ -565,6 +559,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let f = self.factory();
     match pattern.kind {
       box PatKind::Wild => f.WildcardPattern(binder).into(),
+
       box kind @ PatKind::Binding { .. } => {
         assert!(binder.is_none());
         match self.try_pattern_to_var(&kind, true) {
@@ -616,10 +611,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           );
         }
       }
+
       box PatKind::Constant { value: konst } => match Literal::try_from(konst) {
         Ok(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),
         _ => self.unsupported_pattern(pattern.span, "Unsupported kind of literal in pattern"),
       },
+
+      box PatKind::Deref { subpattern } => self.extract_pattern(subpattern, binder),
+
       _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
     }
   }
@@ -788,27 +787,28 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> Result<&'l st::Variable<'l>> {
     match pat_kind {
       PatKind::Binding {
-        mutability,
+        mutability: Mutability::Mut,
+        ..
+      } => Err("Mutable bindings are not supported"),
+
+      PatKind::Binding {
+        subpattern: Some(_),
+        ..
+      } if !allow_subpattern => Err("Subpatterns are not supported here"),
+
+      PatKind::Binding {
+        mutability: Mutability::Not,
         mode,
         var: hir_id,
         subpattern,
         ..
-      } => {
-        let is_by_value = if let BindingMode::ByValue = mode {
-          true
-        } else {
-          false
-        };
-        if *mutability != Mutability::Not {
-          Err("Mutable bindings are not supported")
-        } else if !is_by_value {
-          Err("By-reference bindings are supported")
-        } else if !allow_subpattern && subpattern.is_some() {
-          Err("Subpatterns are not supported here")
-        } else {
+      } if allow_subpattern || subpattern.is_none() => match mode {
+        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
           Ok(self.fetch_var(*hir_id))
         }
-      }
+        _ => Err("Binding mode not allowed"),
+      },
+
       _ => Err("Expected a top-level binding"),
     }
   }
