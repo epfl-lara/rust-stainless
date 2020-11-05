@@ -6,89 +6,89 @@ use stainless::*;
 ///
 /// [1]: https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
 
-pub enum List {
-  Nil,
-  Cons(i32, Box<List>),
-}
-
-pub enum IntOption {
+pub enum Option<T> {
   None,
-  Some(i32),
+  Some(T),
 }
 
-#[measure(l)]
-pub fn size(l: List) -> u32 {
-  match l {
-    List::Nil => 0,
-    List::Cons(_, tail) => 1 + size(*tail),
+pub enum List<T> {
+  Nil,
+  Cons(T, Box<List<T>>),
+}
+
+impl<T> List<T> {
+  // #[measure(self)]
+  pub fn size(&self) -> u32 {
+    match self {
+      List::Nil => 0,
+      List::Cons(_, tail) => 1 + tail.size(),
+    }
+  }
+
+  // #[measure(self)]
+  pub fn contents(&self) -> Set<T> {
+    match self {
+      List::Nil => Set::empty(),
+      List::Cons(head, tail) => tail.contents().union(&Set::singleton(head)),
+    }
   }
 }
 
-#[measure(l)]
-pub fn is_sorted(l: List) -> bool {
-  match l {
+#[measure(list)]
+pub fn is_sorted(list: &List<i32>) -> bool {
+  match list {
     List::Nil => true,
-    List::Cons(x, tail) => match *tail {
+    List::Cons(x, tail) => match &**tail {
       List::Nil => true,
-      List::Cons(y, ys) => x <= y && is_sorted(List::Cons(y, ys)),
+      List::Cons(y, ..) => x <= y && is_sorted(tail),
     },
   }
 }
 
-#[measure(l)]
-pub fn min(l: List) -> IntOption {
-  match l {
-    List::Nil => IntOption::None,
-    List::Cons(x, xs) => match min(*xs) {
-      IntOption::None => IntOption::Some(x),
-      IntOption::Some(y) => {
-        if x < y {
-          IntOption::Some(x)
+#[measure(list)]
+pub fn min(list: &List<i32>) -> Option<i32> {
+  match list {
+    List::Nil => Option::None,
+    List::Cons(x, xs) => match min(&*xs) {
+      Option::None => Option::Some(*x),
+      Option::Some(y) => {
+        if *x < y {
+          Option::Some(*x)
         } else {
-          IntOption::Some(y)
+          Option::Some(y)
         }
       }
     },
   }
 }
 
-#[measure(l)]
-pub fn contents(l: List) -> Set<i32> {
-  match l {
-    List::Nil => Set::empty(),
-    List::Cons(head, tail) => contents(*tail).union(Set::singleton(head)),
-  }
-}
-
 /// Inserting element 'e' into a sorted list 'l' produces a sorted list with
 /// the expected content and size
-#[pre(is_sorted(l))]
+#[pre(is_sorted(&l))]
 #[measure(l)]
-#[post(size(ret) == size(l) + 1)]
-#[post(is_sorted(ret))]
-#[post(contents(ret).is_subset_of(contents(l).add(e)))]
-#[post(contents(l).add(e).is_subset_of(contents(ret)))]
-pub fn sorted_insert(e: i32, l: List) -> List {
+#[post(
+  ret.size() == l.size() + 1 &&
+  is_sorted(&ret) &&
+  ret.contents().is_subset_of(&l.contents().add(&e)) &&
+  l.contents().add(&e).is_subset_of(&ret.contents())
+)]
+pub fn sorted_insert(e: i32, l: List<i32>) -> List<i32> {
   match l {
-    List::Nil => List::Cons(e, Box::new(List::Nil)),
-    List::Cons(x, xs) => {
-      if x <= e {
-        List::Cons(x, Box::new(sorted_insert(e, *xs)))
-      } else {
-        List::Cons(e, Box::new(List::Cons(x, xs)))
-      }
-    }
+    List::Cons(head, tail) if head <= e => List::Cons(head, Box::new(sorted_insert(e, *tail))),
+    _ => List::Cons(e, Box::new(l)),
   }
 }
 
 /// Insertion sort yields a sorted list of same size and content as the input
 /// list
 #[measure(l)]
-#[post(size(ret) == size(l))]
-#[post(is_sorted(ret))]
-#[post(contents(ret).is_subset_of(contents(l)))]
-#[post(contents(l).is_subset_of(contents(ret)))]
-pub fn sort(l: List) -> List {
+#[post(
+  ret.size() == l.size() &&
+  is_sorted(&ret) &&
+  ret.contents().is_subset_of(&l.contents()) &&
+  l.contents().is_subset_of(&ret.contents())
+)]
+pub fn sort(l: List<i32>) -> List<i32> {
   match l {
     List::Nil => l,
     List::Cons(x, xs) => sorted_insert(x, sort(*xs)),
@@ -111,5 +111,5 @@ pub fn main() {
     )),
   );
 
-  assert!(is_sorted(sort(list)))
+  assert!(is_sorted(&sort(list)))
 }
