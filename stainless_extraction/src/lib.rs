@@ -177,7 +177,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Prepend an underscore to numerical-only identifiers for compatibility
     // with stainless
-    let (identifier, path) = if name.chars().all(char::is_numeric) {
+    let (name, path) = if name.chars().all(char::is_numeric) {
       let new_name = format!("_{}", name);
 
       // Append new name to symbol path
@@ -194,7 +194,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     };
 
     self.with_extraction_mut(|xt| {
-      let id = xt.fresh_id(identifier, path);
+      let id = xt.fresh_id(name, path);
       assert!(xt.mapping.did_to_stid.insert(def_id, id).is_none());
       id
     })
