@@ -175,8 +175,26 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let symbol_path = self.symbol_path_from_def_id(def_id);
     let name = symbol_path.last().unwrap().clone();
 
+    // Prepend an underscore to numerical-only identifiers for compatibility
+    // with stainless
+    let (identifier, path) = if name.chars().all(char::is_numeric) {
+      let new_name = format!("_{}", name);
+
+      // Append new name to symbol path
+      let path_len = symbol_path.len();
+      let new_path: Vec<String> = symbol_path
+        .into_iter()
+        .take(path_len - 1)
+        .chain(std::iter::once(new_name.clone()))
+        .collect();
+
+      (new_name, new_path)
+    } else {
+      (name, symbol_path)
+    };
+
     self.with_extraction_mut(|xt| {
-      let id = xt.fresh_id(name, symbol_path);
+      let id = xt.fresh_id(identifier, path);
       assert!(xt.mapping.did_to_stid.insert(def_id, id).is_none());
       id
     })
