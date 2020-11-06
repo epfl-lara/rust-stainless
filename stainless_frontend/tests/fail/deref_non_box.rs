@@ -1,3 +1,5 @@
+extern crate stainless;
+
 pub fn main() {
   let one = 1;
   let one_box = Box::new(one);

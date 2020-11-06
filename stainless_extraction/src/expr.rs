@@ -1,4 +1,5 @@
 use super::literal::Literal;
+use super::std_items::StdItem;
 use super::std_items::StdItem::*;
 use super::*;
 
@@ -30,7 +31,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { .. } => self.extract_field(expr),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
-      ExprKind::Call { .. } => self.extract_call_like(expr),
+      ExprKind::Call { ty, args, .. } => self.extract_call_like(ty, &args, expr.span),
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
         let block = self.mirror(ast_block);
@@ -293,48 +294,84 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_call_like(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
-    let def_id_opt = match &expr.kind {
-      ExprKind::Call { ty, .. } => match ty.kind {
-        TyKind::FnDef(def_id, ..) => Some(def_id),
-        _ => None,
-      },
-      _ => None,
-    };
-    let std_item_opt = def_id_opt.and_then(|def_id| self.base.std_items.def_to_item_opt(def_id));
-    match std_item_opt {
-      Some(BeginPanicFn) => self.extract_panic(expr, false),
-      Some(BeginPanicFmtFn) => self.extract_panic(expr, true),
-      _ => self.extract_call(expr),
+  fn extract_call_like(
+    &mut self,
+    ty: Ty<'tcx>,
+    args: &Vec<ExprRef<'tcx>>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
+      // If the call is a std item, extract it specially
+      if let Some(std_item) = self.base.std_items.def_to_item_opt(def_id) {
+        match std_item {
+          BeginPanicFn => return self.extract_panic(args, span, false),
+          BeginPanicFmtFn => return self.extract_panic(args, span, true),
+
+          SetEmptyFn | SetSingletonFn => return self.extract_set_creation(args, substs_ref, span),
+          SetAddFn | SetDifferenceFn | SetIntersectionFn | SetUnionFn | SubsetOfFn => {
+            return self.extract_set_op(std_item, args, span)
+          }
+          _ => (),
+        };
+      }
     }
+    // Otherwise, extract a normal call
+    self.extract_call(ty, args, span)
   }
 
-  fn extract_call(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
-    let f = self.factory();
+  fn extract_set_op(
+    &mut self,
+    std_item: StdItem,
+    args: &Vec<ExprRef<'tcx>>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
+      return match std_item {
+        SetAddFn => self.factory().SetAdd(*set, *arg).into(),
+        SetDifferenceFn => self.factory().SetDifference(*set, *arg).into(),
+        SetIntersectionFn => self.factory().SetIntersection(*set, *arg).into(),
+        SetUnionFn => self.factory().SetUnion(*set, *arg).into(),
+        SubsetOfFn => self.factory().SubsetOf(*set, *arg).into(),
+        _ => unreachable!(),
+      };
+    }
+    self.unsupported_expr(
+      span,
+      "Cannot extract set operation with less than two arguments.",
+    )
+  }
 
-    if let ExprKind::Call { ty, args, .. } = expr.kind {
-      // Normal function call
-      if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-        let fd_id = self.base.extract_fn_ref(def_id);
+  fn extract_set_creation(
+    &mut self,
+    args: &Vec<ExprRef<'tcx>>,
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let args = self.extract_expr_refs(args.to_vec());
+    let ty = self.base.extract_ty(substs.type_at(0), &self.txtcx, span);
+    self.factory().FiniteSet(args, ty).into()
+  }
 
-        // Special case for Box::new, erase it and return the argument directly.
-        // TODO: turn Box::new to a StdItem and use that. Tracked here:
-        //  https://github.com/epfl-lara/rust-stainless/issues/34
-        if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
-          return self.extract_expr_ref(args.first().cloned().unwrap());
-        }
+  fn extract_call(&mut self, ty: Ty<'tcx>, args: &Vec<ExprRef<'tcx>>, span: Span) -> st::Expr<'l> {
+    // Normal function call
+    if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
+      let fd_id = self.base.extract_fn_ref(def_id);
 
-        let arg_tps = self.extract_arg_types(substs_ref, expr.span);
-        let args = self.extract_expr_refs(args);
-        f.FunctionInvocation(fd_id, arg_tps, args).into()
-      } else {
-        self.unsupported_expr(
-          expr.span,
-          "Cannot extract call without statically known target",
-        )
+      // Special case for Box::new, erase it and return the argument directly.
+      // TODO: turn Box::new to a StdItem and use that. Tracked here:
+      //  https://github.com/epfl-lara/rust-stainless/issues/34
+      if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
+        return self.extract_expr_ref(args.first().cloned().unwrap());
       }
+
+      let arg_tps = self.extract_arg_types(substs_ref, span);
+      let args = self.extract_expr_refs(args.to_vec());
+      self
+        .factory()
+        .FunctionInvocation(fd_id, arg_tps, args)
+        .into()
     } else {
-      unreachable!()
+      self.unsupported_expr(span, "Cannot extract call without statically known target")
     }
   }
 
@@ -347,28 +384,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
-  fn extract_panic(&mut self, expr: Expr<'tcx>, is_fmt: bool) -> st::Expr<'l> {
+  fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Call { mut args, .. } = expr.kind {
-      assert_eq!(args.len(), 1);
-      let arg = args.pop().unwrap();
-      // FIXME: It seems that for expressions encoding panics, `expr.ty` always gives us the
-      // `never` type, rather than the expected one. We currently just use the Unit type here,
-      // because this is correct for panics resulting from asserts, but we should really recover,
-      // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
-      // programs.)
-      let tpe = f.UnitType().into();
-      let error_expr = f.Error(tpe, "Panic".into());
+    let mut args = args.to_vec();
 
-      if is_fmt {
-        // TODO: Implement panic! with formatted message
-        self.unsupported_expr(expr.span, "Cannot extract panic with formatted message")
-      } else {
-        let arg = self.extract_expr_ref(arg);
-        self.keep_for_effects(error_expr.into(), vec![arg])
-      }
+    assert_eq!(args.len(), 1);
+    let arg = args.pop().unwrap();
+    // FIXME: It seems that for expressions encoding panics, `expr.ty` always gives us the
+    // `never` type, rather than the expected one. We currently just use the Unit type here,
+    // because this is correct for panics resulting from asserts, but we should really recover,
+    // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
+    // programs.)
+    let tpe = f.UnitType().into();
+    let error_expr = f.Error(tpe, "Panic".into());
+
+    if is_fmt {
+      // TODO: Implement panic! with formatted message
+      self.unsupported_expr(span, "Cannot extract panic with formatted message")
     } else {
-      unreachable!()
+      let arg = self.extract_expr_ref(arg);
+      self.keep_for_effects(error_expr.into(), vec![arg])
     }
   }
 

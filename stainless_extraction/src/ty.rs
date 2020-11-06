@@ -81,6 +81,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       // All other ADTs
       TyKind::Adt(adt_def, substitutions) => {
+        // If the ADT is a std_item, we need to extract it separately
+        if let Some(std_item) = self.std_items.def_to_item_opt(adt_def.did) {
+          if std_item == SetType {
+            let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
+            return f.SetType(arg_ty).into();
+          }
+        }
+
         let sort_id = self.extract_adt_id(adt_def.did);
         let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
         f.ADTType(sort_id, arg_tps).into()

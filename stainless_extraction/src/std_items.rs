@@ -14,11 +14,33 @@ pub(super) enum StdItem {
   SizedTrait,
   BeginPanicFn,
   BeginPanicFmtFn,
+  // Set things,
+  SetType,
+  SetAddFn,
+  SetDifferenceFn,
+  SetIntersectionFn,
+  SetUnionFn,
+  SubsetOfFn,
+  SetEmptyFn,
+  SetSingletonFn,
 }
+
+const RUST_LANG_ITEMS: &[StdItem] = &[FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn];
+
+const STAINLESS_ITEMS: &[StdItem] = &[
+  SetType,
+  SetAddFn,
+  SetDifferenceFn,
+  SetIntersectionFn,
+  SetUnionFn,
+  SubsetOfFn,
+  SetEmptyFn,
+  SetSingletonFn,
+];
 
 use StdItem::*;
 
-const NUM_STD_ITEMS: usize = 6;
+const NUM_STD_ITEMS: usize = 14;
 
 impl StdItem {
   fn index(self) -> usize {
@@ -29,6 +51,14 @@ impl StdItem {
       SizedTrait => 3,
       BeginPanicFn => 4,
       BeginPanicFmtFn => 5,
+      SetType => 6,
+      SetAddFn => 7,
+      SetDifferenceFn => 8,
+      SetIntersectionFn => 9,
+      SetUnionFn => 10,
+      SubsetOfFn => 11,
+      SetEmptyFn => 12,
+      SetSingletonFn => NUM_STD_ITEMS - 1,
     }
   }
 
@@ -40,6 +70,14 @@ impl StdItem {
       SizedTrait => "Sized",
       BeginPanicFn => "begin_panic",
       BeginPanicFmtFn => "begin_panic_fmt",
+      SetType => "Set",
+      SetAddFn => "add",
+      SetDifferenceFn => "difference",
+      SetIntersectionFn => "intersection",
+      SetUnionFn => "union",
+      SubsetOfFn => "is_subset_of",
+      SetEmptyFn => "empty",
+      SetSingletonFn => "singleton",
     }
   }
 
@@ -86,29 +124,26 @@ impl StdItems {
     };
 
     // Register rust lang items
-    this.register_items_from_lang_items(
-      tcx,
-      &[FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn],
-    );
+    this.register_items_from_lang_items(tcx, RUST_LANG_ITEMS);
 
     // Register additional items from the rust standard library
     let std_crate_num = this.item_to_def(BeginPanicFn).krate;
     this.register_items_from_crate(tcx, &[BeginPanicFmtFn], std_crate_num);
 
     // Register items from stainless crate
-    // let stainless_sym = Symbol::intern("stainless");
-    // let stainless_crate_num = match tcx
-    //   .crates()
-    //   .iter()
-    //   .find(|&&cnum| tcx.crate_name(cnum) == stainless_sym)
-    //   .copied()
-    // {
-    //   Some(cnum) => cnum,
-    //   None => tcx.sess.fatal(
-    //     "Couldn't find stainless library. Make sure it is included using 'extern crate stainless;'",
-    //   ),
-    // };
-    // this.register_items_from_crate(tcx, stainless_items, stainless_crate_num);
+    let stainless_sym = Symbol::intern("stainless");
+    let stainless_crate_num = match tcx
+      .crates()
+      .iter()
+      .find(|&&cnum| tcx.crate_name(cnum) == stainless_sym)
+      .copied()
+    {
+      Some(crate_num) => crate_num,
+      None => tcx.sess.fatal(
+        "Couldn't find stainless library. Make sure it is included using 'extern crate stainless;'",
+      ),
+    };
+    this.register_items_from_crate(tcx, STAINLESS_ITEMS, stainless_crate_num);
 
     this
   }

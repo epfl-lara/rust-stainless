@@ -1,3 +1,5 @@
+extern crate stainless;
+
 fn id<T>(x: T) -> T {
   x
 }
