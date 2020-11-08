@@ -6,7 +6,6 @@ fn switch_int(r: &mut i32, v: i32) {
 }
 
 fn main() {
-  // This should fail because of the mut binding.
   let mut x = 1;
   println!("x = {}", x);
 

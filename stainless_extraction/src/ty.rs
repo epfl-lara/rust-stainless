@@ -95,16 +95,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         f.ADTType(sort_id, arg_tps).into()
       }
 
-      // Immutable (!) references
-      TyKind::Ref(_, ty, Mutability::Not) => match ty.kind {
-        // Forbid double references
-        TyKind::Ref(..) => {
-          self.unsupported(span, "Cannot extract double references");
-          f.Untyped().into()
-        }
-        // Erase references for other types
-        _ => self.extract_ty(ty, txtcx, span),
-      },
+      // Immutable references
+      TyKind::Ref(_, ty, Mutability::Not) => self.extract_ty(ty, txtcx, span),
 
       TyKind::Param(param_ty) => txtcx
         .index_to_tparam

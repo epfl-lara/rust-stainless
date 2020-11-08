@@ -1,21 +1,15 @@
 extern crate stainless;
 
-// This should fail because of the mut reference parameter
-// and the double reference.
-fn switch_ref<'a>(rr: &mut &'a i32, v: &'a i32) {
-  *rr = v;
-}
-
 fn main() {
   let a = 1;
   let b = 2;
 
-  // This should fail because of the mut borrow and binding.
+  // This should fail because of the mut reference,
   let mut r = &a;
   println!("*r = {}", *r);
 
-  // This should fail because of the mut borrow.
-  switch_ref(&mut r, &b);
+  // that is modified here.
+  r = &b;
   println!("*r = {}", *r);
 }
 

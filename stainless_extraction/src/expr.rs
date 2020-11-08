@@ -63,22 +63,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
 
-      // General purpose derefs
-      // (we build on the fact that no illicit refs can be created)
-      ExprKind::Deref { arg } => {
-        let arg_expr = self.mirror(arg);
-        self.extract_expr(arg_expr)
-      }
+      // Derefs
+      // We want to allow two cases: Box derefs and &T derefs.
+      // (we build on the assumption that no illicit refs can be created)
+      ExprKind::Deref { arg } => self.extract_expr_ref(arg),
 
       // Borrow an immutable and aliasable value (i.e. the meaning of
       // BorrowKind::Shared). Handle this safe case with erasure.
       ExprKind::Borrow {
         borrow_kind: BorrowKind::Shared,
         arg,
-      } => {
-        let arg_expr = self.mirror(arg);
-        self.extract_expr(arg_expr)
-      }
+      } => self.extract_expr_ref(arg),
 
       _ => self.unsupported_expr(
         expr.span,
@@ -800,9 +795,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         mutability: Mutability::Not,
         mode,
         var: hir_id,
-        subpattern,
         ..
-      } if allow_subpattern || subpattern.is_none() => match mode {
+      } => match mode {
         BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
           Ok(self.fetch_var(*hir_id))
         }

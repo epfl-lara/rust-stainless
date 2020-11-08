@@ -76,6 +76,7 @@ define_tests!(
   pass: adts,
   pass: blocks,
   pass: boxes,
+  pass: double_ref_param,
   pass: external_fn,
   pass: fact,
   pass: fn_ref_param,
@@ -86,7 +87,6 @@ define_tests!(
   pass: int_option,
   pass: tuples,
   fail_verification: box_as_ref,
-  fail_extraction: double_ref_param,
   fail_extraction: mut_lets,
   fail_extraction: switch_ref,
   fail_extraction: switch_int
