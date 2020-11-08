@@ -2,7 +2,7 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, BodyId, FnSig, Generics, ImplItemKind, ItemKind};
+use rustc_hir::{self as hir, ImplItemKind, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{DefIdTree, List};
 use rustc_span::symbol::Ident;
@@ -36,19 +36,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
     }
 
-    struct FnItem<'tcx> {
+    struct FnItem {
       ident: Ident,
       hir_id: HirId,
       span: Span,
-      _sig: &'tcx FnSig<'tcx>,
-      _generics: &'tcx Generics<'tcx>,
-      _body_id: BodyId,
     }
 
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
       adts: Vec<&'tcx hir::Item<'tcx>>,
-      functions: Vec<FnItem<'tcx>>,
+      functions: Vec<FnItem>,
     }
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
@@ -63,7 +60,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             if let hir::Item {
               ident,
               hir_id,
-              kind: ItemKind::Fn(sig, generics, body_id),
+              kind: ItemKind::Fn(..),
               span,
               ..
             } = item
@@ -72,9 +69,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               self.functions.push(FnItem {
                 ident: *ident,
                 hir_id: *hir_id,
-                _sig: sig,
-                _generics: generics,
-                _body_id: *body_id,
                 span: *span,
               });
             } else {
@@ -103,17 +97,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           hir::ImplItem {
             ident,
             hir_id,
-            generics,
-            kind: ImplItemKind::Fn(sig, body_id),
+            kind: ImplItemKind::Fn(..),
             span,
             ..
           } => {
             self.functions.push(FnItem {
               ident: *ident,
               hir_id: *hir_id,
-              _sig: sig,
-              _generics: generics,
-              _body_id: *body_id,
               span: *span,
             });
           }
