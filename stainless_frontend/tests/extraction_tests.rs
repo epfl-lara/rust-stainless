@@ -88,6 +88,7 @@ define_tests!(
   pass: int_option,
   pass: tuples,
   fail_verification: box_as_ref,
+  fail_extraction: double_measure,
   fail_extraction: mut_lets,
   fail_extraction: switch_ref,
   fail_extraction: switch_int,

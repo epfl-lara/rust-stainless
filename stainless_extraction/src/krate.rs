@@ -140,8 +140,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
             specs.iter().for_each(|&&spec_item| {
               if let Some(fn_item) = SpecType::parse_spec_type_fn_name(&spec_item.ident.as_str())
-                .and_then(|(_, fn_name)| fn_name)
-                .map(|fn_name| Ident::from_str(fn_name))
+                .map(|(_, fn_name)| Ident::from_str(&fn_name))
                 .and_then(|fn_ident| fns_by_identifier.get(&fn_ident))
               {
                 self
@@ -218,6 +217,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let (measure_fns, other_spec_fns): (Vec<(SpecType, DefId)>, Vec<(SpecType, DefId)>) =
         fn_specs.partition(|(spec_type, _)| spec_type == &SpecType::Measure);
 
+      dbg!(&measure_fns);
       if measure_fns.len() > 1 {
         self.tcx.sess.span_err(fn_item.span, "Multiple measures.");
       }

@@ -98,24 +98,10 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> Vec<ItemFn> {
   };
   let fn_name = &item_fn.sig.ident.to_string();
 
-  let has_self_param = item_fn
-    .sig
-    .inputs
-    .first()
-    .map(|first_input| match first_input {
-      FnArg::Receiver(_) => true,
-      _ => false,
-    })
-    .unwrap_or(false);
-
   let make_spec_fn = |(index, spec): (usize, Spec)| -> ItemFn {
-    // The spec identifier is of the form __{type}_{name}
-    // For sibling specs, the name must be the name of the actual function
-    let spec_ident = if has_self_param {
-      format_ident!("__{}_{}", spec.typ.name(), fn_name)
-    } else {
-      format_ident!("__{}_{}", spec.typ.name(), index + 1)
-    };
+    // The spec identifier is of the form __{type}_{index}_{?name}
+    // For sibling specs, the name of the spec'ed function has to be given.
+    let spec_ident = format_ident!("__{}_{}_{}", spec.typ.name(), index + 1, fn_name);
 
     let ret_param: TokenStream = match spec.typ {
       SpecType::Post => quote! { , ret: #fn_return_ty },
@@ -138,6 +124,16 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> Vec<ItemFn> {
   };
 
   let specs = specs.into_iter().enumerate().map(make_spec_fn);
+
+  let has_self_param = item_fn
+    .sig
+    .inputs
+    .first()
+    .map(|first_input| match first_input {
+      FnArg::Receiver(_) => true,
+      _ => false,
+    })
+    .unwrap_or(false);
 
   // If the function has the 'self' param, then the specs must be siblings
   if has_self_param {
