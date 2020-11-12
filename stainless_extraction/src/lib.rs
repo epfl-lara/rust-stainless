@@ -21,6 +21,7 @@ mod expr;
 mod flags;
 mod krate;
 mod literal;
+mod spec;
 mod std_items;
 mod ty;
 mod utils;

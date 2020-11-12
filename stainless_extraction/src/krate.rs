@@ -2,13 +2,38 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, ImplItemKind, ItemKind};
+use rustc_hir::{self as hir, AssocItemKind, ImplItemKind, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{DefIdTree, List};
 use rustc_span::symbol::Ident;
 use rustc_span::DUMMY_SP;
 
+use crate::spec::SpecType;
+use crate::ty::all_generic_params_of;
 use stainless_data::ast as st;
+
+/// Internal data type representing functions in either impl blocks or
+/// top-level scope. It can be seen as the subset of the common fields of
+/// `rustc_hir::ItemKind::Fn` and `rustc_hir::ImplItemKind::Fn` that we make
+/// use of.
+#[derive(Copy, Clone)]
+struct FnItem {
+  def_id: DefId,
+  ident: Ident,
+  span: Span,
+}
+
+impl FnItem {
+  fn is_spec_fn(&self) -> bool {
+    // TODO: also take into account if definition comes from expansion
+    //   self.span.from_expansion() && (...
+    self.spec_type().is_some()
+  }
+
+  fn spec_type(&self) -> Option<SpecType> {
+    SpecType::parse_spec_type_fn_name(&self.ident.as_str()).map(|(spec_type, _)| spec_type)
+  }
+}
 
 /// Top-level extraction
 
@@ -36,16 +61,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
     }
 
-    struct FnItem {
-      ident: Ident,
-      hir_id: HirId,
-      span: Span,
-    }
-
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
       adts: Vec<&'tcx hir::Item<'tcx>>,
       functions: Vec<FnItem>,
+      // Maps the user-function to its spec functions
+      specs: HashMap<DefId, Vec<FnItem>>,
     }
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
@@ -57,29 +78,80 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
             let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
-            if let hir::Item {
-              ident,
-              hir_id,
-              kind: ItemKind::Fn(..),
-              span,
-              ..
-            } = item
-            {
-              eprintln!("  - Fun {}", def_path_str);
-              self.functions.push(FnItem {
-                ident: *ident,
-                hir_id: *hir_id,
-                span: *span,
-              });
-            } else {
-              eprintln!("  - ADT {}", def_path_str);
-              self.adts.push(&item);
+            match item {
+              // Fn case
+              hir::Item {
+                ident,
+                kind: ItemKind::Fn(..),
+                span,
+                ..
+              } => {
+                let fn_item = FnItem {
+                  def_id,
+                  ident: *ident,
+                  span: *span,
+                };
+
+                match self.xtor.tcx.parent(fn_item.def_id) {
+                  // Extract a spec function
+                  Some(parent_def_id) if fn_item.is_spec_fn() => self
+                    .specs
+                    .entry(parent_def_id)
+                    .or_insert_with(Vec::new)
+                    .push(fn_item),
+
+                  // Extract a normal function
+                  _ => {
+                    eprintln!("  - Fun {}", def_path_str);
+                    self.functions.push(fn_item);
+                  }
+                }
+              }
+
+              // ADT case
+              _ => {
+                eprintln!("  - ADT {}", def_path_str);
+                self.adts.push(&item);
+              }
             }
           }
 
-          // Don't fail on the impl block, but do nothing either.
-          // The functions of the block will be treated in #visit_impl_item.
-          ItemKind::Impl { .. } => {}
+          ItemKind::Impl { items, .. } => {
+            // Get all functions in the impl by their identifier
+            let fns_by_identifier: HashMap<Ident, FnItem> = items
+              .into_iter()
+              .filter_map(|item| match &item.kind {
+                AssocItemKind::Fn { .. } => Some((
+                  item.ident,
+                  FnItem {
+                    def_id: self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id(),
+                    span: item.span,
+                    ident: item.ident,
+                  },
+                )),
+                _ => None,
+              })
+              .collect();
+
+            let (specs, fns): (Vec<&FnItem>, Vec<&FnItem>) = fns_by_identifier
+              .values()
+              .partition(|&fn_item| fn_item.is_spec_fn());
+            self.functions.extend(fns);
+
+            specs.iter().for_each(|&&spec_item| {
+              if let Some(fn_item) = SpecType::parse_spec_type_fn_name(&spec_item.ident.as_str())
+                .and_then(|(_, fn_name)| fn_name)
+                .map(|fn_name| Ident::from_str(fn_name))
+                .and_then(|fn_ident| fns_by_identifier.get(&fn_ident))
+              {
+                self
+                  .specs
+                  .entry(fn_item.def_id)
+                  .or_insert_with(Vec::new)
+                  .push(spec_item)
+              }
+            });
+          }
 
           _ => {
             self.xtor.unsupported(item.span, "Other kind of item");
@@ -94,21 +166,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
         match impl_item {
+          // Ignore fn items in impl blocks because they are already treated
+          // when the entire impl block is extracted.
           hir::ImplItem {
-            ident,
-            hir_id,
             kind: ImplItemKind::Fn(..),
-            span,
             ..
-          } => {
-            self.functions.push(FnItem {
-              ident: *ident,
-              hir_id: *hir_id,
-              span: *span,
-            });
-          }
+          } => {}
 
-          _ => self.xtor.unsupported(impl_item.span, "Impl item"),
+          // Fail for all other kinds of impl items.
+          _ => self
+            .xtor
+            .unsupported(impl_item.span, "Impl item other than function"),
         }
       }
     }
@@ -120,65 +188,49 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       xtor: self,
       adts: vec![],
       functions: vec![],
+      specs: HashMap::new(),
     };
     eprintln!("[ Discovering local definitions ]");
     krate.visit_all_item_likes(&mut visitor);
     eprintln!();
 
-    let (adts, mut functions) = (visitor.adts, visitor.functions);
-
-    // Correlate spec functions with the function they specify
-    let mut pre_spec_functions: HashMap<DefId, Vec<DefId>> = HashMap::new();
-    let mut post_spec_functions: HashMap<DefId, Vec<DefId>> = HashMap::new();
-    let mut measure_spec_function: HashMap<DefId, DefId> = HashMap::new();
-
-    functions.retain(|item| {
-      let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
-      if item.span.from_expansion() {
-        let ident_str = item.ident.as_str();
-
-        if let Some(parent_def_id) = self.tcx.parent(def_id) {
-          if ident_str.starts_with("__pre") {
-            pre_spec_functions
-              .entry(parent_def_id)
-              .or_insert_with(Vec::new)
-              .push(def_id);
-            return false;
-          } else if ident_str.starts_with("__post") {
-            post_spec_functions
-              .entry(parent_def_id)
-              .or_insert_with(Vec::new)
-              .push(def_id);
-            return false;
-          } else if ident_str.starts_with("__measure") {
-            if measure_spec_function.contains_key(&parent_def_id) {
-              self.tcx.sess.span_err(item.span, "Multiple measures.");
-            } else {
-              measure_spec_function.insert(parent_def_id, def_id);
-            }
-            return false;
-          }
-        }
-      }
-      true
-    });
+    let ItemVisitor {
+      adts,
+      functions,
+      specs,
+      ..
+    } = visitor;
 
     // Extract local items
-    for item in adts {
-      let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
+    for adt_item in adts {
+      let def_id = self.tcx.hir().local_def_id(adt_item.hir_id).to_def_id();
       let sort = self.extract_adt(def_id);
       self.add_adt(sort.id, sort);
     }
-    for item in functions {
-      let def_id = self.tcx.hir().local_def_id(item.hir_id).to_def_id();
-      let pre_spec_functions = pre_spec_functions.remove(&def_id);
-      let post_spec_functions = post_spec_functions.remove(&def_id);
-      let measure_spec_function = measure_spec_function.remove(&def_id);
+
+    for fn_item in functions {
+      let fn_specs = specs
+        .get(&fn_item.def_id)
+        .into_iter()
+        .flatten()
+        .filter_map(|spec_item| spec_item.spec_type().map(|s| (s, spec_item.def_id)));
+
+      let (measure_fns, other_spec_fns): (Vec<(SpecType, DefId)>, Vec<(SpecType, DefId)>) =
+        fn_specs.partition(|(spec_type, _)| spec_type == &SpecType::Measure);
+
+      if measure_fns.len() > 1 {
+        self.tcx.sess.span_err(fn_item.span, "Multiple measures.");
+      }
+
+      let (pre_fns, post_fns): (Vec<(SpecType, DefId)>, Vec<(SpecType, DefId)>) = other_spec_fns
+        .into_iter()
+        .partition(|(spec_type, _)| spec_type == &SpecType::Pre);
+
       let fd = self.extract_local_fn(
-        def_id,
-        pre_spec_functions,
-        post_spec_functions,
-        measure_spec_function,
+        fn_item.def_id,
+        pre_fns.iter().map(|(_, def_id)| def_id).collect(),
+        post_fns.iter().map(|(_, def_id)| def_id).collect(),
+        measure_fns.first().map(|(_, def_id)| def_id),
       );
       self.add_function(fd.id, fd);
     }
@@ -248,9 +300,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_local_fn(
     &mut self,
     def_id: DefId,
-    pre_spec_functions: Option<Vec<DefId>>,
-    post_spec_functions: Option<Vec<DefId>>,
-    measure_spec_function: Option<DefId>,
+    pre_spec_functions: Vec<&DefId>,
+    post_spec_functions: Vec<&DefId>,
+    measure_spec_function: Option<&DefId>,
   ) -> &'l st::FunDef<'l> {
     let f = self.factory();
     let tcx = self.tcx;
@@ -293,16 +345,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
-    // Extract specs, if any, and wrap them around the body
-    let make_and = |mut exprs: Vec<st::Expr<'l>>| {
-      if exprs.len() > 1 {
-        f.And(exprs).into()
-      } else {
-        exprs.pop().unwrap()
-      }
-    };
-
-    if let Some(measure_spec_def_id) = measure_spec_function {
+    if let Some(&measure_spec_def_id) = measure_spec_function {
       // The measure function generated by the macro has a Unit return type to
       // deal with the unknown type of the measure. The expression has a
       // trailing ';' (UnitLiteral) to implement this. Here, we need to remove
@@ -325,29 +368,41 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
     }
 
-    if let Some(pre_spec_functions) = pre_spec_functions {
-      let spec_exprs = pre_spec_functions
-        .into_iter()
-        .map(|spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, None))
-        .collect();
-      body_expr = f.Require(make_and(spec_exprs), body_expr).into();
+    let spec_exprs = pre_spec_functions
+      .into_iter()
+      .map(|&spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, None))
+      .collect::<Vec<_>>();
+    if !spec_exprs.is_empty() {
+      body_expr = f.Require(self.make_and(spec_exprs), body_expr).into();
     }
 
-    if let Some(post_spec_functions) = post_spec_functions {
-      let return_var = &*f.Variable(self.fresh_id("ret".into()), return_tpe, vec![]);
-      let return_vd = f.ValDef(return_var);
-      let spec_exprs = post_spec_functions
-        .into_iter()
-        .map(|spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, Some(return_var)))
-        .collect();
+    let return_var = &*f.Variable(self.fresh_id("ret".into()), return_tpe, vec![]);
+    let return_vd = f.ValDef(return_var);
+    let spec_exprs = post_spec_functions
+      .into_iter()
+      .map(|&spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, Some(return_var)))
+      .collect::<Vec<_>>();
+    if !spec_exprs.is_empty() {
       body_expr = f
-        .Ensuring(body_expr, f.Lambda(vec![return_vd], make_and(spec_exprs)))
+        .Ensuring(
+          body_expr,
+          f.Lambda(vec![return_vd], self.make_and(spec_exprs)),
+        )
         .into();
     }
 
     // Wrap it all up in a Stainless function
     let fun_id = self.extract_fn_ref(def_id);
     f.FunDef(fun_id, tparams, params, return_tpe, body_expr, flags)
+  }
+
+  /// Extract specs, if any, and wrap them around the body
+  fn make_and(&self, mut exprs: Vec<st::Expr<'l>>) -> st::Expr<'l> {
+    if exprs.len() > 1 {
+      self.factory().And(exprs).into()
+    } else {
+      exprs.pop().unwrap()
+    }
   }
 
   /// Extract a specification function and return its body.
@@ -363,27 +418,28 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // to the surrounding function's parameters. The analogous thing applies to type parameters.
     // Here we try to match all of them up and coerce the extraction to directly translate them to
     // the surrounding function's variables, instead of extracting new, unrelated identifiers.
-    let tcx = self.tcx;
-    let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
 
     // Correlate type parameters
-    let generics = tcx.generics_of(def_id);
+    let generics = self.tcx.generics_of(def_id);
+    let generic_params = all_generic_params_of(self.tcx, def_id);
     assert_eq!(
       generics.parent,
-      tcx.generics_of(original_txtcx.def_id).parent
+      self.tcx.generics_of(original_txtcx.def_id).parent
     );
+
     let original_index_to_tparam = &original_txtcx.index_to_tparam;
-    assert_eq!(generics.params.len(), original_index_to_tparam.len());
-    let index_to_tparam = generics
-      .params
+    assert_eq!(generic_params.len(), original_index_to_tparam.len());
+    let index_to_tparam = generic_params
       .iter()
       .map(|param| (param.index, original_index_to_tparam[&param.index].clone()))
       .collect();
+
     let txtcx = TyExtractionCtxt {
       def_id,
       index_to_tparam,
     };
 
+    let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
     self.enter_body(hir_id, txtcx, |bxtor| {
       // Correlate term parameters
       let mut param_hir_ids: Vec<HirId> = bxtor

@@ -6,7 +6,6 @@ use std::convert::TryFrom;
 use std::iter;
 
 /// Specs (pre-, postconditions, ...)
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpecType {
   Pre,
@@ -101,7 +100,7 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
   };
 
   let make_spec_fn = |(index, spec): (usize, Spec)| -> Stmt {
-    let fn_ident = format_ident!("__{}{}", spec.typ.name(), index + 1);
+    let fn_ident = format_ident!("__{}_{}", spec.typ.name(), index + 1);
     let ret_param: TokenStream = match spec.typ {
       SpecType::Post => quote! { , ret: #fn_return_ty },
       _ => quote! {},

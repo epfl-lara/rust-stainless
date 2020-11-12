@@ -17,7 +17,12 @@ pub enum List<T> {
 }
 
 impl<T> List<T> {
-  // #[measure(self)]
+  #[doc(hidden)]
+  #[allow(unused_variables)]
+  fn __measure_size(&self) -> () {
+    self;
+  }
+
   pub fn size(&self) -> u32 {
     match self {
       List::Nil => 0,
@@ -25,7 +30,12 @@ impl<T> List<T> {
     }
   }
 
-  // #[measure(self)]
+  #[doc(hidden)]
+  #[allow(unused_variables)]
+  fn __measure_contents(&self) -> () {
+    self;
+  }
+
   pub fn contents(&self) -> Set<T> {
     match self {
       List::Nil => Set::empty(),
@@ -40,7 +50,11 @@ pub fn is_sorted(list: &List<i32>) -> bool {
     List::Nil => true,
     List::Cons(x, tail) => match &**tail {
       List::Nil => true,
-      List::Cons(y, ..) => x <= y && is_sorted(tail),
+
+      // FIXME: We *have* to deref the two integers here, because otherwise
+      // their type is &i32 which we can't extract to primitive '<=' for the
+      // moment.
+      List::Cons(y, ..) => *x <= *y && is_sorted(tail),
     },
   }
 }
