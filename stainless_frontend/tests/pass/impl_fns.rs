@@ -1,4 +1,5 @@
 extern crate stainless;
+use stainless::*;
 
 pub enum IntOption {
   None,
@@ -15,6 +16,12 @@ impl IntOption {
 
   pub fn is_some(&self) -> bool {
     !self.is_none()
+  }
+
+  #[pre(a > 0 && a < 100000)]
+  #[post(ret > 0 && ret == a + 1)]
+  pub fn dummy_for_specs(&self, a: i32) -> i32 {
+    a + 1
   }
 }
 
