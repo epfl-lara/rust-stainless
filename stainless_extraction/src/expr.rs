@@ -63,10 +63,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
 
-      // Derefs
-      // We want to allow two cases: Box derefs and &T derefs.
-      // (we build on the assumption that no illicit refs can be created)
-      ExprKind::Deref { arg } => self.extract_expr_ref(arg),
+      ExprKind::Deref { arg } => self.extract_deref(arg, expr.span),
 
       // Borrow an immutable and aliasable value (i.e. the meaning of
       // BorrowKind::Shared). Handle this safe case with erasure.
@@ -95,6 +92,30 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .into_iter()
       .map(|arg| self.extract_expr_ref(arg))
       .collect()
+  }
+
+  /// Dereferences
+  ///
+  /// We want to allow two cases – Box derefs and &T derefs – but no
+  /// user-defined derefs. (We build on the assumption that no illicit refs can
+  /// be created.)
+  fn extract_deref(&mut self, arg: ExprRef<'tcx>, span: Span) -> st::Expr<'l> {
+    let inner_expr = self.extract_expr_ref(arg);
+
+    // Disallow user-defined derefs, identified by their call to the
+    // function 'deref'.
+    match &inner_expr {
+      st::Expr::FunctionInvocation(st::FunctionInvocation {
+        id: st::SymbolIdentifier {
+          id: st::Identifier { name, .. },
+          ..
+        },
+        ..
+      }) if name == "deref" => {
+        self.unsupported_expr(span, format!("Cannot extract user-defined deref"))
+      }
+      _ => inner_expr,
+    }
   }
 
   fn extract_unary(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
@@ -129,9 +150,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let (arg1_ty, arg2_ty) = (arg1.ty, arg2.ty);
       let args_are_bv = self.base.is_bv_type(arg1_ty) && self.base.is_bv_type(arg2_ty);
       let args_are_bool = arg1_ty.is_bool() && arg2_ty.is_bool();
-      assert!(args_are_bv || args_are_bool);
+
       let (arg1, arg2) = (self.extract_expr(arg1), self.extract_expr(arg2));
       match op {
+        _ if !args_are_bv && !args_are_bool => {
+          self.unsupported_expr(expr.span, format!("Cannot extract binary op {:?}", op))
+        }
+
         BinOp::Eq => f.Equals(arg1, arg2).into(),
         BinOp::Ne => f.Not(f.Equals(arg1, arg2).into()).into(),
         BinOp::Add if args_are_bv => f.Plus(arg1, arg2).into(),
@@ -600,10 +625,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
             .into()
         } else {
-          unexpected(
+          self.unsupported_pattern(
             pattern.span,
             "Encountered Leaf pattern, but type is not an ADT",
-          );
+          )
         }
       }
 

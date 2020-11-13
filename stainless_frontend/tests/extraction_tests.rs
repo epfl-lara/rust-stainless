@@ -89,5 +89,6 @@ define_tests!(
   fail_verification: box_as_ref,
   fail_extraction: mut_lets,
   fail_extraction: switch_ref,
-  fail_extraction: switch_int
+  fail_extraction: switch_int,
+  fail_extraction: user_deref
 );
