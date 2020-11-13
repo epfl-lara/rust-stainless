@@ -34,68 +34,70 @@ impl<T> List<T> {
   }
 }
 
-#[measure(list)]
-pub fn is_sorted(list: &List<i32>) -> bool {
-  match list {
-    List::Nil => true,
-    List::Cons(x, tail) => match &**tail {
+impl List<i32> {
+  #[measure(self)]
+  pub fn is_sorted(&self) -> bool {
+    match self {
       List::Nil => true,
+      List::Cons(x, tail) => match &**tail {
+        List::Nil => true,
 
-      // FIXME: We *have* to deref the two integers here, because otherwise
-      //   their type is &i32 which we can't extract to primitive '<=' for the
-      //   moment.
-      List::Cons(y, ..) => *x <= *y && is_sorted(tail),
-    },
+        // FIXME: We *have* to deref the two integers here, because otherwise
+        //   their type is &i32 which we can't extract to primitive '<=' for the
+        //   moment.
+        List::Cons(y, ..) => *x <= *y && tail.is_sorted(),
+      },
+    }
   }
-}
 
-#[measure(list)]
-pub fn min(list: &List<i32>) -> Option<i32> {
-  match list {
-    List::Nil => Option::None,
-    List::Cons(x, xs) => match min(&*xs) {
-      Option::None => Option::Some(*x),
-      Option::Some(y) => {
-        if *x < y {
-          Option::Some(*x)
-        } else {
-          Option::Some(y)
+  #[measure(self)]
+  pub fn min(&self) -> Option<i32> {
+    match self {
+      List::Nil => Option::None,
+      List::Cons(x, xs) => match xs.min() {
+        Option::None => Option::Some(*x),
+        Option::Some(y) => {
+          if *x < y {
+            Option::Some(*x)
+          } else {
+            Option::Some(y)
+          }
         }
-      }
-    },
+      },
+    }
   }
-}
 
-/// Inserting element 'e' into a sorted list 'l' produces a sorted list with
-/// the expected content and size
-#[pre(is_sorted(&l))]
-#[measure(l)]
-#[post(
-  ret.size() == l.size() + 1 &&
-  is_sorted(&ret) &&
-  ret.contents().is_subset_of(&l.contents().add(&e)) &&
-  l.contents().add(&e).is_subset_of(&ret.contents())
-)]
-pub fn sorted_insert(e: i32, l: List<i32>) -> List<i32> {
-  match l {
-    List::Cons(head, tail) if head <= e => List::Cons(head, Box::new(sorted_insert(e, *tail))),
-    _ => List::Cons(e, Box::new(l)),
+  /// Inserting element 'e' into a sorted list 'l' produces a sorted list with
+  /// the expected content and size
+  #[pre(self.is_sorted())]
+  #[measure(self)]
+  #[post(
+    ret.size() == self.size() + 1 &&
+    ret.is_sorted() &&
+    ret.contents().is_subset_of(&self.contents().add(&e)) &&
+    self.contents().add(&e).is_subset_of(&ret.contents())
+  )]
+  pub fn sorted_insert(self, e: i32) -> List<i32> {
+    match self {
+      List::Cons(head, tail) if head <= e => List::Cons(head, Box::new(tail.sorted_insert(e))),
+      _ => List::Cons(e, Box::new(self)),
+    }
   }
-}
 
-/// Insertion sort yields a sorted list of same size and content as the input
-/// list
-#[measure(l)]
-#[post(
-  ret.size() == l.size() &&
-  is_sorted(&ret) &&
-  ret.contents().is_subset_of(&l.contents()) &&
-  l.contents().is_subset_of(&ret.contents())
-)]
-pub fn sort(l: List<i32>) -> List<i32> {
-  match l {
-    List::Nil => l,
-    List::Cons(x, xs) => sorted_insert(x, sort(*xs)),
+  /// Insertion sort yields a sorted list of same size and content as the input
+  /// list
+  #[measure(self)]
+  #[post(
+    ret.size() == self.size() &&
+    ret.is_sorted() &&
+    ret.contents().is_subset_of(&self.contents()) &&
+    self.contents().is_subset_of(&ret.contents())
+  )]
+  pub fn sort(self) -> List<i32> {
+    match self {
+      List::Nil => self,
+      List::Cons(x, xs) => xs.sort().sorted_insert(x),
+    }
   }
 }
 
@@ -115,5 +117,5 @@ pub fn main() {
     )),
   );
 
-  assert!(is_sorted(&sort(list)))
+  assert!(list.sort().is_sorted())
 }
