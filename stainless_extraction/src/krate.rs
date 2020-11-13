@@ -217,7 +217,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let (measure_fns, other_spec_fns): (Vec<(SpecType, DefId)>, Vec<(SpecType, DefId)>) =
         fn_specs.partition(|(spec_type, _)| spec_type == &SpecType::Measure);
 
-      dbg!(&measure_fns);
       if measure_fns.len() > 1 {
         self.tcx.sess.span_err(fn_item.span, "Multiple measures.");
       }
