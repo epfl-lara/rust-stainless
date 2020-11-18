@@ -85,7 +85,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
-      adts: Vec<&'tcx hir::Item<'tcx>>,
       functions: Vec<FnItem>,
       // Maps the user-function to its spec functions
       specs: HashMap<DefId, Vec<FnItem>>,
@@ -94,8 +93,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
         match item.kind {
+          // Ignore use and external crates, see #should_ignore.
           _ if should_ignore(item) => {}
 
+          // Store enums, structs and top-level functions into adts and functions
           ItemKind::Enum(..) | ItemKind::Struct(..) | ItemKind::Fn(..) => {
             let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
             let def_path_str = self.xtor.tcx.def_path_str(def_id);
@@ -110,15 +111,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               } => {
                 let fn_item = FnItem::new(def_id, *ident, *span);
 
+                // then check the parent and
                 match self.xtor.tcx.parent(fn_item.def_id) {
-                  // Extract a spec function
+                  // extract a spec function, if there is a parent
                   Some(parent_def_id) if fn_item.is_spec_fn() => self
                     .specs
                     .entry(parent_def_id)
                     .or_insert_with(Vec::new)
                     .push(fn_item),
 
-                  // Extract a normal function
+                  // otherwise, extract a normal function.
                   _ => {
                     eprintln!("  - Fun {}", def_path_str);
                     self.functions.push(fn_item);
@@ -129,11 +131,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               // ADT case
               _ => {
                 eprintln!("  - ADT {}", def_path_str);
-                self.adts.push(&item);
+                let sort = self.xtor.extract_adt(def_id);
+                self.xtor.add_adt(sort.id, sort);
               }
             }
           }
 
+          // Store functions of impl blocks and their specs
           ItemKind::Impl { items, .. } => {
             // Get all functions in the impl by their identifier
             let fns_by_identifier: HashMap<Ident, FnItem> = items
@@ -147,6 +151,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                     item.span,
                   ),
                 )),
+                // ignore consts and type aliases in impl blocks
                 _ => None,
               })
               .collect();
@@ -159,6 +164,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             specs.iter().for_each(|&&spec_item| {
               if let Some(fn_item) = spec_item
                 .spec_fn_name
+                // retrieve corresponding fn_item from the map
                 .and_then(|fn_ident| fns_by_identifier.get(&fn_ident))
               {
                 self
@@ -181,16 +187,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         self.xtor.unsupported(trait_item.span, "Trait item");
       }
 
+      /// Ignore fn items in because they are already treated when the entire
+      /// impl/trait block is extracted.
       fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
         match impl_item {
-          // Ignore fn items in impl blocks because they are already treated
-          // when the entire impl block is extracted.
           hir::ImplItem {
             kind: ImplItemKind::Fn(..),
             ..
           } => {}
-
-          // Fail for all other kinds of impl items.
           _ => self
             .xtor
             .unsupported(impl_item.span, "Impl item other than function"),
@@ -203,7 +207,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Discover items in the local crate
     let mut visitor = ItemVisitor {
       xtor: self,
-      adts: vec![],
       functions: vec![],
       specs: HashMap::new(),
     };
@@ -212,18 +215,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     eprintln!();
 
     let ItemVisitor {
-      adts,
-      functions,
-      specs,
-      ..
+      functions, specs, ..
     } = visitor;
-
-    // Extract local items
-    for adt_item in adts {
-      let def_id = self.tcx.hir().local_def_id(adt_item.hir_id).to_def_id();
-      let sort = self.extract_adt(def_id);
-      self.add_adt(sort.id, sort);
-    }
 
     for fn_item in functions {
       let fn_specs = specs
