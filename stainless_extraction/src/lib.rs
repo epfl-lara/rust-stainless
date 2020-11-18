@@ -62,7 +62,7 @@ pub fn extract_crate<'l, 'tcx: 'l>(
   // Output extracted Stainless program
   eprintln!("[ Extracted items ]");
   symbols.sorts.values().for_each(|adt| {
-    eprintln!(" - ADT       {}", adt.id);
+    eprintln!(" - ADT        {}", adt.id);
   });
   symbols.functions.values().for_each(|fd| {
     eprintln!(" - Function   {}", fd.id);

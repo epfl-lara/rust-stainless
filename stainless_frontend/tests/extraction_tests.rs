@@ -92,6 +92,7 @@ define_tests!(
   pass: nested_spec_impl,
   pass: tuple_match,
   pass: tuples,
+  pass: type_class,
   fail_verification: box_as_ref,
   fail_extraction: double_measure,
   fail_extraction: double_measure_impl,
