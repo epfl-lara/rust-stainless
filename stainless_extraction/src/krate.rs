@@ -25,9 +25,7 @@ struct FnItem {
 
 impl FnItem {
   fn is_spec_fn(&self) -> bool {
-    // TODO: also take into account if definition comes from expansion
-    //   self.span.from_expansion() && (...
-    self.spec_type().is_some()
+    self.span.from_expansion() && self.spec_type().is_some()
   }
 
   fn spec_type(&self) -> Option<SpecType> {
