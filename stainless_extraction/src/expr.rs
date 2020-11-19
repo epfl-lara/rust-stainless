@@ -6,7 +6,7 @@ use super::*;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, ParamTy, Ty, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -292,21 +292,29 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
       // If the call is a std item, extract it specially
-      if let Some(std_item) = self.base.std_items.def_to_item_opt(def_id) {
-        match std_item {
-          BeginPanicFn => return self.extract_panic(args, span, false),
-          BeginPanicFmtFn => return self.extract_panic(args, span, true),
+      match self.base.std_items.def_to_item_opt(def_id) {
+        Some(BeginPanicFn) => self.extract_panic(args, span, false),
+        Some(BeginPanicFmtFn) => self.extract_panic(args, span, true),
 
-          SetEmptyFn | SetSingletonFn => return self.extract_set_creation(args, substs_ref, span),
-          SetAddFn | SetDifferenceFn | SetIntersectionFn | SetUnionFn | SubsetOfFn => {
-            return self.extract_set_op(std_item, args, span)
-          }
-          _ => (),
-        };
+        Some(SetEmptyFn) | Some(SetSingletonFn) => {
+          self.extract_set_creation(args, substs_ref, span)
+        }
+        Some(std_item)
+          if std_item == SetAddFn
+            || std_item == SetDifferenceFn
+            || std_item == SetIntersectionFn
+            || std_item == SetUnionFn
+            || std_item == SubsetOfFn =>
+        {
+          self.extract_set_op(std_item, args, span)
+        }
+
+        // Otherwise, extract a normal call
+        _ => self.extract_call(def_id, substs_ref, args, span),
       }
+    } else {
+      self.unsupported_expr(span, "Cannot extract call without statically known target")
     }
-    // Otherwise, extract a normal call
-    self.extract_call(ty, args, span)
   }
 
   fn extract_set_op(
@@ -342,32 +350,44 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.factory().FiniteSet(args, ty).into()
   }
 
-  fn extract_call(&mut self, ty: Ty<'tcx>, args: &Vec<ExprRef<'tcx>>, span: Span) -> st::Expr<'l> {
-    // Normal function call
-    if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-      let fd_id = self.base.extract_fn_ref(def_id);
+  fn extract_call(
+    &mut self,
+    def_id: DefId,
+    substs_ref: SubstsRef<'tcx>,
+    args: &Vec<ExprRef<'tcx>>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let fd_id = self.base.extract_fn_ref(def_id);
 
-      // Special case for Box::new, erase it and return the argument directly.
-      // TODO: turn Box::new to a StdItem and use that. Tracked here:
-      //  https://github.com/epfl-lara/rust-stainless/issues/34
-      if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
-        return self.extract_expr_ref(args.first().cloned().unwrap());
-      }
-
-      let arg_tps = self.extract_arg_types(substs_ref, span);
-      let args = self.extract_expr_refs(args.to_vec());
-      self
-        .factory()
-        .FunctionInvocation(fd_id, arg_tps, args)
-        .into()
-    } else {
-      self.unsupported_expr(span, "Cannot extract call without statically known target")
+    // Special case for Box::new, erase it and return the argument directly.
+    // TODO: turn Box::new to a StdItem and use that. Tracked here:
+    //  https://github.com/epfl-lara/rust-stainless/issues/34
+    if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
+      return self.extract_expr_ref(args.first().cloned().unwrap());
     }
+
+    // filter out self type param (this is already provided by the class)
+    let arg_tps = self.extract_arg_types(
+      substs_ref.types().filter(|ty| match ty.kind {
+        TyKind::Param(param_ty) => param_ty != ParamTy::for_self(),
+        _ => true,
+      }),
+      span,
+    );
+
+    let args = self.extract_expr_refs(args.to_vec());
+    self
+      .factory()
+      .FunctionInvocation(fd_id, arg_tps, args)
+      .into()
   }
 
-  fn extract_arg_types(&mut self, substs: SubstsRef<'tcx>, span: Span) -> Vec<st::Type<'l>> {
+  fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
+  where
+    I: IntoIterator<Item = Ty<'tcx>>,
+  {
     // Remove closure type parameters (they were already replaced by FunctionTypes)
-    let arg_tys = substs.types().filter(|ty| match ty.kind {
+    let arg_tys = types.into_iter().filter(|ty| match ty.kind {
       TyKind::Closure(..) => false,
       _ => true,
     });
@@ -497,7 +517,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         // TODO: Also consider type arguments
         let sort = self.base.extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
-        let arg_tps = self.extract_arg_types(substs, expr.span);
+        let arg_tps = self.extract_arg_types(substs.types(), expr.span);
         fields.sort_by_key(|field| field.name.index());
         let args = fields
           .into_iter()
@@ -589,7 +609,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       } => {
         let sort = self.base.extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
-        let arg_tps = self.extract_arg_types(substs, pattern.span);
+        let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
         let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
         f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
           .into()
@@ -602,7 +622,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           let sort = self.base.extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
-          let arg_tps = self.extract_arg_types(substs, pattern.span);
+          let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
           let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
           f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
             .into()
