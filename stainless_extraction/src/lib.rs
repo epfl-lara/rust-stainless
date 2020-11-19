@@ -19,6 +19,7 @@ extern crate rustc_ty;
 mod bindings;
 mod expr;
 mod flags;
+mod fns;
 mod krate;
 mod literal;
 mod spec;
@@ -201,7 +202,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     self.with_extraction_mut(|xt| {
       let id = xt.fresh_id(name, path);
-      assert!(xt.mapping.did_to_stid.insert(def_id, id).is_none());
+      assert!(
+        xt.mapping.did_to_stid.insert(def_id, id).is_none(),
+        "A mapping for {:?} was already registered",
+        def_id
+      );
       id
     })
   }
