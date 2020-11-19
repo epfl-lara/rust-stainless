@@ -56,21 +56,22 @@ pub fn extract_crate<'l, 'tcx: 'l>(
   let mut xtor = BaseExtractor::new(tcx, std_items, extraction);
   xtor.process_crate(crate_name);
 
-  let (adts, functions) = xtor.into_result();
+  let symbols = xtor.into_symbols();
 
   // Output extracted Stainless program
-  eprintln!("[ Extracted ADTs and functions ]");
-  for adt in &adts {
-    eprintln!(" - ADT {}", adt.id);
-    // eprintln!(" > {:#?}", adt);
-  }
-  for fd in &functions {
-    eprintln!(" - Fun {}", fd.id);
-    // eprintln!(" > {:#?}", fd);
-  }
+  eprintln!("[ Extracted items ]");
+  symbols.sorts.values().for_each(|adt| {
+    eprintln!(" - ADT       {}", adt.id);
+  });
+  symbols.functions.values().for_each(|fd| {
+    eprintln!(" - Function   {}", fd.id);
+  });
+  symbols.classes.values().for_each(|cd| {
+    eprintln!(" - Type class {}", cd.id);
+  });
   eprintln!();
 
-  st::Symbols::new(adts, functions)
+  symbols
 }
 
 /// Helpful type aliases
@@ -92,6 +93,7 @@ struct Extraction<'l> {
   adts: HashMap<StainlessSymId<'l>, &'l st::ADTSort<'l>>,
   function_refs: HashSet<DefId>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
+  classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
 }
 
 impl<'l> Extraction<'l> {
@@ -107,6 +109,7 @@ impl<'l> Extraction<'l> {
       adts: HashMap::new(),
       function_refs: HashSet::new(),
       functions: HashMap::new(),
+      classes: HashMap::new(),
     }
   }
 
@@ -134,11 +137,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  fn into_result(self) -> (Vec<&'l st::ADTSort<'l>>, Vec<&'l st::FunDef<'l>>) {
+  fn into_symbols(self) -> st::Symbols<'l> {
     self.with_extraction(|xt| {
-      let adts: Vec<&st::ADTSort> = xt.adts.values().copied().collect();
-      let functions: Vec<&st::FunDef> = xt.functions.values().copied().collect();
-      (adts, functions)
+      st::Symbols::new(
+        xt.adts.values().copied().collect(),
+        xt.functions.values().copied().collect(),
+        xt.classes.values().copied().collect(),
+      )
     })
   }
 

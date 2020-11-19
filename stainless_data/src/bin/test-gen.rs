@@ -102,8 +102,10 @@ test_gen!(identity_symbols, s => {
   let fd = make_identity_fundef(&f);
   let mut functions = Map::new();
   functions.insert(fd.id, fd);
+
   let symbols = Symbols {
     sorts: Map::new(),
+    classes: Map::new(),
     functions
   };
   ser!(symbols, s)

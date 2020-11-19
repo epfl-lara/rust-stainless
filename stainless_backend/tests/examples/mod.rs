@@ -36,6 +36,7 @@ pub fn identity_symbols<'a>(f: &'a Factory) -> Symbols<'a> {
   functions.insert(fd.id, fd);
   Symbols {
     sorts: Map::new(),
+    classes: Map::new(),
     functions,
   }
 }
