@@ -637,6 +637,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         _ => self.unsupported_pattern(pattern.span, "Unsupported kind of literal in pattern"),
       },
 
+      // TODO: Confirm that rustc introduces this pattern only for primitive derefs
       box PatKind::Deref { subpattern } => self.extract_pattern(subpattern, binder),
 
       _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
