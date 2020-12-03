@@ -63,7 +63,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr_ref(source),
       ExprKind::NeverToAny { source } => self.extract_expr_ref(source),
 
-      ExprKind::Deref { arg } => self.extract_deref(arg, expr.span),
+      ExprKind::Deref { arg } => self.extract_expr_ref(arg),
 
       // Borrow an immutable and aliasable value (i.e. the meaning of
       // BorrowKind::Shared). Handle this safe case with erasure.
@@ -92,30 +92,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .into_iter()
       .map(|arg| self.extract_expr_ref(arg))
       .collect()
-  }
-
-  /// Dereferences
-  ///
-  /// We want to allow two cases – Box derefs and &T derefs – but no
-  /// user-defined derefs. (We build on the assumption that no illicit refs can
-  /// be created.)
-  fn extract_deref(&mut self, arg: ExprRef<'tcx>, span: Span) -> st::Expr<'l> {
-    let inner_expr = self.extract_expr_ref(arg);
-
-    // Disallow user-defined derefs, identified by their call to the
-    // function 'deref'.
-    match &inner_expr {
-      st::Expr::FunctionInvocation(st::FunctionInvocation {
-        id: st::SymbolIdentifier {
-          id: st::Identifier { name, .. },
-          ..
-        },
-        ..
-      }) if name == "deref" => {
-        self.unsupported_expr(span, format!("Cannot extract user-defined deref"))
-      }
-      _ => inner_expr,
-    }
   }
 
   fn extract_unary(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
