@@ -6,92 +6,98 @@ use stainless::*;
 ///
 /// [1]: https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
 
-pub enum List {
-  Nil,
-  Cons(i32, Box<List>),
-}
-
-pub enum IntOption {
+pub enum Option<T> {
   None,
-  Some(i32),
+  Some(T),
 }
 
-#[measure(l)]
-pub fn size(l: List) -> u32 {
-  match l {
-    List::Nil => 0,
-    List::Cons(_, tail) => 1 + size(*tail),
+pub enum List<T> {
+  Nil,
+  Cons(T, Box<List<T>>),
+}
+
+impl<T> List<T> {
+  #[measure(self)]
+  pub fn size(&self) -> u32 {
+    match self {
+      List::Nil => 0,
+      List::Cons(_, tail) => 1 + tail.size(),
+    }
   }
-}
 
-#[measure(l)]
-pub fn is_sorted(l: List) -> bool {
-  match l {
-    List::Nil => true,
-    List::Cons(x, tail) => match *tail {
-      List::Nil => true,
-      List::Cons(y, ys) => x <= y && is_sorted(List::Cons(y, ys)),
-    },
-  }
-}
-
-#[measure(l)]
-pub fn min(l: List) -> IntOption {
-  match l {
-    List::Nil => IntOption::None,
-    List::Cons(x, xs) => match min(*xs) {
-      IntOption::None => IntOption::Some(x),
-      IntOption::Some(y) => {
-        if x < y {
-          IntOption::Some(x)
-        } else {
-          IntOption::Some(y)
-        }
-      }
-    },
-  }
-}
-
-#[measure(l)]
-pub fn contents(l: List) -> Set<i32> {
-  match l {
-    List::Nil => Set::empty(),
-    List::Cons(head, tail) => contents(*tail).union(Set::singleton(head)),
-  }
-}
-
-/// Inserting element 'e' into a sorted list 'l' produces a sorted list with
-/// the expected content and size
-#[pre(is_sorted(l))]
-#[measure(l)]
-#[post(size(ret) == size(l) + 1)]
-#[post(is_sorted(ret))]
-#[post(contents(ret).is_subset_of(contents(l).add(e)))]
-#[post(contents(l).add(e).is_subset_of(contents(ret)))]
-pub fn sorted_insert(e: i32, l: List) -> List {
-  match l {
-    List::Nil => List::Cons(e, Box::new(List::Nil)),
-    List::Cons(x, xs) => {
-      if x <= e {
-        List::Cons(x, Box::new(sorted_insert(e, *xs)))
-      } else {
-        List::Cons(e, Box::new(List::Cons(x, xs)))
-      }
+  #[measure(self)]
+  pub fn contents(&self) -> Set<T> {
+    match self {
+      List::Nil => Set::empty(),
+      List::Cons(head, tail) => tail.contents().union(&Set::singleton(head)),
     }
   }
 }
 
-/// Insertion sort yields a sorted list of same size and content as the input
-/// list
-#[measure(l)]
-#[post(size(ret) == size(l))]
-#[post(is_sorted(ret))]
-#[post(contents(ret).is_subset_of(contents(l)))]
-#[post(contents(l).is_subset_of(contents(ret)))]
-pub fn sort(l: List) -> List {
-  match l {
-    List::Nil => l,
-    List::Cons(x, xs) => sorted_insert(x, sort(*xs)),
+impl List<i32> {
+  #[measure(self)]
+  pub fn is_sorted(&self) -> bool {
+    match self {
+      List::Nil => true,
+      List::Cons(x, tail) => match &**tail {
+        List::Nil => true,
+
+        // FIXME: We *have* to deref the two integers here, because otherwise
+        //   their type is &i32 which we can't extract to primitive '<=' for the
+        //   moment.
+        List::Cons(y, ..) => *x <= *y && tail.is_sorted(),
+      },
+    }
+  }
+
+  #[measure(self)]
+  pub fn min(&self) -> Option<i32> {
+    match self {
+      List::Nil => Option::None,
+      List::Cons(x, xs) => match xs.min() {
+        Option::None => Option::Some(*x),
+        Option::Some(y) => {
+          if *x < y {
+            Option::Some(*x)
+          } else {
+            Option::Some(y)
+          }
+        }
+      },
+    }
+  }
+
+  /// Inserting element 'e' into a sorted list 'l' produces a sorted list with
+  /// the expected content and size
+  #[pre(self.is_sorted())]
+  #[measure(self)]
+  #[post(
+    ret.size() == self.size() + 1 &&
+    ret.is_sorted() &&
+    ret.contents().is_subset_of(&self.contents().add(&e)) &&
+    self.contents().add(&e).is_subset_of(&ret.contents())
+  )]
+  pub fn sorted_insert(self, e: i32) -> List<i32> {
+    match self {
+      List::Cons(head, tail) if head <= e => List::Cons(head, Box::new(tail.sorted_insert(e))),
+      _ => List::Cons(e, Box::new(self)),
+    }
+  }
+
+  /// Insertion sort yields a sorted list of same size and content as the input
+  /// list
+  #[measure(self)]
+  #[post(
+    ret.size() == self.size() &&
+    ret.is_sorted() &&
+    ret.contents().is_subset_of(&self.contents()) &&
+    self.contents().is_subset_of(&ret.contents())
+  )]
+  pub fn sort(self) -> List<i32> {
+    match self {
+      List::Nil => self,
+      List::Cons(x, xs) => xs.sort().sorted_insert(x),
+    }
   }
 }
 
@@ -111,5 +117,5 @@ pub fn main() {
     )),
   );
 
-  assert!(is_sorted(sort(list)))
+  assert!(list.sort().is_sorted())
 }

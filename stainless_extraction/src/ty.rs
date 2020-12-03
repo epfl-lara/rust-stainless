@@ -306,7 +306,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 // Generics helpers
 
-fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
+pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
   let mut all_generics: Vec<&Generics> = vec![generics];
   while let Some(parent_id) = all_generics.last().unwrap().parent {
