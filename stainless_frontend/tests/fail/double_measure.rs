@@ -6,14 +6,6 @@ pub enum IntOption {
   Some { value: i32 },
 }
 
-impl IntOption {
-  #[measure(a)]
-  #[measure(b)]
-  pub fn dummy_for_specs(&self, a: i32, b: i32) -> i32 {
-    a + self.dummy_for_specs(1, b)
-  }
-}
-
 #[measure(a)]
 #[measure(b)]
 pub fn dummy_for_specs_2(a: i32, b: i32) -> i32 {

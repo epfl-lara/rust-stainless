@@ -18,6 +18,9 @@ macro_rules! select_check {
   (pass, verification, $test_path:ident) => {
     emit_check!(true, Success { verified: true }, $test_path)
   };
+  (crash, extraction, $test_path:ident) => {
+    emit_check!(false, CrashInExtraction, $test_path)
+  };
   (fail, extraction, $test_path:ident) => {
     emit_check!(false, ErrorInExtraction, $test_path)
   };
@@ -48,6 +51,10 @@ macro_rules! select_test {
       define_test!(pass, extraction, extraction, $name);
       define_test!(pass, verification, verification, $name);
     }
+  };
+  // Used for cases where even the rustc parser/tokenizer/early compiler fails.
+  (crash_extraction, $name:ident) => {
+    define_test!(crash, extraction, $name, $name);
   };
   (fail_extraction, $name:ident) => {
     define_test!(fail, extraction, $name, $name);
@@ -89,7 +96,10 @@ define_tests!(
   pass: tuples,
   fail_verification: box_as_ref,
   fail_extraction: double_measure,
+  fail_extraction: double_measure_impl,
   fail_extraction: mut_lets,
+  crash_extraction: nested_spec,
+  crash_extraction: nested_spec_impl,
   fail_extraction: switch_ref,
   fail_extraction: switch_int,
   fail_extraction: user_deref

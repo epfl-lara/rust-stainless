@@ -62,23 +62,25 @@ fn try_parse(
   item: TokenStream,
 ) -> Result<(ItemFn, Vec<Spec>)> {
   let item_fn: ItemFn = parse_quote!(#item);
-
   let first_args: Expr = parse_quote!(#first_attr_args);
 
-  let tail_specs = item_fn.attrs.iter().filter_map(|attr: &Attribute| {
+  // Filter out & parse all the remaining specs
+  let specs = item_fn.attrs.iter().filter_map(|attr: &Attribute| {
     SpecType::try_from(attr)
       .ok()
       .map(|typ| (typ, attr.parse_args()))
   });
-  let pre_specs: Vec<(SpecType, Result<Expr>)> = iter::once((first_spec_type, Ok(first_args)))
-    .chain(tail_specs)
+  // Add the first spec to the head of the list
+  let specs: Vec<(SpecType, Result<Expr>)> = iter::once((first_spec_type, Ok(first_args)))
+    .chain(specs)
     .collect();
 
-  if let Some((_, Err(err))) = pre_specs.iter().find(|(_, cond)| cond.is_err()) {
+  // Check whether any parsing has caused errors and failed if so.
+  if let Some((_, Err(err))) = specs.iter().find(|(_, cond)| cond.is_err()) {
     return Err(err.clone());
   }
 
-  let specs: Vec<Spec> = pre_specs
+  let specs: Vec<Spec> = specs
     .into_iter()
     .map(|(typ, cond)| Spec {
       typ,
