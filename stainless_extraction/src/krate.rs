@@ -390,7 +390,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .map(|spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, None))
       .collect::<Vec<_>>();
     if !spec_exprs.is_empty() {
-      body_expr = f.Require(self.make_and(spec_exprs), body_expr).into();
+      body_expr = f.Require(f.make_and(spec_exprs), body_expr).into();
     }
 
     let return_var = &*f.Variable(self.fresh_id("ret".into()), return_tpe, vec![]);
@@ -401,25 +401,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect::<Vec<_>>();
     if !spec_exprs.is_empty() {
       body_expr = f
-        .Ensuring(
-          body_expr,
-          f.Lambda(vec![return_vd], self.make_and(spec_exprs)),
-        )
+        .Ensuring(body_expr, f.Lambda(vec![return_vd], f.make_and(spec_exprs)))
         .into();
     }
 
     // Wrap it all up in a Stainless function
     let fun_id = self.extract_fn_ref(def_id);
     f.FunDef(fun_id, tparams, params, return_tpe, body_expr, flags)
-  }
-
-  /// Extract specs, if any, and wrap them around the body
-  fn make_and(&self, mut exprs: Vec<st::Expr<'l>>) -> st::Expr<'l> {
-    if exprs.len() > 1 {
-      self.factory().And(exprs).into()
-    } else {
-      exprs.pop().unwrap()
-    }
   }
 
   /// Extract a specification function and return its body.

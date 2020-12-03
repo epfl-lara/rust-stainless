@@ -208,4 +208,13 @@ impl Factory {
   ) -> &'a mut SymbolIdentifier {
     self.bump.alloc(SymbolIdentifier { id, symbol_path })
   }
+
+  /// Extract specs, if any, and wrap them around the body
+  pub fn make_and<'a>(&'a self, exprs: Vec<Expr<'a>>) -> Expr<'a> {
+    match &exprs[..] {
+      [] => self.NoTree(self.Untyped().into()).into(),
+      [expr] => *expr,
+      _ => self.And(exprs).into(),
+    }
+  }
 }
