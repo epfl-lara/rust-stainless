@@ -1,7 +1,7 @@
 use super::flags::Flags;
 use super::*;
 
-use rustc_hir::{self as hir, HirId, PatKind};
+use rustc_hir::{self as hir, HirId, Node, Pat, PatKind};
 use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
 
@@ -24,7 +24,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   /// Extract a binding based on the binding node's HIR id.
-  /// Updates `dcx` if the binding hadn't been extacted before.
+  /// Updates `dcx` if the binding hadn't been extracted before.
   fn extract_binding(&mut self, hir_id: HirId, flags: Option<Flags>) -> &'l st::Variable<'l> {
     let xtor = &mut self.base;
     let tcx = xtor.tcx;
@@ -36,27 +36,33 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         // Extract ident from corresponding HIR node, sanity-check binding mode
         let (id, span) = {
           let node = tcx.hir().find(hir_id).unwrap();
-          let ident = if let hir::Node::Binding(pat) = node {
-            if let PatKind::Binding(_, _, ident, _) = pat.kind {
-              match self
-                .tables
-                .extract_binding_mode(tcx.sess, pat.hir_id, pat.span)
-              {
-                Some(ty::BindByValue(hir::Mutability::Not)) => {}
-                _ => xtor.unsupported(pat.span, "Only immutable by-value bindings are supported"),
+
+          let ident = if let Node::Binding(Pat {
+            kind: PatKind::Binding(_, _, ident, _),
+            hir_id,
+            span,
+          }) = node
+          {
+            match self.tables.extract_binding_mode(tcx.sess, *hir_id, *span) {
+              // allowed binding modes
+              Some(ty::BindByValue(hir::Mutability::Not))
+              | Some(ty::BindByReference(hir::Mutability::Not)) => ident,
+
+              // For the forbidden binding modes, return the identifier anyway
+              // because failure will occur later.
+              _ => {
+                xtor.unsupported(*span, "Only immutable bindings are supported");
+                ident
               }
-              ident
-            } else {
-              unreachable!()
             }
           } else {
-            let span = node.ident().map(|ident| ident.span).unwrap_or_default();
             xtor.unsupported(
-              span,
+              node.ident().map(|ident| ident.span).unwrap_or_default(),
               "Cannot extract complex pattern in binding (cannot recover from this)",
             );
             unreachable!()
           };
+
           (
             xtor.register_hir(hir_id, ident.name.to_string()),
             ident.span,

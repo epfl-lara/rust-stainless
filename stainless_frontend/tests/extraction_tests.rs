@@ -76,15 +76,19 @@ define_tests!(
   pass: adts,
   pass: blocks,
   pass: boxes,
+  pass: double_ref_param,
   pass: external_fn,
   pass: fact,
+  pass: fn_ref_param,
   pass: generic_id,
   pass: generic_option,
   pass: insertion_sort,
   pass: int_operators,
   pass: int_option,
   pass: tuples,
+  fail_verification: box_as_ref,
+  fail_extraction: mut_lets,
   fail_extraction: switch_ref,
   fail_extraction: switch_int,
-  fail_extraction: deref_non_box
+  fail_extraction: user_deref
 );
