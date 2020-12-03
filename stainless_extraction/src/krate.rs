@@ -12,24 +12,48 @@ use crate::spec::SpecType;
 use crate::ty::all_generic_params_of;
 use stainless_data::ast as st;
 
-/// Internal data type representing functions in either impl blocks or
+/// Internal data type representing functions in either impl blocks, traits or
 /// top-level scope. It can be seen as the subset of the common fields of
-/// `rustc_hir::ItemKind::Fn` and `rustc_hir::ImplItemKind::Fn` that we make
-/// use of.
+/// `rustc_hir::ItemKind::Fn` and `rustc_hir::ImplItemKind::Fn`/
+/// `rustc_hir::TraitItemKind::Fn` that we make use of.
+///
 #[derive(Copy, Clone)]
 struct FnItem {
   def_id: DefId,
-  ident: Ident,
   span: Span,
+  /// The type of the spec, if this is a spec function.
+  spec_type: Option<SpecType>,
+
+  /// The name of the corresponding function that is spec'd by this spec
+  /// function, if this is a spec function.
+  spec_fn_name: Option<Ident>,
 }
 
 impl FnItem {
-  fn is_spec_fn(&self) -> bool {
-    self.span.from_expansion() && self.spec_type().is_some()
+  /// Create a new FnItem by parsing its identifier and setting its spec
+  /// function properties; if it's a spec function.
+  ///
+  /// Note that we currently don't store the identifier once it's parsed. This
+  /// can be changed with a one-liner in the struct definition though.
+  fn new(def_id: DefId, ident: Ident, span: Span) -> Self {
+    match SpecType::parse_spec_type_fn_name(&ident.as_str()) {
+      Some((spec_type, spec_fn_name)) => FnItem {
+        def_id,
+        span,
+        spec_type: Some(spec_type),
+        spec_fn_name: Some(Ident::from_str(&spec_fn_name)),
+      },
+      None => FnItem {
+        def_id,
+        span,
+        spec_type: None,
+        spec_fn_name: None,
+      },
+    }
   }
 
-  fn spec_type(&self) -> Option<SpecType> {
-    SpecType::parse_spec_type_fn_name(&self.ident.as_str()).map(|(spec_type, _)| spec_type)
+  fn is_spec_fn(&self) -> bool {
+    self.span.from_expansion() && self.spec_type.is_some()
   }
 }
 
@@ -84,11 +108,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                 span,
                 ..
               } => {
-                let fn_item = FnItem {
-                  def_id,
-                  ident: *ident,
-                  span: *span,
-                };
+                let fn_item = FnItem::new(def_id, *ident, *span);
 
                 match self.xtor.tcx.parent(fn_item.def_id) {
                   // Extract a spec function
@@ -121,11 +141,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .filter_map(|item| match &item.kind {
                 AssocItemKind::Fn { .. } => Some((
                   item.ident,
-                  FnItem {
-                    def_id: self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id(),
-                    span: item.span,
-                    ident: item.ident,
-                  },
+                  FnItem::new(
+                    self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id(),
+                    item.ident,
+                    item.span,
+                  ),
                 )),
                 _ => None,
               })
@@ -137,8 +157,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             self.functions.extend(fns);
 
             specs.iter().for_each(|&&spec_item| {
-              if let Some(fn_item) = SpecType::parse_spec_type_fn_name(&spec_item.ident.as_str())
-                .map(|(_, fn_name)| Ident::from_str(&fn_name))
+              if let Some(fn_item) = spec_item
+                .spec_fn_name
                 .and_then(|fn_ident| fns_by_identifier.get(&fn_ident))
               {
                 self
@@ -210,7 +230,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .get(&fn_item.def_id)
         .into_iter()
         .flatten()
-        .filter_map(|spec_item| spec_item.spec_type().map(|s| (s, spec_item.def_id)));
+        .filter_map(|spec_item| spec_item.spec_type.map(|s| (s, spec_item.def_id)));
 
       let (measure_fns, other_spec_fns): (Vec<(SpecType, DefId)>, Vec<(SpecType, DefId)>) =
         fn_specs.partition(|(spec_type, _)| spec_type == &SpecType::Measure);
@@ -225,9 +245,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       let fd = self.extract_local_fn(
         fn_item.def_id,
-        pre_fns.iter().map(|(_, def_id)| def_id).collect(),
-        post_fns.iter().map(|(_, def_id)| def_id).collect(),
-        measure_fns.first().map(|(_, def_id)| def_id),
+        pre_fns.iter().map(|(_, def_id)| *def_id).collect(),
+        post_fns.iter().map(|(_, def_id)| *def_id).collect(),
+        measure_fns.first().map(|(_, def_id)| *def_id),
       );
       self.add_function(fd.id, fd);
     }
@@ -297,9 +317,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_local_fn(
     &mut self,
     def_id: DefId,
-    pre_spec_functions: Vec<&DefId>,
-    post_spec_functions: Vec<&DefId>,
-    measure_spec_function: Option<&DefId>,
+    pre_spec_functions: Vec<DefId>,
+    post_spec_functions: Vec<DefId>,
+    measure_spec_function: Option<DefId>,
   ) -> &'l st::FunDef<'l> {
     let f = self.factory();
     let tcx = self.tcx;
@@ -342,7 +362,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
-    if let Some(&measure_spec_def_id) = measure_spec_function {
+    if let Some(measure_spec_def_id) = measure_spec_function {
       // The measure function generated by the macro has a Unit return type to
       // deal with the unknown type of the measure. The expression has a
       // trailing ';' (UnitLiteral) to implement this. Here, we need to remove
@@ -367,7 +387,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let spec_exprs = pre_spec_functions
       .into_iter()
-      .map(|&spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, None))
+      .map(|spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, None))
       .collect::<Vec<_>>();
     if !spec_exprs.is_empty() {
       body_expr = f.Require(self.make_and(spec_exprs), body_expr).into();
@@ -377,7 +397,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let return_vd = f.ValDef(return_var);
     let spec_exprs = post_spec_functions
       .into_iter()
-      .map(|&spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, Some(return_var)))
+      .map(|spec_def_id| self.extract_spec_fn(spec_def_id, &txtcx, &params, Some(return_var)))
       .collect::<Vec<_>>();
     if !spec_exprs.is_empty() {
       body_expr = f

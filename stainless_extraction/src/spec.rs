@@ -3,7 +3,7 @@ use std::result::Result;
 
 /// Types of spec functions (pre-, postconditions, ...) and some helping
 /// implementations.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum SpecType {
   Pre,
   Post,
