@@ -86,6 +86,7 @@ define_tests!(
   pass: insertion_sort,
   pass: int_operators,
   pass: int_option,
+  pass: list_binary_search,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: tuples,
