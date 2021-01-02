@@ -14,6 +14,7 @@ use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 use crate::fns::FnItem;
 use crate::spec::SpecType;
 use crate::ty::all_generic_params_of;
+use std::iter;
 
 /// Top-level extraction
 
@@ -68,7 +69,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                 ..
               } => {
                 // top-level functions cannot be abstract
-                let fn_item = FnItem::new_concrete(def_id, *ident, *span);
+                let fn_item = FnItem::new(
+                  def_id,
+                  self.xtor.get_or_register_def(def_id),
+                  *ident,
+                  *span,
+                  false,
+                );
 
                 // then check the parent and
                 match self.xtor.tcx.parent(fn_item.def_id) {
@@ -102,16 +109,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let fns_by_identifier: HashMap<Ident, FnItem> = items
               .into_iter()
               .filter_map(|item| match &item.kind {
-                AssocItemKind::Fn { .. } => Some((
-                  item.ident,
-                  FnItem::new(
-                    self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id(),
+                AssocItemKind::Fn { .. } => {
+                  let fn_id = self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id();
+                  Some((
                     item.ident,
-                    item.span,
-                    !item.defaultness.has_value(),
-                    None,
-                  ),
-                )),
+                    FnItem::new(
+                      fn_id,
+                      self.xtor.get_or_register_def(fn_id),
+                      item.ident,
+                      item.span,
+                      !item.defaultness.has_value(),
+                    ),
+                  ))
+                }
                 // ignore consts and type aliases in impl blocks
                 _ => None,
               })
@@ -120,6 +130,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let (specs, fns): (Vec<&FnItem>, Vec<&FnItem>) = fns_by_identifier
               .values()
               .partition(|&fn_item| fn_item.is_spec_fn());
+
+            // Add the functions to the visitor for further extraction
             self.functions.extend(fns);
 
             specs.iter().for_each(|&&spec_item| {
@@ -185,6 +197,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (abstract_fns, fns): (Vec<FnItem>, Vec<FnItem>) =
       functions.iter().partition(|f| f.is_abstract);
 
+    // Extract abstract functions
+    for fun in abstract_fns {
+      let fd = self.extract_abstract_fn(fun.def_id);
+      self.add_function(fd);
+    }
+
     // Extract concrete local functions (this includes laws)
     for fn_item in fns {
       let fn_specs = specs
@@ -211,13 +229,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         measure_fns.first().map(|(_, def_id)| *def_id),
       );
 
-      self.add_function(fd.id, fd);
-    }
-
-    // Extract abstract functions
-    for fun in abstract_fns {
-      let fd = self.extract_abstract_fn(fun.def_id, fun.class_def.unwrap());
-      self.add_function(fd.id, fd);
+      self.add_function(fd);
     }
 
     // Extract external items as stubs
@@ -226,14 +238,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Find all those functions that have been referenced, but not yet extracted
         xt.function_refs
           .iter()
+          // take only the non-local ones
           .filter(|def_id| !def_id.is_local())
           .copied()
           .collect::<Vec<_>>()
       })
       .iter()
+      // And extract them as external functions
       .for_each(|&def_id| {
         let fd = self.extract_extern_fn(def_id);
-        self.add_function(fd.id, fd);
+        self.add_function(fd);
       })
   }
 
@@ -270,22 +284,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     )
   }
 
-  pub fn extract_abstract_fn(
-    &mut self,
-    def_id: DefId,
-    class_def: &'l st::ClassDef<'l>,
-  ) -> &'l st::FunDef<'l> {
+  pub fn extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
     let (id, tparams, params, rtp) = self.extract_fn_signature(def_id);
+    let class_def = self.get_class_of_method(id);
 
     let f = self.factory();
     let empty_body = f.NoTree(rtp).into();
     f.FunDef(
       id,
-      self.filter_class_tparams(tparams, Some(class_def)),
+      self.filter_class_tparams(tparams, class_def),
       params,
       rtp,
       empty_body,
-      vec![f.IsAbstract().into(), f.IsMethodOf(class_def.id).into()],
+      class_def
+        .iter()
+        .map(|cd| f.IsMethodOf(cd.id).into())
+        .chain(iter::once(f.IsAbstract().into()))
+        .collect(),
     )
   }
 
@@ -336,12 +351,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     assert!(def_id.is_local());
     let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
 
+    let fun_id = self.extract_fn_ref(def_id);
+    let class_def = self.get_class_of_method(fun_id);
+
     // Extract flags
     let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
     let mut flags = carrier_flags.to_stainless(f);
 
     // Add flag specifying that this function is a method of its class (if there's a class)
-    flags.extend(fn_item.class_def.into_iter().map(|cd| {
+    flags.extend(class_def.into_iter().map(|cd| {
       let flag: st::Flag<'l> = f.IsMethodOf(cd.id).into();
       flag
     }));
@@ -422,10 +440,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     // Wrap it all up in a Stainless function
-    let fun_id = self.extract_fn_ref(def_id);
     f.FunDef(
       fun_id,
-      self.filter_class_tparams(tparams, fn_item.class_def),
+      self.filter_class_tparams(tparams, class_def),
       params,
       return_tpe,
       body_expr,
