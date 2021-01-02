@@ -93,6 +93,7 @@ struct Extraction<'l> {
   factory: &'l st::Factory,
   adts: HashMap<StainlessSymId<'l>, &'l st::ADTSort<'l>>,
   function_refs: HashSet<DefId>,
+  method_to_class: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
   classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
 }
@@ -111,6 +112,7 @@ impl<'l> Extraction<'l> {
       function_refs: HashSet::new(),
       functions: HashMap::new(),
       classes: HashMap::new(),
+      method_to_class: HashMap::new(),
     }
   }
 
@@ -247,9 +249,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  fn add_function(&mut self, id: StainlessSymId<'l>, fd: &'l st::FunDef<'l>) {
+  fn add_function(&mut self, fd: &'l st::FunDef<'l>) {
     self.with_extraction_mut(|xt| {
-      assert!(xt.functions.insert(id, fd).is_none());
+      assert!(xt.functions.insert(fd.id, fd).is_none());
+    })
+  }
+
+  /// Return a reference to the class definition on which the given function is
+  /// defined as method. If the function is not a method, None is returned. The
+  /// function is identified by its id.
+  fn get_class_of_method(&mut self, id: StainlessSymId<'l>) -> Option<&'l st::ClassDef<'l>> {
+    self.with_extraction(|xt| xt.method_to_class.get(&id).map(|&cd| cd))
+  }
+
+  /// Add a class to the extraction along with references from all its methods
+  /// to the class definition.
+  #[allow(dead_code)]
+  fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
+    self.with_extraction_mut(|xt| {
+      assert!(xt.classes.insert(cd.id, cd).is_none());
+      xt.method_to_class
+        .extend(methods.into_iter().map(|method_id| (method_id, cd)))
     })
   }
 
