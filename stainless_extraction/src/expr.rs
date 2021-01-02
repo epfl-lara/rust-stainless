@@ -31,7 +31,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { .. } => self.extract_field(expr),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
-      ExprKind::Call { ty, args, .. } => self.extract_call_like(ty, &args, expr.span),
+      ExprKind::Call { ty, ref args, .. } => self.extract_call_like(ty, args, expr.span),
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
         let block = self.mirror(ast_block);
@@ -362,7 +362,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:
     //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if fd_id.symbol_path == ["std", "boxed", "Box", "<T>", "new"] {
+    if fd_id.symbol_path == ["std", "boxed", "Box", "T", "new"] {
       return self.extract_expr_ref(args.first().cloned().unwrap());
     }
 

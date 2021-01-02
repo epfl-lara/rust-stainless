@@ -131,6 +131,19 @@ struct BaseExtractor<'l, 'tcx: 'l> {
   extraction: Option<Box<Extraction<'l>>>,
 }
 
+fn sanitize_path_name(s: &String) -> String {
+  // Remove forbidden characters
+  let s = s.replace(&[' ', '<', '>'][..], "");
+
+  // Prepend an underscore to numerical-only identifiers for compatibility
+  // with stainless
+  if s.chars().all(char::is_numeric) {
+    format!("_{}", s)
+  } else {
+    s
+  }
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   fn new(tcx: TyCtxt<'tcx>, std_items: Rc<StdItems>, extraction: Box<Extraction<'l>>) -> Self {
     Self {
@@ -181,26 +194,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   fn register_def(&mut self, def_id: DefId) -> StainlessSymId<'l> {
-    let symbol_path = self.symbol_path_from_def_id(def_id);
-    let name = symbol_path.last().unwrap().clone();
+    self.register_def_with_path(def_id, self.symbol_path_from_def_id(def_id))
+  }
 
-    // Prepend an underscore to numerical-only identifiers for compatibility
-    // with stainless
-    let (name, path) = if name.chars().all(char::is_numeric) {
-      let new_name = format!("_{}", name);
-
-      // Append new name to symbol path
-      let path_len = symbol_path.len();
-      let new_path: Vec<String> = symbol_path
-        .into_iter()
-        .take(path_len - 1)
-        .chain(std::iter::once(new_name.clone()))
-        .collect();
-
-      (new_name, new_path)
-    } else {
-      (name, symbol_path)
-    };
+  fn register_def_with_path(
+    &mut self,
+    def_id: DefId,
+    symbol_path: Vec<String>,
+  ) -> StainlessSymId<'l> {
+    let path: Vec<String> = symbol_path.iter().map(sanitize_path_name).collect();
+    let name = path.last().unwrap().clone();
 
     self.with_extraction_mut(|xt| {
       let id = xt.fresh_id(name, path);
