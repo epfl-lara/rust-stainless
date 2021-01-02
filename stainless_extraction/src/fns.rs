@@ -58,3 +58,16 @@ impl<'a> FnItem<'a> {
     self.span.from_expansion() && self.spec_type.is_some()
   }
 }
+
+/// Identifies the specific implementation/instance of a type class that is
+/// needed at a method call site. The identifier is the id of the class where
+/// the function is defined or overridden, the type is the receiver type (aka
+/// the type of the first argument at call site) and the other types are
+/// optional type parameters of the receiver type.
+pub type TypeClassKey<'l> = (
+  &'l st::SymbolIdentifier<'l>,
+  st::Type<'l>,
+  Vec<st::Type<'l>>,
+);
+
+pub type TypeClassInstances<'l> = HashMap<TypeClassKey<'l>, st::Expr<'l>>;

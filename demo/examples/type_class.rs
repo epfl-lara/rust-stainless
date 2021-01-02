@@ -35,7 +35,7 @@ trait Equals {
     !(x.equals(y) && y.equals(z)) || x.equals(z)
   }
 }
-
+/*
 impl<T: Equals> Equals for List<T> {
   /*
   - 'impl<..> Z for X' and has type params => case class
@@ -53,12 +53,14 @@ impl<T: Equals> Equals for List<T> {
         _ => false,
       },
       List::Cons(x, xs) => match y {
+      // ev.equals(x, y) && this.equals(xs, ys)
         List::Cons(y, ys) => x.equals(y) && xs.equals(ys),
         _ => false,
       },
     }
   }
 }
+*/
 
 /*
 (Equals, T, []) -> evidence
@@ -72,9 +74,8 @@ impl<T: Equals> Equals for List<T> {
 //
 // Rust already somehow represents this: there may be a list containing the
 // bounds `predicates_of`
-
 */
-
+/*
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
   fn equals(&self, y: &i32) -> bool {
@@ -84,16 +85,18 @@ impl Equals for i32 {
   }
 }
 
+ */
+
 pub fn main() {
   let a = 2;
   let b = 4;
 
   // => IntEquals.equals(a, b)
-  assert!(!a.equals(&b));
+  // assert!(!a.equals(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  assert!(list.equals(&list));
+  //let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  //assert!(list.equals(&list));
 }
 
 /*

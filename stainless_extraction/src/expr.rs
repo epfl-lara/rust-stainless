@@ -358,6 +358,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
+    let class_def = self.base.get_class_of_method(fd_id);
 
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:
@@ -367,19 +368,37 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
 
     // filter out self type param (this is already provided by the class)
-    let arg_tps = self.extract_arg_types(
+    let arg_tps_without_self = self.extract_arg_types(
       substs_ref.types().filter(|ty| match ty.kind {
         TyKind::Param(param_ty) => param_ty != ParamTy::for_self(),
         _ => true,
       }),
       span,
     );
-
     let args = self.extract_expr_refs(args.to_vec());
-    self
-      .factory()
-      .FunctionInvocation(fd_id, arg_tps, args)
-      .into()
+
+    // If this function is a method, then we may need to extract it as a method call.
+    // To do so, we need a type class instance as receiver.
+    match class_def.and_then(|cd| {
+      // The receiver type is the type of the &self of the method call. This
+      // is the first argument type. We have to extract it because we filtered
+      // the self type above.
+      let recv_type = self
+        .base
+        .extract_ty(substs_ref.type_at(0), &self.txtcx, span);
+
+      // Retrieve the needed type class instance
+      self.tc_insts.get(&(cd.id, recv_type, vec![]))
+    }) {
+      Some(&recv) => self
+        .factory()
+        .MethodInvocation(recv, fd_id, arg_tps_without_self, args)
+        .into(),
+      None => self
+        .factory()
+        .FunctionInvocation(fd_id, arg_tps_without_self, args)
+        .into(),
+    }
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>

@@ -408,11 +408,21 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       flag
     }));
 
+    // If this function is method of a class, add the `this` instance.
+    let mut tc_insts = HashMap::new();
+
+    class_def.map(|cd| {
+      tc_insts.insert(
+        (cd.id, cd.tparams.first().unwrap().tp.into(), vec![]),
+        f.This(f.class_def_to_type(cd)).into(),
+      );
+    });
+
     // Extract the function itself
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
     let (tparams, txtcx, _) = self.extract_generics(def_id);
     let (params, return_tpe, mut body_expr): Parts<'l> =
-      self.enter_body(hir_id, txtcx.clone(), |bxtor| {
+      self.enter_body(hir_id, txtcx.clone(), tc_insts, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol);
 
@@ -544,7 +554,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     };
 
     let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
-    self.enter_body(hir_id, txtcx, |bxtor| {
+    // FIXME: provide real tc_instances
+    self.enter_body(hir_id, txtcx, HashMap::new(), |bxtor| {
       // Correlate term parameters
       let mut param_hir_ids: Vec<HirId> = bxtor
         .body

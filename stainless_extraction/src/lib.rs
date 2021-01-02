@@ -42,6 +42,7 @@ use rustc_span::{MultiSpan, Span};
 
 use stainless_data::ast as st;
 
+use crate::fns::TypeClassInstances;
 use bindings::DefContext;
 use std_items::StdItems;
 use ty::TyExtractionCtxt;
@@ -278,13 +279,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Get a BodyExtractor for some item with a body (like a function)
-  fn enter_body<T, F>(&mut self, hir_id: HirId, txtcx: TyExtractionCtxt<'l>, f: F) -> T
+  fn enter_body<T, F>(
+    &mut self,
+    hir_id: HirId,
+    txtcx: TyExtractionCtxt<'l>,
+    tc_insts: TypeClassInstances<'l>,
+    f: F,
+  ) -> T
   where
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
     self.tcx.infer_ctxt().enter(|infcx| {
       // Note that upon its creation, BodyExtractor moves out our Extraction
-      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx);
+      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx, tc_insts);
       let result = f(&mut bxtor);
       // We reclaim the Extraction after the BodyExtractor's work is done
       self.extraction = bxtor.base.extraction;
@@ -311,6 +318,7 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
   body: &'tcx hir::Body<'tcx>,
   txtcx: TyExtractionCtxt<'l>,
   dcx: DefContext<'l>,
+  tc_insts: TypeClassInstances<'l>,
 }
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
@@ -319,6 +327,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     infcx: &'a InferCtxt<'a, 'tcx>,
     hir_id: HirId,
     txtcx: TyExtractionCtxt<'l>,
+    tc_insts: TypeClassInstances<'l>,
   ) -> Self {
     let tcx = base.tcx;
     let extraction = base.extraction.take();
@@ -347,6 +356,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       body,
       txtcx,
       dcx: DefContext::new(),
+      tc_insts,
     }
   }
 
