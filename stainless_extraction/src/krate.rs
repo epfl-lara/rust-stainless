@@ -4,7 +4,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, AssocItemKind, ImplItemKind, ItemKind};
 use rustc_hir_pretty as pretty;
-use rustc_middle::ty::{DefIdTree, List};
+use rustc_middle::ty::{AssocKind, DefIdTree, List};
 use rustc_span::symbol::Ident;
 use rustc_span::DUMMY_SP;
 
@@ -122,7 +122,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                     item.ident,
                     FnItem::new(
                       fn_id,
-                      self.xtor.get_or_register_def(fn_id),
+                      self.xtor.extract_fn_ref(fn_id),
                       item.ident,
                       item.span,
                       !item.defaultness.has_value(),
@@ -177,7 +177,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                   let fn_id = self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id();
                   Some(FnItem::new(
                     fn_id,
-                    self.xtor.get_or_register_def(fn_id),
+                    self.xtor.extract_fn_ref(fn_id),
                     item.ident,
                     item.span,
                     !item.defaultness.has_value(),
@@ -298,13 +298,39 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Extract a function reference (regardless of whether it is local or external)
   // TODO: Extract flags on functions and parameters
   pub(super) fn extract_fn_ref(&mut self, def_id: DefId) -> StainlessSymId<'l> {
-    match self.get_id_from_def(def_id) {
-      Some(fun_id) => fun_id,
-      None => {
-        self.add_function_ref(def_id);
-        self.register_def(def_id)
+    self.get_id_from_def(def_id).unwrap_or_else(|| {
+      self.add_function_ref(def_id);
+
+      // Check whether this function implements some method of a trait.
+      // More specifically, if the function has a name
+      let overridden_def_id: Option<DefId> =
+        self.tcx.opt_item_name(def_id).and_then(|fn_item_name| {
+          self
+            .tcx
+            // and it is a method of an impl block
+            .impl_of_method(def_id)
+            // and that impl block implements a trait
+            .and_then(|impl_id| self.tcx.trait_id_of_impl(impl_id))
+            // and that trait has a method of the same name,
+            .and_then(|trait_id| {
+              self.tcx.associated_items(trait_id).find_by_name_and_kind(
+                self.tcx,
+                fn_item_name,
+                AssocKind::Fn,
+                trait_id,
+              )
+            })
+            // then we want to use that method's symbol path.
+            .map(|item| item.def_id)
+        });
+
+      match overridden_def_id {
+        // To signal overriding to stainless, the overriding method needs to have
+        // the symbol path of the abstract (trait's) method.
+        Some(odi) => self.register_def_with_path(def_id, self.symbol_path_from_def_id(odi)),
+        _ => self.register_def(def_id),
       }
-    }
+    })
   }
 
   /// Extract an external function
@@ -391,12 +417,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
     let tcx = self.tcx;
 
-    let def_id = fn_item.def_id;
-    assert!(def_id.is_local());
-    let hir_id = tcx.hir().as_local_hir_id(def_id.expect_local());
-
-    let fun_id = self.extract_fn_ref(def_id);
-    let class_def = self.get_class_of_method(fun_id);
+    assert!(fn_item.def_id.is_local());
+    let hir_id = tcx.hir().as_local_hir_id(fn_item.def_id.expect_local());
+    let class_def = self.get_class_of_method(fn_item.fd_id);
 
     // Extract flags
     let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
@@ -411,16 +434,18 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // If this function is method of a class, add the `this` instance.
     let mut tc_insts = HashMap::new();
 
-    class_def.map(|cd| {
-      tc_insts.insert(
-        (cd.id, cd.tparams.first().unwrap().tp.into(), vec![]),
-        f.This(f.class_def_to_type(cd)).into(),
-      );
+    class_def.and_then(|cd| {
+      cd.tparams.first().map(|t| {
+        tc_insts.insert(
+          (cd.id, t.tp.into(), vec![]),
+          f.This(f.class_def_to_type(cd)).into(),
+        );
+      })
     });
 
     // Extract the function itself
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
-    let (tparams, txtcx, _) = self.extract_generics(def_id);
+    let (tparams, txtcx, _) = self.extract_generics(fn_item.def_id);
     let (params, return_tpe, mut body_expr): Parts<'l> =
       self.enter_body(hir_id, txtcx.clone(), tc_insts, |bxtor| {
         // Register parameters and local bindings in the DefContext
@@ -495,7 +520,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Wrap it all up in a Stainless function
     f.FunDef(
-      fun_id,
+      fn_item.fd_id,
       self.filter_class_tparams(tparams, class_def),
       params,
       return_tpe,

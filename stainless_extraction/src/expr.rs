@@ -57,7 +57,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
       }
 
-      // TODO: Handle method calls
       // TODO: Handle arbitrary-precision integers
       ExprKind::Scope { value, .. } => self.extract_expr_ref(value),
       ExprKind::Use { source } => self.extract_expr_ref(source),

@@ -269,7 +269,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Add a class to the extraction along with references from all its methods
   /// to the class definition.
-  #[allow(dead_code)]
   fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
     self.with_extraction_mut(|xt| {
       assert!(xt.classes.insert(cd.id, cd).is_none());

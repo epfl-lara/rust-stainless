@@ -68,14 +68,8 @@ impl<T: Equals> Equals for List<T> {
 
 // ground (always in scope)
 (Equals, i32, []) -> IntEquals
-
-// for all things that have type params, possibly add entries to the map (based
-// on trait bounds)
-//
-// Rust already somehow represents this: there may be a list containing the
-// bounds `predicates_of`
 */
-/*
+
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
   fn equals(&self, y: &i32) -> bool {
@@ -84,8 +78,6 @@ impl Equals for i32 {
     *self == *y
   }
 }
-
- */
 
 pub fn main() {
   let a = 2;
