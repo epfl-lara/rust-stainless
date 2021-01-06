@@ -431,17 +431,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       flag
     }));
 
-    // If this function is method of a class, add the `this` instance.
-    let mut tc_insts = HashMap::new();
-
-    class_def.and_then(|cd| {
-      cd.tparams.first().map(|t| {
-        tc_insts.insert(
-          (cd.id, t.tp.into(), vec![]),
-          f.This(f.class_def_to_type(cd)).into(),
-        );
-      })
-    });
+    // Create the map of type class instances available
+    let tc_insts = self.get_type_class_instances(class_def);
 
     // Extract the function itself
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);

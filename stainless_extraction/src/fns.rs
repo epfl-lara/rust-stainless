@@ -60,10 +60,13 @@ impl<'a> FnItem<'a> {
 }
 
 /// Identifies the specific implementation/instance of a type class that is
-/// needed at a method call site. The identifier is the id of the class where
-/// the function is defined or overridden, the type is the receiver type (aka
-/// the type of the first argument at call site) and the other types are
-/// optional type parameters of the receiver type.
+/// needed at a method call site.
+///
+/// 1) If this is a trait method, then the identifier is the id of the trait where
+/// the method is defined. Otherwise, of the impl where it is defined.
+///
+/// 2) The type is the receiver type (aka the type of the first argument at call site).
+/// 3) The other types are optional type parameters of the receiver type.
 pub type TypeClassKey<'l> = (
   &'l st::SymbolIdentifier<'l>,
   st::Type<'l>,

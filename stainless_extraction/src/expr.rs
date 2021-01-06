@@ -6,7 +6,7 @@ use super::*;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, ParamTy, Ty, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -366,12 +366,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       return self.extract_expr_ref(args.first().cloned().unwrap());
     }
 
-    // filter out self type param (this is already provided by the class)
-    let arg_tps_without_self = self.extract_arg_types(
-      substs_ref.types().filter(|ty| match ty.kind {
-        TyKind::Param(param_ty) => param_ty != ParamTy::for_self(),
-        _ => true,
-      }),
+    // FIXME: Filter out as many type params of the function as the classdef
+    //   already provides. This clearly fails when there is more than one
+    //   parent etc. => improve
+    let arg_tps_without_parents = self.extract_arg_types(
+      substs_ref
+        .types()
+        .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       span,
     );
     let args = self.extract_expr_refs(args.to_vec());
@@ -391,11 +392,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }) {
       Some(&recv) => self
         .factory()
-        .MethodInvocation(recv, fd_id, arg_tps_without_self, args)
+        .MethodInvocation(recv, fd_id, arg_tps_without_parents, args)
         .into(),
       None => self
         .factory()
-        .FunctionInvocation(fd_id, arg_tps_without_self, args)
+        .FunctionInvocation(fd_id, arg_tps_without_parents, args)
         .into(),
     }
   }

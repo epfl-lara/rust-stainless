@@ -69,7 +69,6 @@ impl<T: Equals> Equals for List<T> {
 // ground (always in scope)
 (Equals, i32, []) -> IntEquals
 */
-
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
   fn equals(&self, y: &i32) -> bool {
@@ -84,7 +83,7 @@ pub fn main() {
   let b = 4;
 
   // => IntEquals.equals(a, b)
-  // assert!(!a.equals(&b));
+  assert!(!a.equals(&b))
 
   // => ListEquals.equals(list, list)(IntEquals)
   //let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));

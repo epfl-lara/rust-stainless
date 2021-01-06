@@ -133,6 +133,17 @@ struct BaseExtractor<'l, 'tcx: 'l> {
   extraction: Option<Box<Extraction<'l>>>,
 }
 
+/// Find the receiver type of a method called on this class. The receiver type
+/// is usually the type this trait is implemented _for_. Otherwise, if the class
+/// def is from a trait definition it's the self type param.
+fn method_call_rcv_type<'l>(cd: &'l st::ClassDef<'l>) -> st::Type<'l> {
+  cd.parents
+    .first()
+    .and_then(|p| p.tps.first().map(|&t| t))
+    .or(cd.tparams.first().map(|tp| tp.tp.into()))
+    .unwrap()
+}
+
 fn sanitize_path_name(s: &String) -> String {
   // Remove forbidden characters
   let s = s.replace(&[' ', '<', '>'][..], "");
@@ -274,6 +285,40 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       assert!(xt.classes.insert(cd.id, cd).is_none());
       xt.method_to_class
         .extend(methods.into_iter().map(|method_id| (method_id, cd)))
+    })
+  }
+
+  fn get_type_class_instances(
+    &self,
+    this_class_def: Option<&'l st::ClassDef<'l>>,
+  ) -> TypeClassInstances<'l> {
+    let f = self.factory();
+
+    // If we're in a method of a class, add the `this` instance.
+    let this_instance = this_class_def.map(|cd| {
+      (
+        (cd.id, method_call_rcv_type(cd), vec![]),
+        f.This(f.class_def_to_type(cd)).into(),
+      )
+    });
+
+    self.with_extraction(|xt| {
+      xt.classes
+        .values()
+        .filter(|cd| !cd.flags.contains(&f.IsAbstract().into()))
+        // FIXME: take into account that some classes need evidence arguments
+        .map(|&cd| {
+          (
+            (
+              cd.parents.first().unwrap().id,
+              method_call_rcv_type(cd),
+              vec![],
+            ),
+            f.ClassConstructor(f.class_def_to_type(cd), vec![]).into(),
+          )
+        })
+        .chain(this_instance)
+        .collect()
     })
   }
 
