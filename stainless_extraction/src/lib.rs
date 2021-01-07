@@ -42,8 +42,8 @@ use rustc_span::{MultiSpan, Span};
 
 use stainless_data::ast as st;
 
-use crate::fns::TypeClassInstances;
 use bindings::DefContext;
+use fns::{TypeClassInstances, TypeClassKey};
 use std_items::StdItems;
 use ty::TyExtractionCtxt;
 use utils::UniqueCounter;
@@ -133,15 +133,26 @@ struct BaseExtractor<'l, 'tcx: 'l> {
   extraction: Option<Box<Extraction<'l>>>,
 }
 
-/// Find the receiver type of a method called on this class. The receiver type
-/// is usually the type this trait is implemented _for_. Otherwise, if the class
-/// def is from a trait definition it's the self type param.
-fn method_call_rcv_type<'l>(cd: &'l st::ClassDef<'l>) -> st::Type<'l> {
-  cd.parents
+/// Find the type-class-key of the receiver of a method called on this class.
+/// The receiver key is either the trait this class implements along with the
+/// instantiated type params of the trait. Otherwise, if the class is a trait
+/// definition, it's the self type param aka its own key.
+fn method_call_rcv_key<'l>(cd: &'l st::ClassDef<'l>) -> TypeClassKey {
+  let (id, types): (_, Vec<st::Type<'_>>) = cd
+    .parents
     .first()
-    .and_then(|p| p.tps.first().map(|&t| t))
-    .or(cd.tparams.first().map(|tp| tp.tp.into()))
-    .unwrap()
+    .map(|p| (p.id, p.tps.iter().map(|&t| t).collect()))
+    .unwrap_or_else(|| {
+      (
+        cd.id,
+        cd.tparams
+          .iter()
+          .map(|&&st::TypeParameterDef { tp }| tp.into())
+          .collect(),
+      )
+    });
+  let (&t, ts) = types.split_first().unwrap();
+  (id, t, ts.to_vec())
 }
 
 fn sanitize_path_name(s: &String) -> String {
@@ -297,28 +308,69 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // If we're in a method of a class, add the `this` instance.
     let this_instance = this_class_def.map(|cd| {
       (
-        (cd.id, method_call_rcv_type(cd), vec![]),
+        method_call_rcv_key(cd),
         f.This(f.class_def_to_type(cd)).into(),
       )
     });
 
+    // If the surrounding class has evidence arguments, then we add those instances.
+    let evidence_args = this_class_def.iter().flat_map(|cd| {
+      cd.fields.iter().filter_map(move |&vd| match vd.v.tpe {
+        st::Type::ClassType(st::ClassType { id, tps }) => {
+          let (&t, ts) = tps.split_first().unwrap();
+          Some((
+            (*id, t, ts.to_vec()),
+            f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
+              .into(),
+          ))
+        }
+        _ => None,
+      })
+    });
+
+    let variable_insts: TypeClassInstances = evidence_args.chain(this_instance).collect();
+
     self.with_extraction(|xt| {
-      xt.classes
+      let class_insts: TypeClassInstances = xt
+        .classes
         .values()
-        .filter(|cd| !cd.flags.contains(&f.IsAbstract().into()))
-        // FIXME: take into account that some classes need evidence arguments
-        .map(|&cd| {
-          (
-            (
-              cd.parents.first().unwrap().id,
-              method_call_rcv_type(cd),
-              vec![],
-            ),
-            f.ClassConstructor(f.class_def_to_type(cd), vec![]).into(),
-          )
+        .filter(|cd| {
+          // Don't take abstract classes
+          !cd.flags.contains(&f.IsAbstract().into())
+          // and don't take the class we're currently inside of
+             && this_class_def.map(|tc| tc.id != cd.id).unwrap_or(true)
         })
-        .chain(this_instance)
-        .collect()
+        .filter_map(|&cd| {
+          // Map each field to an instance of the ground instances. Then, collect
+          // all the options into one => if there's a missing argument instance
+          // this will be None.
+          let args: Option<Vec<st::Expr<'_>>> = if cd.fields.is_empty() {
+            // the collect would collapse this into None
+            Some(vec![])
+          } else {
+            cd.fields
+              .iter()
+              .map(|vd| match vd.v.tpe {
+                st::Type::ClassType(st::ClassType { id, tps }) => {
+                  let (&t, ts) = tps.split_first().unwrap();
+                  variable_insts.get(&(*id, t, ts.to_vec())).copied()
+                }
+                _ => None,
+              })
+              .collect()
+          };
+
+          // Only return an instance if all the fields have arguments
+          args.map(|a| {
+            (
+              method_call_rcv_key(cd),
+              f.ClassConstructor(f.class_def_to_type(cd), a).into(),
+            )
+          })
+        })
+        .collect();
+
+      class_insts.into_iter().chain(variable_insts).collect()
     })
   }
 

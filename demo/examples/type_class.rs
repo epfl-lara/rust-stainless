@@ -35,7 +35,7 @@ trait Equals {
     !(x.equals(y) && y.equals(z)) || x.equals(z)
   }
 }
-/*
+
 impl<T: Equals> Equals for List<T> {
   /*
   - 'impl<..> Z for X' and has type params => case class
@@ -53,14 +53,13 @@ impl<T: Equals> Equals for List<T> {
         _ => false,
       },
       List::Cons(x, xs) => match y {
-      // ev.equals(x, y) && this.equals(xs, ys)
+        // ev.equals(x, y) && this.equals(xs, ys)
         List::Cons(y, ys) => x.equals(y) && xs.equals(ys),
         _ => false,
       },
     }
   }
 }
-*/
 
 /*
 (Equals, T, []) -> evidence
