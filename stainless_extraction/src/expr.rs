@@ -387,9 +387,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let (&t, ts) = rcv_types.split_first().unwrap();
 
       // Retrieve the needed type class instance
-      self.tc_insts.get(&(cd.id, t, ts.to_vec()))
+      self.extract_method_receiver(&(cd.id, t, ts.to_vec()))
     }) {
-      Some(&recv) => self
+      Some(recv) => self
         .factory()
         .MethodInvocation(recv, fd_id, arg_tps_without_parents, args)
         .into(),

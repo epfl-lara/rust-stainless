@@ -72,5 +72,3 @@ pub type TypeClassKey<'l> = (
   st::Type<'l>,
   Vec<st::Type<'l>>,
 );
-
-pub type TypeClassInstances<'l> = HashMap<TypeClassKey<'l>, st::Expr<'l>>;
