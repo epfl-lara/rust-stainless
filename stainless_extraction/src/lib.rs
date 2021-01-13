@@ -17,6 +17,7 @@ extern crate rustc_target;
 extern crate rustc_ty;
 
 mod bindings;
+mod classes;
 mod expr;
 mod flags;
 mod fns;

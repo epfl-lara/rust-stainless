@@ -105,6 +105,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           // Store functions of impl blocks and their specs
           ItemKind::Impl { items, .. } => {
+            // if the impl implements a trait, then we need to extract it as a class/object.
+            let class_def: Option<&'l st::ClassDef<'l>> = self
+              .xtor
+              .tcx
+              .impl_trait_ref(def_id)
+              .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
+
             // Get all functions in the impl by their identifier
             let fns_by_identifier: HashMap<Ident, FnItem> = items
               .into_iter()
@@ -131,6 +138,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .values()
               .partition(|&fn_item| fn_item.is_spec_fn());
 
+            // Add the class with references to its methods to the extraction
+            class_def.map(|cd| {
+              self
+                .xtor
+                .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect())
+            });
             // Add the functions to the visitor for further extraction
             self.functions.extend(fns);
 
@@ -147,6 +160,37 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                   .push(spec_item)
               }
             });
+          }
+
+          // Extract the trait as an abstract class, the laws as normal
+          // functions and the abstract functions as empty functions.
+          ItemKind::Trait(_, _, _, _, items) => {
+            let cd = self.xtor.extract_class(def_id, None, item.span);
+
+            // Laws and other concrete functions can be extracted like any
+            // normal function. Abstract functions are marked and will be
+            // treated accordingly.
+            let fns = items
+              .iter()
+              .filter_map(|item| match item.kind {
+                AssocItemKind::Fn { .. } => {
+                  let fn_id = self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id();
+                  Some(FnItem::new(
+                    fn_id,
+                    self.xtor.get_or_register_def(fn_id),
+                    item.ident,
+                    item.span,
+                    !item.defaultness.has_value(),
+                  ))
+                }
+                _ => None,
+              })
+              .collect::<Vec<_>>();
+
+            self
+              .xtor
+              .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect());
+            self.functions.extend(fns.into_iter())
           }
 
           _ => {
@@ -316,7 +360,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
 
     // Extract the function signature
-    let (tparams, txtcx) = self.extract_generics(def_id);
+    let (tparams, txtcx, _) = self.extract_generics(def_id);
     let poly_fn_sig = self.tcx.fn_sig(def_id);
     let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
     let params: Params<'l> = fn_sig
@@ -366,7 +410,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Extract the function itself
     type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
-    let (tparams, txtcx) = self.extract_generics(def_id);
+    let (tparams, txtcx, _) = self.extract_generics(def_id);
     let (params, return_tpe, mut body_expr): Parts<'l> =
       self.enter_body(hir_id, txtcx.clone(), |bxtor| {
         // Register parameters and local bindings in the DefContext
@@ -581,7 +625,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         };
 
         // Extract generics
-        let (tparams, txtcx) = self.extract_generics(def_id);
+        let (tparams, txtcx, _) = self.extract_generics(def_id);
 
         // Extract constructors
         let constructors = adt_def

@@ -4,7 +4,7 @@ use super::*;
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -131,7 +131,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_generics(
     &mut self,
     def_id: DefId,
-  ) -> (Vec<&'l st::TypeParameterDef<'l>>, TyExtractionCtxt<'l>) {
+  ) -> (
+    Vec<&'l st::TypeParameterDef<'l>>,
+    TyExtractionCtxt<'l>,
+    Vec<&'l st::ClassType<'l>>,
+  ) {
     let f = self.factory();
     let tcx = self.tcx;
     let span = tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
@@ -149,12 +153,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           def_id,
           index_to_tparam: HashMap::new(),
         },
+        vec![],
       );
     }
-
-    // Extract all generic parameters
-
-    let all_params = all_generic_params_of(tcx, def_id);
 
     // Certain unextracted traits we don't complain about at all.
     let should_silently_ignore_trait =
@@ -165,6 +166,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
     let mut tparam_to_fun_params: HashMap<u32, (Vec<Ty<'tcx>>, Span)> = HashMap::new();
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
+    let mut tparam_to_trait_bound: HashMap<u32, (TraitRef<'tcx>, Span)> = HashMap::new();
+
     for (predicate, span) in predicates.predicates {
       match predicate.kind() {
         PredicateKind::Trait(ref data, _) => {
@@ -176,11 +179,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
             let param_def = generics.type_param(&param_ty, tcx);
+
+            // Extract as a closure, supersedes trait bound
             if self.is_fn_like_trait(trait_did) {
               let params_ty = trait_ref.substs[1].expect_ty();
               let param_tys = params_ty.tuple_fields().collect();
               assert!(tparam_to_fun_params
                 .insert(param_def.index, (param_tys, *span))
+                .is_none());
+              continue;
+            }
+            // Extract as a trait bound
+            else {
+              assert!(tparam_to_trait_bound
+                .insert(param_def.index, (trait_ref, *span))
                 .is_none());
               continue;
             }
@@ -203,13 +215,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
         _ => {}
       }
+      // falling through in all other cases: warn
       tcx
         .sess
         .span_warn(*span, "Ignored predicate during extraction");
     }
 
     // Extract TypeParameterDefs for all normal generic parameters (ignoring HOF parameters)
-    let index_to_tparam: HashMap<u32, TyParam<'l>> = all_params
+    let index_to_tparam: HashMap<u32, TyParam<'l>> = all_generic_params_of(tcx, def_id)
       .iter()
       .filter_map(|param| match &param.kind {
         GenericParamDefKind::Type { .. } => {
@@ -255,6 +268,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       assert!(txtcx.index_to_tparam.insert(param_index, tparam).is_none());
     }
 
+    // Convert trait refs in the trait bounds to types
+    let bounds: Vec<&'l st::ClassType<'l>> = tparam_to_trait_bound
+      .values()
+      // Filter out the Self-trait-bound that rustc puts on traits
+      .filter(|&(tr, _)| tr.def_id != def_id)
+      .map(|&(ty::TraitRef { def_id, substs }, span)| {
+        let trait_id = self.get_or_register_def(def_id);
+        let tps = self.extract_tys(substs.types(), &txtcx, span);
+        &*f.ClassType(trait_id, tps)
+      })
+      .into_iter()
+      .collect();
+
     // And we're done.
     (
       txtcx
@@ -266,6 +292,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         })
         .collect(),
       txtcx,
+      bounds,
     )
   }
 
