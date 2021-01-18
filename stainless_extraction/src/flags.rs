@@ -16,6 +16,7 @@ pub(super) enum Flag {
   IsPure,
   IsMutable,
   IsVar,
+  Law,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +44,7 @@ impl Flags {
         IsPure => f.IsPure().into(),
         IsMutable => f.IsMutable().into(),
         IsVar => f.IsVar().into(),
+        Law => f.Law().into(),
       })
       .collect()
   }
@@ -57,6 +59,7 @@ impl Flag {
       IsPure => "pure",
       IsMutable => "mutable",
       IsVar => "var",
+      Law => "law",
     }
   }
 
@@ -66,7 +69,7 @@ impl Flag {
 }
 
 lazy_static! {
-  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar];
+  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law];
   static ref FLAGS_BY_NAME: HashMap<&'static str, Flag> = {
     let mut flags: HashMap<&'static str, Flag> = HashMap::new();
     for &flag in FLAGS.iter() {
