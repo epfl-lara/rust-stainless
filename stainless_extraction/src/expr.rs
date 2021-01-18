@@ -653,6 +653,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     final_expr: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
+
     let finish = |exprs: Vec<st::Expr<'l>>, final_expr| {
       if exprs.is_empty() {
         final_expr
@@ -670,26 +671,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           ..
         } => {
           let span = pattern.span;
-          let bail = |this: &mut Self, msg| -> st::Expr<'l> {
-            this.base.unsupported(span, msg);
+          let bail = |msg| -> st::Expr<'l> {
+            self.base.unsupported(span, msg);
             f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
               .into()
           };
+
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
           let var_result = self.try_pattern_to_var(&pattern.kind, false);
 
           if has_abnormal_source {
             // TODO: Support for loops
-            bail(self, "Cannot extract let that resulted from desugaring")
+            bail("Cannot extract let that resulted from desugaring")
           } else if let Err(reason) = var_result {
+            dbg!(&pattern, initializer);
+
             // TODO: Desugar complex patterns
-            bail(
-              self,
-              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
-            )
+            bail(format!("Cannot extract complex pattern in let: {}", reason).as_str())
           } else if initializer.is_none() {
-            bail(self, "Cannot extract let without initializer")
+            bail("Cannot extract let without initializer")
           } else {
             let vd = f.ValDef(var_result.unwrap());
             let init = self.extract_expr_ref(initializer.unwrap());
@@ -700,6 +701,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             finish(exprs, last_expr)
           }
         }
+
         StmtKind::Expr { expr, .. } => {
           let expr = self.extract_expr_ref(expr);
           acc_exprs.push(expr);
@@ -778,7 +780,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn try_pattern_to_var(
-    &mut self,
+    &self,
     pat_kind: &PatKind<'tcx>,
     allow_subpattern: bool,
   ) -> Result<&'l st::Variable<'l>> {
@@ -804,6 +806,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
         _ => Err("Binding mode not allowed"),
       },
+
+      // This encodes a user-written type ascription: let a: u32 = ...
+      // Rustc needs these for borrow-checking but stainless doesn't, therefore
+      // we erase them here by recursing once, and passing down the
+      // 'allow_subpattern' argument.
+      PatKind::AscribeUserType { subpattern, .. } => {
+        self.try_pattern_to_var(&subpattern.kind, allow_subpattern)
+      }
 
       _ => Err("Expected a top-level binding"),
     }
