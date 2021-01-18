@@ -245,13 +245,35 @@ impl<'a> Serializable for ADTSort<'a> {
 }
 
 /// stainless.extraction.oo.Definitions.ClassDef
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct ClassDef<'a> {
   pub id: &'a SymbolIdentifier<'a>,
   pub tparams: Seq<&'a TypeParameterDef<'a>>,
   pub parents: Seq<&'a ClassType<'a>>,
   pub fields: Seq<&'a ValDef<'a>>,
   pub flags: Seq<Flag<'a>>,
+}
+
+impl<'a> PartialEq for ClassDef<'a> {
+  fn eq(&self, other: &Self) -> bool {
+    self.id == other.id
+  }
+}
+impl<'a> Eq for ClassDef<'a> {}
+impl<'a> PartialOrd for ClassDef<'a> {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+impl<'a> Ord for ClassDef<'a> {
+  fn cmp(&self, other: &Self) -> Ordering {
+    self.id.cmp(&other.id)
+  }
+}
+impl<'a> Hash for ClassDef<'a> {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.id.hash(state);
+  }
 }
 
 impl<'a> Serializable for ClassDef<'a> {
@@ -499,6 +521,7 @@ pub enum Flag<'a> {
   Ignore(&'a Ignore),
   IndexedAt(&'a IndexedAt<'a>),
   Inline(&'a Inline),
+  InlineInvariant(&'a InlineInvariant),
   InlineOnce(&'a InlineOnce),
   IsAbstract(&'a IsAbstract),
   IsAccessor(&'a IsAccessor<'a>),
@@ -573,6 +596,10 @@ impl Factory {
 
   pub fn Inline<'a>(&'a self) -> &'a mut Inline {
     self.bump.alloc(Inline {})
+  }
+
+  pub fn InlineInvariant<'a>(&'a self) -> &'a mut InlineInvariant {
+    self.bump.alloc(InlineInvariant {})
   }
 
   pub fn InlineOnce<'a>(&'a self) -> &'a mut InlineOnce {
@@ -683,6 +710,7 @@ impl<'a> Serializable for Flag<'a> {
       Flag::Ignore(v) => v.serialize(s)?,
       Flag::IndexedAt(v) => v.serialize(s)?,
       Flag::Inline(v) => v.serialize(s)?,
+      Flag::InlineInvariant(v) => v.serialize(s)?,
       Flag::InlineOnce(v) => v.serialize(s)?,
       Flag::IsAbstract(v) => v.serialize(s)?,
       Flag::IsAccessor(v) => v.serialize(s)?,
@@ -722,6 +750,7 @@ derive_conversions_for_ast!(Flag<'a>, HasADTInvariant<'a>);
 derive_conversions_for_ast!(Flag<'a>, Ignore);
 derive_conversions_for_ast!(Flag<'a>, IndexedAt<'a>);
 derive_conversions_for_ast!(Flag<'a>, Inline);
+derive_conversions_for_ast!(Flag<'a>, InlineInvariant);
 derive_conversions_for_ast!(Flag<'a>, InlineOnce);
 derive_conversions_for_ast!(Flag<'a>, IsAbstract);
 derive_conversions_for_ast!(Flag<'a>, IsAccessor<'a>);
@@ -895,6 +924,17 @@ pub struct Inline {}
 impl Serializable for Inline {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(181))?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Definitions.InlineInvariant
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InlineInvariant {}
+
+impl Serializable for InlineInvariant {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(166))?;
     Ok(())
   }
 }
@@ -1106,7 +1146,7 @@ pub struct Synthetic {}
 
 impl Serializable for Synthetic {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    s.write_marker(MarkerId(182))?;
+    s.write_marker(MarkerId(165))?;
     Ok(())
   }
 }
@@ -1237,6 +1277,7 @@ pub enum Expr<'a> {
   MapApply(&'a MapApply<'a>),
   MapUpdated(&'a MapUpdated<'a>),
   MatchExpr(&'a MatchExpr<'a>),
+  Max(&'a Max<'a>),
   MethodInvocation(&'a MethodInvocation<'a>),
   Minus(&'a Minus<'a>),
   Modulo(&'a Modulo<'a>),
@@ -1757,6 +1798,10 @@ impl Factory {
     self.bump.alloc(MatchExpr { scrutinee, cases })
   }
 
+  pub fn Max<'a>(&'a self, exprs: Seq<Expr<'a>>) -> &'a mut Max<'a> {
+    self.bump.alloc(Max { exprs })
+  }
+
   pub fn MethodInvocation<'a>(
     &'a self,
     receiver: Expr<'a>,
@@ -2073,6 +2118,7 @@ impl<'a> Serializable for Expr<'a> {
       Expr::MapApply(v) => v.serialize(s)?,
       Expr::MapUpdated(v) => v.serialize(s)?,
       Expr::MatchExpr(v) => v.serialize(s)?,
+      Expr::Max(v) => v.serialize(s)?,
       Expr::MethodInvocation(v) => v.serialize(s)?,
       Expr::Minus(v) => v.serialize(s)?,
       Expr::Modulo(v) => v.serialize(s)?,
@@ -2192,6 +2238,7 @@ derive_conversions_for_ast!(Expr<'a>, LocalThis<'a>);
 derive_conversions_for_ast!(Expr<'a>, MapApply<'a>);
 derive_conversions_for_ast!(Expr<'a>, MapUpdated<'a>);
 derive_conversions_for_ast!(Expr<'a>, MatchExpr<'a>);
+derive_conversions_for_ast!(Expr<'a>, Max<'a>);
 derive_conversions_for_ast!(Expr<'a>, MethodInvocation<'a>);
 derive_conversions_for_ast!(Expr<'a>, Minus<'a>);
 derive_conversions_for_ast!(Expr<'a>, Modulo<'a>);
@@ -3433,6 +3480,20 @@ impl<'a> Serializable for MatchExpr<'a> {
     s.write_marker(MarkerId(126))?;
     self.scrutinee.serialize(s)?;
     self.cases.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.ast.Expressions.Max
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Max<'a> {
+  pub exprs: Seq<Expr<'a>>,
+}
+
+impl<'a> Serializable for Max<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(160))?;
+    self.exprs.serialize(s)?;
     Ok(())
   }
 }

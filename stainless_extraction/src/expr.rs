@@ -694,8 +694,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             // TODO: Support for loops
             bail("Cannot extract let that resulted from desugaring")
           } else if let Err(reason) = var_result {
-            dbg!(&pattern, initializer);
-
             // TODO: Desugar complex patterns
             bail(format!("Cannot extract complex pattern in let: {}", reason).as_str())
           } else if initializer.is_none() {
