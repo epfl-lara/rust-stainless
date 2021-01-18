@@ -578,6 +578,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           ),
         }
       }
+
+      // From rustc_hair docs:  `Foo(...)` or `Foo{...}` or `Foo`, where `Foo`
+      // is a variant name from an ADT with multiple variants.
       box PatKind::Variant {
         adt_def,
         variant_index,
@@ -591,8 +594,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
           .into()
       }
-      box PatKind::Leaf { subpatterns } => {
-        if let TyKind::Adt(adt_def, substs) = pattern.ty.kind {
+
+      // From rustc_hair docs:  `(...)`, `Foo(...)`, `Foo{...}`, or `Foo`, where
+      // `Foo` is a variant name from an ADT with a single variant.
+      box PatKind::Leaf { subpatterns } => match pattern.ty.kind {
+        TyKind::Adt(adt_def, substs) => {
           let sort = self.base.extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
@@ -600,13 +606,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
           f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
             .into()
-        } else {
-          self.unsupported_pattern(
-            pattern.span,
-            "Encountered Leaf pattern, but type is not an ADT",
-          )
         }
-      }
+        TyKind::Tuple(substs) => f
+          .TuplePattern(binder, self.extract_subpatterns(subpatterns, substs.len()))
+          .into(),
+
+        _ => self.unsupported_pattern(
+          pattern.span,
+          "Encountered Leaf pattern, but type is not an ADT",
+        ),
+      },
 
       box PatKind::Constant { value: konst } => match Literal::try_from(konst) {
         Ok(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),

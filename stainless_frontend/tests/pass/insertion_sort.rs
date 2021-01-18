@@ -56,14 +56,18 @@ impl List<i32> {
       List::Nil => Option::None,
       List::Cons(x, xs) => match xs.min() {
         Option::None => Option::Some(*x),
-        Option::Some(y) => {
-          if *x < y {
-            Option::Some(*x)
-          } else {
-            Option::Some(y)
-          }
-        }
+        Option::Some(y) if *x < y => Option::Some(*x),
+        Option::Some(y) => Option::Some(y),
       },
+    }
+  }
+
+  #[measure(self)]
+  pub fn equals(&self, other: &List<i32>) -> bool {
+    match (self, other) {
+      (List::Nil, List::Nil) => true,
+      (List::Cons(x, xs), List::Cons(y, ys)) => x == y && xs.equals(ys),
+      _ => false,
     }
   }
 

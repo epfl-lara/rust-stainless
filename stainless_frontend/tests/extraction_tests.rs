@@ -89,6 +89,7 @@ define_tests!(
   pass: list_binary_search,
   pass: nested_spec,
   pass: nested_spec_impl,
+  pass: tuple_match,
   pass: tuples,
   fail_verification: box_as_ref,
   fail_extraction: double_measure,
