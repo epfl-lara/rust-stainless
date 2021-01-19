@@ -42,3 +42,4 @@ The actual verification can be started using `run /the/path/to/output.inoxser`.
 ## Contributors
 
 - Georg Schmid (@gsps)
+- Romain Ruetschi (@romac)
