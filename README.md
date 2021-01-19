@@ -38,5 +38,7 @@ You can also verify the extracted programs directly using Stainless and the `sta
 First, export the serialized stainless program using `cargo stainless --export output.inoxser`.
 To then run verification on that file, navigate to your checked-out Stainless repo, run `sbt` in the root folder of the repo, and consequently switch to the appropriate subproject using `project stainless-noxt`.
 The actual verification can be started using `run /the/path/to/output.inoxser`.
-<!-- For a slightly more practical setup, you can run Stainless in separate session and start it in watch mode using `run --watch /the/path/to/output.inoxser`.
-This will automatically retrigger verification whenever `output.inoxser` is updated. --!>
+
+## Contributors
+
+- Georg Schmid (@gsps)
