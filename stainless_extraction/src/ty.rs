@@ -166,7 +166,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
     let mut tparam_to_fun_params: HashMap<u32, (Vec<Ty<'tcx>>, Span)> = HashMap::new();
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
-    let mut tparam_to_trait_bound: HashMap<u32, (TraitRef<'tcx>, Span)> = HashMap::new();
+    let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
 
     for (predicate, span) in predicates.predicates {
       match predicate.kind() {
@@ -191,9 +191,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             }
             // Extract as a trait bound
             else {
-              assert!(tparam_to_trait_bound
-                .insert(param_def.index, (trait_ref, *span))
-                .is_none());
+              assert!(trait_bounds.insert((trait_ref, *span)));
               continue;
             }
           }
@@ -269,8 +267,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     // Convert trait refs in the trait bounds to types
-    let bounds: Vec<&'l st::ClassType<'l>> = tparam_to_trait_bound
-      .values()
+    let bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
+      .iter()
       // Filter out the Self-trait-bound that rustc puts on traits
       .filter(|&(tr, _)| tr.def_id != def_id)
       .map(|&(ty::TraitRef { def_id, substs }, span)| {

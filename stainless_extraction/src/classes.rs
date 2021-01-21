@@ -21,33 +21,44 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let id = self.get_or_register_def(def_id);
     let (tparams, tyxtctx, trait_bounds) = self.extract_generics(def_id);
 
-    // If this class extends some other class, add it as parent.
-    let parent = impl_trait_ref
-      .map(|ty::TraitRef { def_id, substs }| {
-        let trait_id = self.get_or_register_def(def_id);
-        let tps = self.extract_tys(substs.types(), &tyxtctx, span);
-        &*f.ClassType(trait_id, tps)
-      })
-      .into_iter()
-      .collect();
+    // If this is an 'impl for trait', we extract a concrete class
+    if let Some(ty::TraitRef {
+      def_id: trait_def_id,
+      substs,
+    }) = impl_trait_ref
+    {
+      // The parent (aka inherits from) the trait it implements
+      let trait_id = self.get_or_register_def(trait_def_id);
+      let tps = self.extract_tys(substs.types(), &tyxtctx, span);
+      let parent = vec![&*f.ClassType(trait_id, tps)];
 
-    // Determine whether this needs to be a case object or an abstract class
-    let flags = if tparams.len() == 0 {
-      vec![f.IsCaseObject().into()]
-    } else if impl_trait_ref.is_none() {
-      vec![f.IsAbstract().into()]
-    } else {
-      vec![]
-    };
+      let flags = if tparams.len() == 0 {
+        vec![f.IsCaseObject().into()]
+      } else {
+        vec![]
+      };
 
-    let fields = trait_bounds
-      .into_iter()
-      .enumerate()
-      .map(|(index, ct)| {
-        &*f.ValDef(f.Variable(self.fresh_id(format!("ev{}", index)), ct.into(), vec![]))
-      })
-      .collect();
+      let fields = trait_bounds
+        .into_iter()
+        .enumerate()
+        .map(|(index, ct)| {
+          &*f.ValDef(f.Variable(self.fresh_id(format!("ev{}", index)), ct.into(), vec![]))
+        })
+        .collect();
 
-    f.ClassDef(id, tparams, parent, fields, flags)
+      f.ClassDef(id, tparams, parent, fields, flags)
+    }
+    // Otherwise, we extract an abstract class from a trait
+    else {
+      f.ClassDef(
+        id,
+        tparams,
+        // For a trait its parents are the trait bounds
+        trait_bounds,
+        // A trait doesn't have fields
+        vec![],
+        vec![f.IsAbstract().into()],
+      )
+    }
   }
 }
