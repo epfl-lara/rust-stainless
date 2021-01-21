@@ -88,6 +88,7 @@ define_tests!(
   pass: int_option,
   pass: let_type,
   pass: list_binary_search,
+  pass: monoid,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: tuple_match,
