@@ -46,28 +46,16 @@ impl<T: Equals> Equals for List<T> {
   => case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
   */
 
-  fn equals(&self, y: &List<T>) -> bool {
-    match self {
-      List::Nil => match y {
-        List::Nil => true,
-        _ => false,
-      },
-      List::Cons(x, xs) => match y {
-        // ev.equals(x, y) && this.equals(xs, ys)
-        List::Cons(y, ys) => x.equals(y) && xs.equals(ys),
-        _ => false,
-      },
+  // #[measure(self)]
+  fn equals(&self, other: &List<T>) -> bool {
+    match (self, other) {
+      (List::Nil, List::Nil) => true,
+      (List::Cons(x, xs), List::Cons(y, ys)) => x.equals(y) && xs.equals(ys),
+      _ => false,
     }
   }
 }
 
-/*
-(Equals, T, []) -> evidence
-(Equals, List, [T]) -> evidence
-
-// ground (always in scope)
-(Equals, i32, []) -> IntEquals
-*/
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
   fn equals(&self, y: &i32) -> bool {
@@ -77,12 +65,31 @@ impl Equals for i32 {
   }
 }
 
+trait Ord: Equals {
+  fn less_than_eq(&self, other: &Self) -> bool;
+
+  fn less_than(&self, other: &Self) -> bool {
+    self.less_than_eq(other) && self.not_equals(other)
+  }
+}
+
+impl Ord for i32 {
+  fn less_than_eq(&self, other: &Self) -> bool {
+    self <= other
+  }
+
+  fn less_than(&self, other: &Self) -> bool {
+    self < other
+  }
+}
+
 pub fn main() {
   let a = 2;
   let b = 4;
 
   // => IntEquals.equals(a, b)
-  assert!(!a.equals(&b));
+  assert!(a.not_equals(&b));
+  assert!(a.less_than(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
   let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));

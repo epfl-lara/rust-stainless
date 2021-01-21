@@ -65,12 +65,31 @@ impl Equals for i32 {
   }
 }
 
+trait Ord: Equals {
+  fn less_than_eq(&self, other: &Self) -> bool;
+
+  fn less_than(&self, other: &Self) -> bool {
+    self.less_than_eq(other) && self.not_equals(other)
+  }
+}
+
+impl Ord for i32 {
+  fn less_than_eq(&self, other: &Self) -> bool {
+    self <= other
+  }
+
+  fn less_than(&self, other: &Self) -> bool {
+    self < other
+  }
+}
+
 pub fn main() {
   let a = 2;
   let b = 4;
 
   // => IntEquals.equals(a, b)
   assert!(a.not_equals(&b));
+  assert!(a.less_than(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
   let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
