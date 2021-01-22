@@ -1,7 +1,13 @@
 extern crate stainless;
 use stainless::*;
 
-trait Monoid: Sized {
+pub trait Op {}
+struct Add;
+struct Mul;
+impl Op for Add {}
+impl Op for Mul {}
+
+pub trait Monoid<O: Op>: Sized {
   fn append(&self, other: &Self) -> Self;
   fn neutral() -> Self;
 
@@ -28,7 +34,7 @@ trait Monoid: Sized {
   }
 }
 
-impl Monoid for i32 {
+impl Monoid<Add> for i32 {
   fn append(&self, other: &i32) -> i32 {
     *self + *other
   }
@@ -45,13 +51,33 @@ impl Monoid for i32 {
     *self
   }
 }
-/*
+
+impl Monoid<Mul> for i32 {
+  fn append(&self, other: &i32) -> i32 {
+    *self * *other
+  }
+  fn neutral() -> Self {
+    1
+  }
+
+  fn equals(&self, other: &i32) -> bool {
+    *self == *other
+  }
+
+  fn clone(&self) -> Self {
+    *self
+  }
+}
+
 pub enum List<T> {
   Nil,
   Cons(T, Box<List<T>>),
 }
 
-impl Monoid for List<i32> {
+struct Concat;
+impl Op for Concat {}
+
+impl Monoid<Concat> for List<i32> {
   fn append(&self, other: &Self) -> Self {
     match self {
       List::Nil => other.clone(),
@@ -79,4 +105,29 @@ impl Monoid for List<i32> {
     }
   }
 }
-*/
+
+pub fn combine<O: Op, T: Monoid<O>>(l: &List<T>) -> T {
+  match l {
+    List::Nil => <T as Monoid<O>>::neutral(),
+    List::Cons(h, t) => (*h).append(&combine(&**t)),
+  }
+}
+
+pub fn main() {
+  let list = List::Cons(
+    5,
+    Box::new(List::Cons(
+      2,
+      Box::new(List::Cons(
+        4,
+        Box::new(List::Cons(
+          5,
+          Box::new(List::Cons(-1, Box::new(List::Cons(8, Box::new(List::Nil))))),
+        )),
+      )),
+    )),
+  );
+
+  assert!(combine::<Add, _>(&list) == 23);
+  assert!(combine::<Mul, _>(&list) == -1600)
+}
