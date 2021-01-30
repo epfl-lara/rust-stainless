@@ -46,3 +46,4 @@ The actual verification can be started using `run /the/path/to/output.inoxser`.
 - Georg Schmid ([@gsps](https://github.com/gsps))
 - Romain Ruetschi ([@romac](https://github.com/romac))
 - Yann Bolliger ([@yannbolliger](https://github.com/yannbolliger))
+- Ivan Yurov ([@youroff](https://github.com/youroff) - semester project, Spring 2020)
