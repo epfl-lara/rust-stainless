@@ -34,6 +34,8 @@ jobs:
   test:
     name: Test Suite
     runs-on: ubuntu-latest
+    env:
+      STAINLESS_VERSION: "0.7.6"
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -48,13 +50,13 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: epfl-lara/stainless
-          tag: "v0.7.6"
-          file: stainless-scalac-standalone-0.7.6-linux.zip
+          tag: "v$STAINLESS_VERSION"
+          file: stainless-scalac-standalone-$STAINLESS_VERSION-linux.zip
 
       - name: Unzip Stainless
         uses: montudor/action-zip@v0.1.1
         with:
-          args: unzip ./stainless-scalac-standalone-0.7.6-linux.zip -d ./stainless-noxt
+          args: unzip ./stainless-scalac-standalone-$STAINLESS_VERSION-linux.zip -d ./stainless-noxt
 
       - name: Run cargo build
         uses: actions-rs/cargo@v1
