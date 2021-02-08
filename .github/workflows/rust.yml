@@ -50,13 +50,13 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: epfl-lara/stainless
-          tag: "v$STAINLESS_VERSION"
-          file: stainless-scalac-standalone-$STAINLESS_VERSION-linux.zip
+          tag: v${{ env.STAINLESS_VERSION }}
+          file: stainless-scalac-standalone-${{ env.STAINLESS_VERSION }}-linux.zip
 
       - name: Unzip Stainless
         uses: montudor/action-zip@v0.1.1
         with:
-          args: unzip ./stainless-scalac-standalone-$STAINLESS_VERSION-linux.zip -d ./stainless-noxt
+          args: unzip ./stainless-scalac-standalone-${{ env.STAINLESS_VERSION }}-linux.zip -d ./stainless-noxt
 
       - name: Run cargo build
         uses: actions-rs/cargo@v1
