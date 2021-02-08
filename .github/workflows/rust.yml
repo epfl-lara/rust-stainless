@@ -57,7 +57,7 @@ jobs:
       - name: Unzip Stainless
         uses: montudor/action-zip@v0.1.1
         with:
-          args: unzip ./stainless-${{ env.stainless_version }}-linux.zip -d ./stainless-noxt
+          args: unzip ./stainless-${{ env.stainless_version }}-linux.zip -d ${{ github.workspace }}/stainless-noxt
 
       - name: Run cargo build
         uses: actions-rs/cargo@v1
