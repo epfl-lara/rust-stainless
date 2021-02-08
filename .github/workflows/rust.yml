@@ -46,6 +46,9 @@ jobs:
           override: true
           components: rustc-dev, llvm-tools-preview
 
+      - name: Set Stainless version
+        run: cat .stainless-version >> $GITHUB_ENV
+
       - name: Download Stainless
         uses: Legion2/download-release-action@v2.1.0
         with:
