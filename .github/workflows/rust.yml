@@ -47,7 +47,7 @@ jobs:
           components: rustc-dev, llvm-tools-preview
 
       - name: Set Stainless version
-        run: cat .stainless-version >> $GITHUB_ENV
+        run: cat ${{ github.workspace }}/.stainless-version >> ${{ github.env }}
 
       - name: Download Stainless
         uses: Legion2/download-release-action@v2.1.0
