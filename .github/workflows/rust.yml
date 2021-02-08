@@ -44,6 +44,14 @@ jobs:
           override: true
           components: rustc-dev, llvm-tools-preview
 
+      - name: Download Stainless
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: epfl-lara/stainless
+          tag: "v0.7.6"
+          path: ./stainless-noxt
+          file: stainless-scalac-standalone-0.7.6-linux.zip
+
       - name: Run cargo build
         uses: actions-rs/cargo@v1
         with:
@@ -52,6 +60,6 @@ jobs:
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         env:
-          STAINLESS_HOME: /localhome/stainless-noxt
+          STAINLESS_HOME: ./stainless-noxt
         with:
           command: test
