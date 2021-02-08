@@ -53,7 +53,7 @@ jobs:
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: epfl-lara/stainless
-          tag: env.stainless_version
+          tag: ${{ env.stainless_version }}
           file: stainless-${{ env.stainless_version }}-linux.zip
 
       - name: Unzip Stainless
