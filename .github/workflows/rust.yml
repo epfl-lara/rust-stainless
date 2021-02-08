@@ -49,8 +49,13 @@ jobs:
         with:
           repository: epfl-lara/stainless
           tag: "v0.7.6"
-          path: ./stainless-noxt
+          path: ./stainless.zip
           file: stainless-scalac-standalone-0.7.6-linux.zip
+
+      - name: Unzip Stainless
+        uses: montudor/action-zip@v0.1.1
+        with:
+          args: unzip -qq ./stainless.zip -d ./stainless-noxt
 
       - name: Run cargo build
         uses: actions-rs/cargo@v1
