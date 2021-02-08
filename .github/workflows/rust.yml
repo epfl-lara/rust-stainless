@@ -47,13 +47,13 @@ jobs:
           components: rustc-dev, llvm-tools-preview
 
       - name: Set Stainless version
-        run: echo "stainless_version=$(cat $GITHUB_WORKSPACE.stainless-version)"  >> $GITHUB_ENV
+        run: echo "stainless_version=noxt-0.7.1-17-ga897e90"  >> $GITHUB_ENV
 
       - name: Download Stainless
         uses: Legion2/download-release-action@v2.1.0
         with:
           repository: epfl-lara/stainless
-          tag: v${{ env.stainless_version }}
+          tag: env.stainless_version
           file: stainless-${{ env.stainless_version }}-linux.zip
 
       - name: Unzip Stainless
