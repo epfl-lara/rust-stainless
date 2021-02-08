@@ -54,7 +54,7 @@ jobs:
       - name: Unzip Stainless
         uses: montudor/action-zip@v0.1.1
         with:
-          args: unzip stainless-scalac-standalone-0.7.6-linux.zip -d ./stainless-noxt
+          args: unzip ./stainless-scalac-standalone-0.7.6-linux.zip -d $GITHUB_WORKSPACE/stainless-noxt
 
       - name: Run cargo build
         uses: actions-rs/cargo@v1
@@ -64,6 +64,6 @@ jobs:
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         env:
-          STAINLESS_HOME: ./stainless-noxt
+          STAINLESS_HOME: $GITHUB_WORKSPACE/stainless-noxt
         with:
           command: test
