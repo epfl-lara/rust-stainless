@@ -134,6 +134,10 @@ struct BaseExtractor<'l, 'tcx: 'l> {
 fn sanitize_path_name(s: &String) -> String {
   // Remove forbidden characters
   let s = s.replace(&[' ', '<', '>'][..], "");
+  assert!(
+    !s.is_empty(),
+    "Path name must have at least one alphanumeric character."
+  );
 
   // Prepend an underscore to numerical-only identifiers for compatibility
   // with stainless
