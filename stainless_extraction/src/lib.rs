@@ -415,26 +415,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // hence, need evidence args. To find the args, we'll recurse.
           .or_else(|| {
             arg_cls.iter().find_map(|cd| {
-              match (method_call_rcv_key(cd), key) {
-                // If the type argument of the key is an ADT, find the evidence argument for the
-                // contained type param.
+              let class_key = method_call_rcv_key(cd);
+
+              // If the type argument of the key is an ADT, find the evidence argument for the
+              // contained type param.
+              match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
                 (
-                  TypeClassKey {
-                    id: class_id,
-                    recv_type: Type::ADTType(st::ADTType { .. }),
-                    ..
-                  },
-                  &TypeClassKey {
-                    id: key_id,
-                    recv_type: Type::ADTType(st::ADTType { tps, .. }),
-                    ..
-                  },
-                ) if class_id == key_id => {
-                  let (&tparam, tparams) = tps.split_first().unwrap();
+                  &[Type::ADTType(st::ADTType { .. }), ..],
+                  &[Type::ADTType(st::ADTType { tps, .. }), ..],
+                ) if class_key.id == key.id => {
                   let ev_arg = self.extract_method_receiver(&TypeClassKey {
-                    id: class_id,
-                    recv_type: tparam,
-                    tparams: tparams.to_vec(),
+                    id: class_key.id,
+                    recv_tps: tps.clone(),
                   });
 
                   ev_arg.map(|a| {
@@ -466,11 +458,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.current_class.and_then(|cd| {
       cd.fields.iter().find_map(|&vd| match vd.v.tpe {
         st::Type::ClassType(st::ClassType { id, tps }) => {
-          let (&t, ts) = tps.split_first().unwrap();
           let k = TypeClassKey {
             id: *id,
-            recv_type: t,
-            tparams: ts.to_vec(),
+            recv_tps: tps.clone(),
           };
 
           if k == *key {
@@ -488,29 +478,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 }
 
 /// Find the type-class-key of the receiver of a method called on this class.
-/// The receiver key is either the trait this class implements along with the
-/// instantiated type params of the trait. Otherwise, if the class is a trait
-/// definition, it's the self type param aka its own key.
+/// The receiver key is either:
+///
+/// 1. the trait this class implements along with the instantiated type params of the trait,
+/// 2. if this class is a trait definition, it's the self type param aka its own key.
+///
 fn method_call_rcv_key<'l>(cd: &'l st::ClassDef<'l>) -> TypeClassKey {
-  let (id, types): (_, Vec<st::Type<'_>>) = cd
-    .parents
+  cd.parents
     .first()
-    .map(|p| (p.id, p.tps.iter().map(|&t| t).collect()))
-    .unwrap_or_else(|| {
-      (
-        cd.id,
-        cd.tparams
-          .iter()
-          .map(|&&st::TypeParameterDef { tp }| tp.into())
-          .collect(),
-      )
-    });
-  let (&recv_type, ts) = types.split_first().unwrap();
-  TypeClassKey {
-    id,
-    recv_type,
-    tparams: ts.to_vec(),
-  }
+    .map(|st::ClassType { id, tps }| TypeClassKey {
+      id,
+      recv_tps: tps.clone(),
+    })
+    .unwrap_or_else(|| TypeClassKey {
+      id: cd.id,
+      recv_tps: cd
+        .tparams
+        .iter()
+        .map(|&&st::TypeParameterDef { tp }| tp.into())
+        .collect::<Vec<_>>(),
+    })
 }
 
 fn unexpected<S: Into<MultiSpan>, M: Into<String>>(span: S, msg: M) -> ! {

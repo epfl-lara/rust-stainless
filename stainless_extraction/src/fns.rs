@@ -67,9 +67,8 @@ pub struct TypeClassKey<'l> {
   /// where the method is defined. Otherwise, of the impl where it is defined.
   pub id: &'l st::SymbolIdentifier<'l>,
 
-  /// The type is the receiver type (aka the type of the first argument at call site).
-  pub recv_type: st::Type<'l>,
-
-  /// The other types are optional type parameters of the receiver type.
-  pub tparams: Vec<st::Type<'l>>,
+  /// The first element of the vector is the receiver type (aka the type of the
+  /// first argument at call site). Additional types are optional type
+  /// parameters of the receiver type.
+  pub recv_tps: Vec<st::Type<'l>>,
 }

@@ -383,15 +383,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // The receiver type is the type of the &self of the method call. This
       // is the first argument type. We have to extract it because we filtered
       // the self type above.
-      let rcv_types = self.base.extract_tys(substs_ref.types(), &self.txtcx, span);
-      let (&t, ts) = rcv_types.split_first().unwrap();
-
-      // Retrieve the needed type class instance
-      self.extract_method_receiver(&TypeClassKey {
-        id,
-        recv_type: t,
-        tparams: ts.to_vec(),
-      })
+      let recv_tps = self.base.extract_tys(substs_ref.types(), &self.txtcx, span);
+      self.extract_method_receiver(&TypeClassKey { id, recv_tps })
     }) {
       Some(recv) => self
         .factory()
