@@ -544,7 +544,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_adt_id(&mut self, def_id: DefId) -> &'l st::SymbolIdentifier<'l> {
     self
       // get known ID
-      .with_extraction(|xt| xt.mapping.did_to_stid.get(&def_id).copied())
+      .get_id_from_def(def_id)
       // otherwise extract ADT, then get the ID
       .unwrap_or_else(|| &self.extract_adt(def_id).id)
   }
@@ -552,9 +552,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Extract an ADT (regardless of whether it is local or external)
   pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
     let sort_opt = self.with_extraction(|xt| {
-      xt.mapping
-        .did_to_stid
-        .get(&def_id)
+      self
+        .get_id_from_def(def_id)
         .and_then(|id| xt.adts.get(id).copied())
     });
 
