@@ -36,47 +36,52 @@ impl Factory {
 pub struct Symbols<'a> {
   pub sorts: Map<&'a SymbolIdentifier<'a>, &'a ADTSort<'a>>,
   pub functions: Map<&'a SymbolIdentifier<'a>, &'a FunDef<'a>>,
+  pub classes: Map<&'a SymbolIdentifier<'a>, &'a ClassDef<'a>>,
 }
 
 impl<'a> Symbols<'a> {
-  pub fn new(sorts: Seq<&'a ADTSort<'a>>, functions: Seq<&'a FunDef<'a>>) -> Self {
-    let mut sorts_map = Map::new();
-    let mut functions_map = Map::new();
-    sorts.iter().for_each(|&sort| {
-      sorts_map.insert(sort.id, sort);
-    });
-    functions.iter().for_each(|&fd| {
-      functions_map.insert(fd.id, fd);
-    });
+  pub fn new(
+    sorts: Seq<&'a ADTSort<'a>>,
+    functions: Seq<&'a FunDef<'a>>,
+    classes: Seq<&'a ClassDef<'a>>,
+  ) -> Self {
     Symbols {
-      sorts: sorts_map,
-      functions: functions_map,
+      sorts: sorts.into_iter().map(|s| (s.id, s)).collect(),
+      functions: functions.into_iter().map(|s| (s.id, s)).collect(),
+      classes: classes.into_iter().map(|s| (s.id, s)).collect(),
     }
   }
 }
 
+#[inline]
+fn sort_values<K, V: Ord>(map: &Map<K, V>) -> Seq<&V> {
+  let mut vs: Vec<_> = map.values().collect();
+  vs.sort();
+  vs
+}
+
+#[inline]
+fn hash_seq<K, V: Ord + Hash, H: Hasher>(map: &Map<K, V>, state: &mut H) {
+  sort_values(map).iter().for_each(|s| s.hash(state));
+}
+
 impl<'a> Hash for Symbols<'a> {
   fn hash<H: Hasher>(&self, state: &mut H) {
-    let mut sorts: Vec<_> = self.sorts.values().collect();
-    sorts.sort();
-    sorts.iter().for_each(|sort| sort.hash(state));
-    let mut functions: Vec<_> = self.functions.values().collect();
-    functions.sort();
-    functions.iter().for_each(|function| function.hash(state));
+    hash_seq(&self.sorts, state);
+    hash_seq(&self.functions, state);
+    hash_seq(&self.classes, state);
   }
 }
 
 impl<'a> Serializable for Symbols<'a> {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
-    let mut sorts: Vec<_> = self.sorts.values().collect();
-    sorts.sort();
-    let mut functions: Vec<_> = self.functions.values().collect();
-    functions.sort();
+    let sorts = sort_values(&self.sorts);
+    let functions = sort_values(&self.functions);
+    let classes = sort_values(&self.classes);
 
     let mut inner_s = BufferSerializer::new();
-    (functions, sorts).serialize(&mut inner_s)?;
-    inner_s.to_buffer().serialize(s)?;
-    Ok(())
+    (functions, sorts, classes).serialize(&mut inner_s)?;
+    inner_s.to_buffer().serialize(s)
   }
 }
 
@@ -85,32 +90,28 @@ impl<'a> Serializable for Symbols<'a> {
 impl<'a> Serializable for ValDef<'a> {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(94))?;
-    self.v.serialize(s)?;
-    Ok(())
+    self.v.serialize(s)
   }
 }
 
 impl<'a> Serializable for TypeParameterDef<'a> {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(95))?;
-    self.tp.serialize(s)?;
-    Ok(())
+    self.tp.serialize(s)
   }
 }
 
 impl Serializable for BVLiteral {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(20))?;
-    (self.signed, &self.value, self.size).serialize(s)?;
-    Ok(())
+    (self.signed, &self.value, self.size).serialize(s)
   }
 }
 
 impl Serializable for Identifier {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(90))?;
-    (&self.name, self.globalId, self.id).serialize(s)?;
-    Ok(())
+    (&self.name, self.globalId, self.id).serialize(s)
   }
 }
 
@@ -126,8 +127,7 @@ impl<'a> Serializable for SymbolIdentifier<'a> {
       &self.symbol_path,
       self.id.globalId,
     )
-      .serialize(s)?;
-    Ok(())
+      .serialize(s)
   }
 }
 

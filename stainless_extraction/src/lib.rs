@@ -19,6 +19,7 @@ extern crate rustc_ty;
 mod bindings;
 mod expr;
 mod flags;
+mod fns;
 mod krate;
 mod literal;
 mod spec;
@@ -56,21 +57,22 @@ pub fn extract_crate<'l, 'tcx: 'l>(
   let mut xtor = BaseExtractor::new(tcx, std_items, extraction);
   xtor.process_crate(crate_name);
 
-  let (adts, functions) = xtor.into_result();
+  let symbols = xtor.into_symbols();
 
   // Output extracted Stainless program
-  eprintln!("[ Extracted ADTs and functions ]");
-  for adt in &adts {
-    eprintln!(" - ADT {}", adt.id);
-    // eprintln!(" > {:#?}", adt);
-  }
-  for fd in &functions {
-    eprintln!(" - Fun {}", fd.id);
-    // eprintln!(" > {:#?}", fd);
-  }
+  eprintln!("[ Extracted items ]");
+  symbols.sorts.values().for_each(|adt| {
+    eprintln!(" - ADT       {}", adt.id);
+  });
+  symbols.functions.values().for_each(|fd| {
+    eprintln!(" - Function   {}", fd.id);
+  });
+  symbols.classes.values().for_each(|cd| {
+    eprintln!(" - Type class {}", cd.id);
+  });
   eprintln!();
 
-  st::Symbols::new(adts, functions)
+  symbols
 }
 
 /// Helpful type aliases
@@ -91,7 +93,9 @@ struct Extraction<'l> {
   factory: &'l st::Factory,
   adts: HashMap<StainlessSymId<'l>, &'l st::ADTSort<'l>>,
   function_refs: HashSet<DefId>,
+  method_to_class: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
+  classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
 }
 
 impl<'l> Extraction<'l> {
@@ -107,6 +111,8 @@ impl<'l> Extraction<'l> {
       adts: HashMap::new(),
       function_refs: HashSet::new(),
       functions: HashMap::new(),
+      classes: HashMap::new(),
+      method_to_class: HashMap::new(),
     }
   }
 
@@ -134,11 +140,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  fn into_result(self) -> (Vec<&'l st::ADTSort<'l>>, Vec<&'l st::FunDef<'l>>) {
+  fn into_symbols(self) -> st::Symbols<'l> {
     self.with_extraction(|xt| {
-      let adts: Vec<&st::ADTSort> = xt.adts.values().copied().collect();
-      let functions: Vec<&st::FunDef> = xt.functions.values().copied().collect();
-      (adts, functions)
+      st::Symbols::new(
+        xt.adts.values().copied().collect(),
+        xt.functions.values().copied().collect(),
+        xt.classes.values().copied().collect(),
+      )
     })
   }
 
@@ -196,7 +204,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     self.with_extraction_mut(|xt| {
       let id = xt.fresh_id(name, path);
-      assert!(xt.mapping.did_to_stid.insert(def_id, id).is_none());
+      assert!(
+        xt.mapping.did_to_stid.insert(def_id, id).is_none(),
+        "A mapping for {:?} was already registered",
+        def_id
+      );
       id
     })
   }
@@ -237,9 +249,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  fn add_function(&mut self, id: StainlessSymId<'l>, fd: &'l st::FunDef<'l>) {
+  fn add_function(&mut self, fd: &'l st::FunDef<'l>) {
     self.with_extraction_mut(|xt| {
-      assert!(xt.functions.insert(id, fd).is_none());
+      assert!(xt.functions.insert(fd.id, fd).is_none());
+    })
+  }
+
+  /// Return a reference to the class definition on which the given function is
+  /// defined as method. If the function is not a method, None is returned. The
+  /// function is identified by its id.
+  fn get_class_of_method(&mut self, id: StainlessSymId<'l>) -> Option<&'l st::ClassDef<'l>> {
+    self.with_extraction(|xt| xt.method_to_class.get(&id).map(|&cd| cd))
+  }
+
+  /// Add a class to the extraction along with references from all its methods
+  /// to the class definition.
+  #[allow(dead_code)]
+  fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
+    self.with_extraction_mut(|xt| {
+      assert!(xt.classes.insert(cd.id, cd).is_none());
+      xt.method_to_class
+        .extend(methods.into_iter().map(|method_id| (method_id, cd)))
     })
   }
 
