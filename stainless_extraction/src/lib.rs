@@ -419,11 +419,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 // If the type argument of the key is an ADT, find the evidence argument for the
                 // contained type param.
                 (
-                  (class_id, Type::ADTType(st::ADTType { .. }), _),
-                  &(key_id, Type::ADTType(st::ADTType { tps, .. }), _),
+                  TypeClassKey {
+                    id: class_id,
+                    recv_type: Type::ADTType(st::ADTType { .. }),
+                    ..
+                  },
+                  &TypeClassKey {
+                    id: key_id,
+                    recv_type: Type::ADTType(st::ADTType { tps, .. }),
+                    ..
+                  },
                 ) if class_id == key_id => {
                   let (&tparam, tparams) = tps.split_first().unwrap();
-                  let ev_arg = self.extract_method_receiver(&(class_id, tparam, tparams.to_vec()));
+                  let ev_arg = self.extract_method_receiver(&TypeClassKey {
+                    id: class_id,
+                    recv_type: tparam,
+                    tparams: tparams.to_vec(),
+                  });
 
                   ev_arg.map(|a| {
                     f.ClassConstructor(f.ClassType(cd.id, tps.clone()), vec![a])
@@ -455,8 +467,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       cd.fields.iter().find_map(|&vd| match vd.v.tpe {
         st::Type::ClassType(st::ClassType { id, tps }) => {
           let (&t, ts) = tps.split_first().unwrap();
+          let k = TypeClassKey {
+            id: *id,
+            recv_type: t,
+            tparams: ts.to_vec(),
+          };
 
-          if (*id, t, ts.to_vec()) == *key {
+          if k == *key {
             return Some(
               f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
                 .into(),
@@ -488,8 +505,12 @@ fn method_call_rcv_key<'l>(cd: &'l st::ClassDef<'l>) -> TypeClassKey {
           .collect(),
       )
     });
-  let (&t, ts) = types.split_first().unwrap();
-  (id, t, ts.to_vec())
+  let (&recv_type, ts) = types.split_first().unwrap();
+  TypeClassKey {
+    id,
+    recv_type,
+    tparams: ts.to_vec(),
+  }
 }
 
 fn unexpected<S: Into<MultiSpan>, M: Into<String>>(span: S, msg: M) -> ! {

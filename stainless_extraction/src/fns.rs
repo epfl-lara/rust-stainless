@@ -61,14 +61,15 @@ impl<'a> FnItem<'a> {
 
 /// Identifies the specific implementation/instance of a type class that is
 /// needed at a method call site.
-///
-/// 1) If this is a trait method, then the identifier is the id of the trait where
-/// the method is defined. Otherwise, of the impl where it is defined.
-///
-/// 2) The type is the receiver type (aka the type of the first argument at call site).
-/// 3) The other types are optional type parameters of the receiver type.
-pub type TypeClassKey<'l> = (
-  &'l st::SymbolIdentifier<'l>,
-  st::Type<'l>,
-  Vec<st::Type<'l>>,
-);
+#[derive(Debug, Eq, PartialEq)]
+pub struct TypeClassKey<'l> {
+  /// If this is a trait method, then the identifier is the id of the trait
+  /// where the method is defined. Otherwise, of the impl where it is defined.
+  pub id: &'l st::SymbolIdentifier<'l>,
+
+  /// The type is the receiver type (aka the type of the first argument at call site).
+  pub recv_type: st::Type<'l>,
+
+  /// The other types are optional type parameters of the receiver type.
+  pub tparams: Vec<st::Type<'l>>,
+}

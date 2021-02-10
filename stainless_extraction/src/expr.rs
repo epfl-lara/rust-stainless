@@ -379,7 +379,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     // If this function is a method, then we may need to extract it as a method call.
     // To do so, we need a type class instance as receiver.
-    match class_def.and_then(|cd| {
+    match class_def.and_then(|st::ClassDef { id, .. }| {
       // The receiver type is the type of the &self of the method call. This
       // is the first argument type. We have to extract it because we filtered
       // the self type above.
@@ -387,7 +387,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let (&t, ts) = rcv_types.split_first().unwrap();
 
       // Retrieve the needed type class instance
-      self.extract_method_receiver(&(cd.id, t, ts.to_vec()))
+      self.extract_method_receiver(&TypeClassKey {
+        id,
+        recv_type: t,
+        tparams: ts.to_vec(),
+      })
     }) {
       Some(recv) => self
         .factory()
