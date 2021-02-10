@@ -32,19 +32,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let tps = self.extract_tys(substs.types(), &tyxtctx, span);
       let parent = vec![&*f.ClassType(trait_id, tps)];
 
-      let flags = if tparams.len() == 0 {
-        vec![f.IsCaseObject().into()]
-      } else {
-        vec![]
-      };
-
       let fields = trait_bounds
         .into_iter()
         .enumerate()
         .map(|(index, ct)| {
           &*f.ValDef(f.Variable(self.fresh_id(format!("ev{}", index)), ct.into(), vec![]))
         })
-        .collect();
+        .collect::<Vec<_>>();
+
+      let flags = if tparams.is_empty() && fields.is_empty() {
+        vec![f.IsCaseObject().into()]
+      } else {
+        vec![]
+      };
 
       f.ClassDef(id, tparams, parent, fields, flags)
     }
