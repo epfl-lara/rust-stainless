@@ -45,7 +45,7 @@ impl Monoid for i32 {
     *self
   }
 }
-
+/*
 pub enum List<T> {
   Nil,
   Cons(T, Box<List<T>>),
@@ -79,3 +79,4 @@ impl Monoid for List<i32> {
     }
   }
 }
+*/

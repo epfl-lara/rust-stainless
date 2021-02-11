@@ -36,15 +36,15 @@ trait Equals {
   }
 }
 
+/*
+- 'impl<..> Z for X' and has type params => case class
+- impl<tps> => ListEquals[tps]
+- trait bounds => trait bounds implemented by evidence params
+- the trait with as last type param the 'for X' => extends trait[..., X]
+(the last two use the same translation)
+=> case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
+
 impl<T: Equals> Equals for List<T> {
-  /*
-  - 'impl<..> Z for X' and has type params => case class
-  - impl<tps> => ListEquals[tps]
-  - trait bounds => trait bounds implemented by evidence params
-  - the trait with as last type param the 'for X' => extends trait[..., X]
-  (the last two use the same translation)
-  => case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
-  */
 
   // #[measure(self)]
   fn equals(&self, other: &List<T>) -> bool {
@@ -55,6 +55,7 @@ impl<T: Equals> Equals for List<T> {
     }
   }
 }
+*/
 
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
@@ -65,35 +66,16 @@ impl Equals for i32 {
   }
 }
 
-trait Ord: Equals {
-  fn less_than_eq(&self, other: &Self) -> bool;
-
-  fn less_than(&self, other: &Self) -> bool {
-    self.less_than_eq(other) && self.not_equals(other)
-  }
-}
-
-impl Ord for i32 {
-  fn less_than_eq(&self, other: &Self) -> bool {
-    self <= other
-  }
-
-  fn less_than(&self, other: &Self) -> bool {
-    self < other
-  }
-}
-
 pub fn main() {
   let a = 2;
   let b = 4;
 
   // => IntEquals.equals(a, b)
   assert!(a.not_equals(&b));
-  assert!(a.less_than(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  assert!(list.equals(&list));
+  // let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  // assert!(list.equals(&list));
 }
 
 /*
