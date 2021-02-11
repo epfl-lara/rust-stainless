@@ -62,15 +62,6 @@ impl List<i32> {
     }
   }
 
-  #[measure(self)]
-  pub fn equals(&self, other: &List<i32>) -> bool {
-    match (self, other) {
-      (List::Nil, List::Nil) => true,
-      (List::Cons(x, xs), List::Cons(y, ys)) => x == y && xs.equals(ys),
-      _ => false,
-    }
-  }
-
   /// Inserting element 'e' into a sorted list 'l' produces a sorted list with
   /// the expected content and size
   #[pre(self.is_sorted())]

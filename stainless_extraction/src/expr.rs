@@ -6,7 +6,7 @@ use super::*;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, ParamTy, Ty, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
@@ -57,7 +57,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
       }
 
-      // TODO: Handle method calls
       // TODO: Handle arbitrary-precision integers
       ExprKind::Scope { value, .. } => self.extract_expr_ref(value),
       ExprKind::Use { source } => self.extract_expr_ref(source),
@@ -358,6 +357,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
+    let class_def = self.base.get_class_of_method(fd_id);
 
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:
@@ -366,20 +366,35 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       return self.extract_expr_ref(args.first().cloned().unwrap());
     }
 
-    // filter out self type param (this is already provided by the class)
-    let arg_tps = self.extract_arg_types(
-      substs_ref.types().filter(|ty| match ty.kind {
-        TyKind::Param(param_ty) => param_ty != ParamTy::for_self(),
-        _ => true,
-      }),
+    // FIXME: Filter out as many type params of the function as the classdef
+    //   already provides. This clearly fails when there is more than one
+    //   parent etc. => improve
+    let arg_tps_without_parents = self.extract_arg_types(
+      substs_ref
+        .types()
+        .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       span,
     );
-
     let args = self.extract_expr_refs(args.to_vec());
-    self
-      .factory()
-      .FunctionInvocation(fd_id, arg_tps, args)
-      .into()
+
+    // If this function is a method, then we may need to extract it as a method call.
+    // To do so, we need a type class instance as receiver.
+    match class_def.and_then(|st::ClassDef { id, .. }| {
+      // The receiver type is the type of the &self of the method call. This
+      // is the first argument type. We have to extract it because we filtered
+      // the self type above.
+      let recv_tps = self.base.extract_tys(substs_ref.types(), &self.txtcx, span);
+      self.extract_method_receiver(&TypeClassKey { id, recv_tps })
+    }) {
+      Some(recv) => self
+        .factory()
+        .MethodInvocation(recv, fd_id, arg_tps_without_parents, args)
+        .into(),
+      None => self
+        .factory()
+        .FunctionInvocation(fd_id, arg_tps_without_parents, args)
+        .into(),
+    }
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>

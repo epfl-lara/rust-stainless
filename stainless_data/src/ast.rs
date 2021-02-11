@@ -217,4 +217,15 @@ impl Factory {
       _ => self.And(exprs).into(),
     }
   }
+
+  pub fn class_def_to_type<'a>(&'a self, cd: &'a ClassDef<'a>) -> &'a ClassType<'a> {
+    let ClassDef { id, tparams, .. } = cd;
+    self.ClassType(
+      id,
+      tparams
+        .into_iter()
+        .map(|TypeParameterDef { tp }| tp.clone().into())
+        .collect(),
+    )
+  }
 }

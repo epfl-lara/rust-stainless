@@ -17,6 +17,7 @@ extern crate rustc_target;
 extern crate rustc_ty;
 
 mod bindings;
+mod classes;
 mod expr;
 mod flags;
 mod fns;
@@ -42,6 +43,8 @@ use rustc_span::{MultiSpan, Span};
 use stainless_data::ast as st;
 
 use bindings::DefContext;
+use fns::TypeClassKey;
+use stainless_data::ast::Type;
 use std_items::StdItems;
 use ty::TyExtractionCtxt;
 use utils::UniqueCounter;
@@ -62,7 +65,7 @@ pub fn extract_crate<'l, 'tcx: 'l>(
   // Output extracted Stainless program
   eprintln!("[ Extracted items ]");
   symbols.sorts.values().for_each(|adt| {
-    eprintln!(" - ADT       {}", adt.id);
+    eprintln!(" - ADT        {}", adt.id);
   });
   symbols.functions.values().for_each(|fd| {
     eprintln!(" - Function   {}", fd.id);
@@ -271,7 +274,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Add a class to the extraction along with references from all its methods
   /// to the class definition.
-  #[allow(dead_code)]
   fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
     self.with_extraction_mut(|xt| {
       assert!(xt.classes.insert(cd.id, cd).is_none());
@@ -281,13 +283,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Get a BodyExtractor for some item with a body (like a function)
-  fn enter_body<T, F>(&mut self, hir_id: HirId, txtcx: TyExtractionCtxt<'l>, f: F) -> T
+  fn enter_body<T, F>(
+    &mut self,
+    hir_id: HirId,
+    txtcx: TyExtractionCtxt<'l>,
+    current_class: Option<&'l st::ClassDef<'l>>,
+    f: F,
+  ) -> T
   where
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
     self.tcx.infer_ctxt().enter(|infcx| {
       // Note that upon its creation, BodyExtractor moves out our Extraction
-      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx);
+      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx, current_class);
       let result = f(&mut bxtor);
       // We reclaim the Extraction after the BodyExtractor's work is done
       self.extraction = bxtor.base.extraction;
@@ -314,6 +322,7 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
   body: &'tcx hir::Body<'tcx>,
   txtcx: TyExtractionCtxt<'l>,
   dcx: DefContext<'l>,
+  current_class: Option<&'l st::ClassDef<'l>>,
 }
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
@@ -322,6 +331,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     infcx: &'a InferCtxt<'a, 'tcx>,
     hir_id: HirId,
     txtcx: TyExtractionCtxt<'l>,
+    current_class: Option<&'l st::ClassDef<'l>>,
   ) -> Self {
     let tcx = base.tcx;
     let extraction = base.extraction.take();
@@ -350,6 +360,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       body,
       txtcx,
       dcx: DefContext::new(),
+      current_class,
     }
   }
 
@@ -370,6 +381,127 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .get_var(hir_id)
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
+
+  pub fn extract_method_receiver(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
+    let f = self.factory();
+
+    // First, check whether the receiver is the current class aka 'this'
+    self
+      .extract_this_call(key)
+      // then, check whether the receiver is one of the evidence args of the current class
+      .or_else(|| self.extract_evidence_arg_call(key))
+      // otherwise, go through the classes and search the receiver.
+      .or_else(|| {
+        // The receiver can't be an  abstract class nor the current class.
+        let (ground_cls, arg_cls): (Vec<_>, Vec<_>) = self.base.with_extraction(|xt| {
+          xt.classes
+            .values()
+            .filter(|cd| {
+              !cd.flags.contains(&f.IsAbstract().into())
+                && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
+            })
+            .map(|&cd| cd)
+            .partition(|cd| cd.fields.is_empty())
+        });
+
+        // Ground instances are the ones without further type params. This also
+        // means, they need no evidence args.
+        ground_cls
+          .iter()
+          .find_map(|cd| {
+            if method_call_rcv_key(cd) == *key {
+              Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
+            } else {
+              None
+            }
+          })
+          // The last thing to check are classes that have type parameters and
+          // hence, need evidence args. To find the args, we'll recurse.
+          .or_else(|| {
+            arg_cls.iter().find_map(|cd| {
+              let class_key = method_call_rcv_key(cd);
+
+              // If the type argument of the key is an ADT, find the evidence argument for the
+              // contained type param.
+              match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
+                (
+                  &[Type::ADTType(st::ADTType { .. }), ..],
+                  &[Type::ADTType(st::ADTType { tps, .. }), ..],
+                ) if class_key.id == key.id => {
+                  let ev_arg = self.extract_method_receiver(&TypeClassKey {
+                    id: class_key.id,
+                    recv_tps: tps.clone(),
+                  });
+
+                  ev_arg.map(|a| {
+                    f.ClassConstructor(f.ClassType(cd.id, tps.clone()), vec![a])
+                      .into()
+                  })
+                }
+                _ => None,
+              }
+            })
+          })
+      })
+  }
+
+  /// Tries to extract a call to 'this' as a method receiver, returns None if the
+  /// key doesn't match the current class def aka 'this'.
+  fn extract_this_call(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
+    let f = self.factory();
+    self
+      .current_class
+      .filter(|cd| method_call_rcv_key(cd) == *key)
+      .map(|cd| f.This(f.class_def_to_type(cd)).into())
+  }
+
+  /// Tries to extract a call to an evidence argument of the current class.
+  /// Returns None if no evidence argument matches the key.
+  fn extract_evidence_arg_call(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
+    let f = self.factory();
+    self.current_class.and_then(|cd| {
+      cd.fields.iter().find_map(|&vd| match vd.v.tpe {
+        st::Type::ClassType(st::ClassType { id, tps }) => {
+          let k = TypeClassKey {
+            id: *id,
+            recv_tps: tps.clone(),
+          };
+
+          if k == *key {
+            return Some(
+              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
+                .into(),
+            );
+          }
+          None
+        }
+        _ => None,
+      })
+    })
+  }
+}
+
+/// Find the type-class-key of the receiver of a method called on this class.
+/// The receiver key is either:
+///
+/// 1. the trait this class implements along with the instantiated type params of the trait,
+/// 2. if this class is a trait definition, it's the self type param aka its own key.
+///
+fn method_call_rcv_key<'l>(cd: &'l st::ClassDef<'l>) -> TypeClassKey {
+  cd.parents
+    .first()
+    .map(|st::ClassType { id, tps }| TypeClassKey {
+      id,
+      recv_tps: tps.clone(),
+    })
+    .unwrap_or_else(|| TypeClassKey {
+      id: cd.id,
+      recv_tps: cd
+        .tparams
+        .iter()
+        .map(|&&st::TypeParameterDef { tp }| tp.into())
+        .collect::<Vec<_>>(),
+    })
 }
 
 fn unexpected<S: Into<MultiSpan>, M: Into<String>>(span: S, msg: M) -> ! {

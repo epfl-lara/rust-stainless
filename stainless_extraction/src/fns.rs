@@ -58,3 +58,17 @@ impl<'a> FnItem<'a> {
     self.span.from_expansion() && self.spec_type.is_some()
   }
 }
+
+/// Identifies the specific implementation/instance of a type class that is
+/// needed at a method call site.
+#[derive(Debug, Eq, PartialEq)]
+pub struct TypeClassKey<'l> {
+  /// If this is a trait method, then the identifier is the id of the trait
+  /// where the method is defined. Otherwise, of the impl where it is defined.
+  pub id: &'l st::SymbolIdentifier<'l>,
+
+  /// The first element of the vector is the receiver type (aka the type of the
+  /// first argument at call site). Additional types are optional type
+  /// parameters of the receiver type.
+  pub recv_tps: Vec<st::Type<'l>>,
+}
