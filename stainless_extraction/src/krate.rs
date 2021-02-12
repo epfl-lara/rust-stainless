@@ -629,7 +629,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       Some(sort) => sort,
       None => {
         let f = self.factory();
-        let adt_id = self.register_def(def_id);
+        let adt_id = self.get_or_register_def(def_id);
         let adt_def = self.tcx.adt_def(def_id);
 
         // Extract flags

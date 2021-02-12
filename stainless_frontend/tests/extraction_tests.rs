@@ -73,6 +73,7 @@ macro_rules! define_tests {
 //  - fail_extraction: ensures that extraction rejects the program
 //  - fail_verification: ensures that verification rejects the program
 define_tests!(
+  pass: adt_use_before_declare,
   pass: adts,
   pass: blocks,
   pass: boxes,
