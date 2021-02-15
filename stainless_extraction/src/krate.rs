@@ -34,7 +34,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
         ItemKind::Use(ref path, _) => {
           let path_str = pretty_path(path);
-          path_str.starts_with("::std::prelude::v") || path_str.starts_with("stainless")
+          path_str.contains("std::prelude") || path_str.starts_with("stainless")
         }
         // TODO: Quick fix to filter our synthetic functions
         // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
