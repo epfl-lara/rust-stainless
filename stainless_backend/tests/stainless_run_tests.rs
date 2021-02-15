@@ -28,7 +28,7 @@ fn test_many_queries() {
   let mut backend = Backend::create(Config::default()).unwrap();
   for _ in 0..5 {
     let response = backend.query_for_program(&symbols).unwrap();
-    if let Some(report) = response.into_verification_report() {
+    if let Ok(report) = response.into_verification_report() {
       assert!(reponse_has_no_errors(report));
     } else {
       assert!(false);

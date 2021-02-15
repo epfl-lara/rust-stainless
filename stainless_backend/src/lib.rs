@@ -138,7 +138,5 @@ fn find_stainless_home() -> Result<PathBuf, String> {
 pub fn verify_program(config: Config, symbols: &st::Symbols) -> Result<Report, String> {
   let mut backend = Backend::create(config)?;
   let response = backend.query_for_program(symbols)?;
-  response
-    .into_verification_report()
-    .ok_or_else(|| "No verification report found".into())
+  response.into_verification_report()
 }

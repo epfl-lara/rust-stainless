@@ -9,14 +9,16 @@ pub enum Response {
 }
 
 impl Response {
-  #[allow(unreachable_patterns)]
-  pub fn into_verification_report(self) -> Option<Report> {
+  pub fn into_verification_report(self) -> Result<Report, String> {
     match self {
-      Response::Success { reports } => reports.into_iter().find(|report| match report {
-        Report::Verification { .. } => true,
-        _ => false,
-      }),
-      _ => None,
+      Response::Success { reports } => reports
+        .into_iter()
+        .find(|report| match report {
+          Report::Verification { .. } => true,
+        })
+        .ok_or("No verification report found".into()),
+
+      Response::Error { msg } => Err(msg),
     }
   }
 }
