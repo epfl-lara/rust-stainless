@@ -772,16 +772,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     m.make_mirror(&mut self.hcx)
   }
 
-  fn strip_scopes(&mut self, expr: Expr<'tcx>) -> Expr<'tcx> {
-    match expr.kind {
-      ExprKind::Scope { value, .. } => {
-        let expr = self.mirror(value);
-        self.strip_scopes(expr)
-      }
-      _ => expr,
-    }
-  }
-
   /// Detect whether the given match corresponds to an if expression by its
   /// shape.
   fn looks_like_if(&mut self, scrutinee: &Expr<'tcx>, arms: &[Arm<'tcx>]) -> bool {
