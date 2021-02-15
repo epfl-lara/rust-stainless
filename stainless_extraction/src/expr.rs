@@ -45,14 +45,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         mut arms,
       } => {
         let scrutinee = self.mirror(scrutinee);
-        match self.looks_like_if(&scrutinee, &arms) {
-          Some(has_elze) => {
-            let elze = arms.pop().unwrap().body;
-            let then = arms.pop().unwrap().body;
-            let elze_opt = if has_elze { Some(elze) } else { None };
-            self.extract_if(scrutinee, then, elze_opt)
-          }
-          None => self.extract_match(scrutinee, arms),
+        if self.looks_like_if(&scrutinee, &arms) {
+          let elze = arms.pop().unwrap().body;
+          let then = arms.pop().unwrap().body;
+          self.extract_if(scrutinee, then, elze)
+        } else {
+          self.extract_match(scrutinee, arms)
         }
       }
 
@@ -548,18 +546,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     cond: Expr<'tcx>,
     then: ExprRef<'tcx>,
-    elze_opt: Option<ExprRef<'tcx>>,
+    elze: ExprRef<'tcx>,
   ) -> st::Expr<'l> {
-    let f = self.factory();
     let cond = self.extract_expr(cond);
     let then = self.extract_expr_ref(then);
-    let elze = elze_opt
-      .map(|e| self.extract_expr_ref(e))
-      .unwrap_or_else(|| {
-        // TODO: Match the type of the then branch?
-        f.UnitLiteral().into()
-      });
-    f.IfExpr(cond, then, elze).into()
+    let elze = self.extract_expr_ref(elze);
+
+    self.factory().IfExpr(cond, then, elze).into()
   }
 
   fn extract_match(&mut self, scrutinee: Expr<'tcx>, arms: Vec<Arm<'tcx>>) -> st::Expr<'l> {
@@ -791,12 +784,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Detect whether the given match corresponds to an if expression by its
   /// shape.
-  fn looks_like_if(&mut self, scrutinee: &Expr<'tcx>, arms: &[Arm<'tcx>]) -> Option<bool> {
+  fn looks_like_if(&mut self, scrutinee: &Expr<'tcx>, arms: &[Arm<'tcx>]) -> bool {
     // Ifs are encoded as ExprKind::Match with two arms, one for the then_expr,
     // one for the else_expr. The then_expr's pattern is a constant 'true' pattern, while
     // the else_expr's is a wildcard pattern. The else_expr may contain itself an ExprKind::Match
     // for a possible 'else if {}' (recurse on 'if {}').
-    let is_if = arms.len() == 2
+    arms.len() == 2
       && scrutinee.ty.is_bool()
       && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
         (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
@@ -806,22 +799,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           }
         }
         _ => false,
-      };
-
-    if is_if {
-      let elze = self.mirror(arms[1].body.clone());
-      match self.strip_scopes(elze).kind {
-        ExprKind::Block { body: ast_block } => {
-          let Block { stmts, expr, .. } = self.mirror(ast_block);
-          let elze_missing = stmts.is_empty() && expr.is_none();
-          Some(!elze_missing)
-        }
-        ExprKind::Match { .. } => Some(true),
-        _ => unreachable!(),
       }
-    } else {
-      None
-    }
   }
 
   fn try_pattern_to_var(
