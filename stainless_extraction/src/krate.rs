@@ -194,7 +194,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           }
 
           _ => {
-            self.xtor.unsupported(item.span, "Other kind of item");
+            self
+              .xtor
+              .unsupported(item.span, format!("Other kind of item {:?}", item.kind));
           }
         }
       }
