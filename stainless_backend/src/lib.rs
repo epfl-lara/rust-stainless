@@ -59,7 +59,12 @@ impl Backend {
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
       .arg(format!("--print-types={}", config.print_types))
-      .arg(format!("--strict-arithmetic={}", config.strict_arithmetic));
+      .arg(format!("--strict-arithmetic={}", config.strict_arithmetic))
+      // FIXME: Turn the measure inference back on as soon as
+      //   https://github.com/epfl-lara/rust-stainless/issues/68
+      //   is solved.
+      .arg("--infer-measures=no")
+      .arg("--check-measures=false");
     if config.debug_trees {
       cmd
         .arg("--debug=trees")
@@ -138,7 +143,5 @@ fn find_stainless_home() -> Result<PathBuf, String> {
 pub fn verify_program(config: Config, symbols: &st::Symbols) -> Result<Report, String> {
   let mut backend = Backend::create(config)?;
   let response = backend.query_for_program(symbols)?;
-  response
-    .into_verification_report()
-    .ok_or_else(|| "No verification report found".into())
+  response.into_verification_report()
 }

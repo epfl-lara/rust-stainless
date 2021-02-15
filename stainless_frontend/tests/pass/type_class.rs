@@ -18,7 +18,7 @@ trait Equals {
     // => this.equals(self, x)
     !self.equals(x)
   }
-
+  /*
   #[law]
   fn law_reflexive(x: &Self) -> bool {
     // => this.equals(x, x)
@@ -33,7 +33,7 @@ trait Equals {
   #[law]
   fn law_transitive(x: &Self, y: &Self, z: &Self) -> bool {
     !(x.equals(y) && y.equals(z)) || x.equals(z)
-  }
+  }*/
 }
 
 /*
@@ -43,9 +43,8 @@ trait Equals {
 - the trait with as last type param the 'for X' => extends trait[..., X]
 (the last two use the same translation)
 => case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
-
+*/
 impl<T: Equals> Equals for List<T> {
-
   // #[measure(self)]
   fn equals(&self, other: &List<T>) -> bool {
     match (self, other) {
@@ -55,7 +54,6 @@ impl<T: Equals> Equals for List<T> {
     }
   }
 }
-*/
 
 // case object IntEquals extends Equals[i32]
 impl Equals for i32 {
@@ -74,8 +72,8 @@ pub fn main() {
   assert!(a.not_equals(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  // let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  // assert!(list.equals(&list));
+  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  assert!(list.equals(&list));
 }
 
 /*

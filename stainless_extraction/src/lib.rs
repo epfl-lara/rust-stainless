@@ -382,6 +382,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
 
+  /// Extracts the receiver object/instance of a method call for a type class.
+  /// In a way, this function retrofits Scala's implicit object lookup to Rust's
+  /// completely invisible trait implementation lookup.
   pub fn extract_method_receiver(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
     let f = self.factory();
 
@@ -392,57 +395,89 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .or_else(|| self.extract_evidence_arg_call(key))
       // otherwise, go through the classes and search the receiver.
       .or_else(|| {
-        // The receiver can't be an  abstract class nor the current class.
-        let (ground_cls, arg_cls): (Vec<_>, Vec<_>) = self.base.with_extraction(|xt| {
-          xt.classes
-            .values()
-            .filter(|cd| {
-              !cd.flags.contains(&f.IsAbstract().into())
-                && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
-            })
-            .map(|&cd| cd)
-            .partition(|cd| cd.fields.is_empty())
-        });
+        let cls: Vec<_> = self
+          .base
+          .with_extraction(|xt| xt.classes.values().map(|&cd| cd).collect());
 
-        // Ground instances are the ones without further type params. This also
-        // means, they need no evidence args.
-        ground_cls
+        cls
           .iter()
+          // The receiver can't be an  abstract class nor the current class.
+          .filter(|cd| {
+            !cd.flags.contains(&f.IsAbstract().into())
+              && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
+          })
           .find_map(|cd| {
-            if method_call_rcv_key(cd) == *key {
-              Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
-            } else {
-              None
+            let class_key = method_call_rcv_key(cd);
+
+            match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
+              // If the class id is not the same, we're looking for the wrong type class.
+              _ if class_key.id != key.id => None,
+
+              // If the types match exactly, we can create a ground instance without evidence args.
+              (ctps, ktps) if ctps == ktps => {
+                Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
+              }
+
+              // If the type arguments are of **the same** ADT type, we need to
+              // match on _their_ type parameters too. Possibly recurse and find
+              // the evidence arguments for the contained type parameters.
+              (
+                &[Type::ADTType(st::ADTType {
+                  id: c_adt_id,
+                  tps: ctps,
+                }), ..],
+                &[Type::ADTType(st::ADTType {
+                  id: k_adt_id,
+                  tps: ktps,
+                }), ..],
+              ) if c_adt_id == k_adt_id => {
+                // Correlate the key type parameters with the ones from the class.
+                let ctype_to_ktype: HashMap<Type<'l>, Type<'l>> =
+                  ctps.clone().into_iter().zip(ktps.clone()).collect();
+
+                // Recurse to find the evidence arguments in the fields. If
+                // only one of them is not found, return None.
+                let args: Option<Vec<_>> = cd
+                  .fields
+                  .iter()
+                  .map(|v| self.find_evidence_arg(v, &ctype_to_ktype))
+                  .collect::<Option<Vec<st::Expr<'l>>>>();
+
+                args.map(|a| {
+                  f.ClassConstructor(f.ClassType(cd.id, ktps.clone()), a)
+                    .into()
+                })
+              }
+              _ => None,
             }
           })
-          // The last thing to check are classes that have type parameters and
-          // hence, need evidence args. To find the args, we'll recurse.
-          .or_else(|| {
-            arg_cls.iter().find_map(|cd| {
-              let class_key = method_call_rcv_key(cd);
-
-              // If the type argument of the key is an ADT, find the evidence argument for the
-              // contained type param.
-              match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
-                (
-                  &[Type::ADTType(st::ADTType { .. }), ..],
-                  &[Type::ADTType(st::ADTType { tps, .. }), ..],
-                ) if class_key.id == key.id => {
-                  let ev_arg = self.extract_method_receiver(&TypeClassKey {
-                    id: class_key.id,
-                    recv_tps: tps.clone(),
-                  });
-
-                  ev_arg.map(|a| {
-                    f.ClassConstructor(f.ClassType(cd.id, tps.clone()), vec![a])
-                      .into()
-                  })
-                }
-                _ => None,
-              }
-            })
-          })
       })
+  }
+
+  // Find an evidence argument for a field of a type class. The fields usually
+  // have generic types therefore a substitution to the actually needed types is
+  // performed with the given map.
+  fn find_evidence_arg(
+    &self,
+    field: &st::ValDef<'l>,
+    type_substs: &HashMap<Type<'l>, Type<'l>>,
+  ) -> Option<st::Expr<'l>> {
+    let &st::ValDef {
+      v: st::Variable { tpe, .. },
+    } = field;
+
+    match tpe {
+      Type::ClassType(st::ClassType { id, tps }) => {
+        // substitute the type parameters of the field with the actual types from the key
+        tps
+          .iter()
+          .map(|t| type_substs.get(t).map(|&t| t))
+          .collect::<Option<Vec<Type>>>()
+          // and recurse to find the argument
+          .and_then(|recv_tps| self.extract_method_receiver(&TypeClassKey { id, recv_tps }))
+      }
+      _ => None,
+    }
   }
 
   /// Tries to extract a call to 'this' as a method receiver, returns None if the
