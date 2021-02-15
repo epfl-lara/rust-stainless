@@ -95,6 +95,7 @@ define_tests!(
   pass: tuple_match,
   pass: tuples,
   pass: type_class,
+  pass: use_std,
   fail_verification: box_as_ref,
   fail_extraction: double_measure,
   fail_extraction: double_measure_impl,
