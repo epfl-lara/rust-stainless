@@ -382,6 +382,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
 
+  /// Extracts the receiver object/instance of a method call for a type class.
+  /// In a way, this function retrofits Scala's implicit object lookup to Rust's
+  /// completely invisible trait implementation lookup.
   pub fn extract_method_receiver(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
     let f = self.factory();
 
@@ -419,32 +422,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
               // too. Possibly recurse and find the evidence arguments for the contained type
               // parameters.
               (
-                &[Type::ADTType(st::ADTType { .. }), ..],
-                &[Type::ADTType(st::ADTType { tps, .. }), ..],
+                &[Type::ADTType(st::ADTType { tps: ctps, .. }), ..],
+                &[Type::ADTType(st::ADTType { tps: ktps, .. }), ..],
               ) => {
+                // Correlate the key type parameters with the ones from the class.
+                let ctype_to_ktype: HashMap<Type<'l>, Type<'l>> =
+                  ctps.clone().into_iter().zip(ktps.clone()).collect();
+
                 // Recurse to find the evidence arguments in the fields. If
                 // only one of them is not found, return None.
-                let args: Option<Vec<_>> = if cd.fields.is_empty() {
-                  // Prevent returning None, if fields is empty.
-                  Some(vec![])
-                } else {
-                  cd.fields
-                    .iter()
-                    .map(
-                      |&st::ValDef {
-                         v: st::Variable { id, tpe, .. },
-                       }| {
-                        self.extract_method_receiver(&TypeClassKey {
-                          id,
-                          recv_tps: vec![*tpe],
-                        })
-                      },
-                    )
-                    .collect()
-                };
+                let args: Option<Vec<_>> = cd
+                  .fields
+                  .iter()
+                  .map(|v| self.find_evidence_arg(v, &ctype_to_ktype))
+                  .collect::<Option<Vec<st::Expr<'l>>>>();
 
                 args.map(|a| {
-                  f.ClassConstructor(f.ClassType(cd.id, tps.clone()), a)
+                  f.ClassConstructor(f.ClassType(cd.id, ktps.clone()), a)
                     .into()
                 })
               }
@@ -452,6 +446,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             }
           })
       })
+  }
+
+  // Find an evidence argument for a field of a type class. The fields usually
+  // have generic types therefore a substitution to the actually needed types is
+  // performed with the given map.
+  fn find_evidence_arg(
+    &self,
+    field: &st::ValDef<'l>,
+    type_substs: &HashMap<Type<'l>, Type<'l>>,
+  ) -> Option<st::Expr<'l>> {
+    let &st::ValDef {
+      v: st::Variable { tpe, .. },
+    } = field;
+
+    match tpe {
+      Type::ClassType(st::ClassType { id, tps }) => {
+        // substitute the type parameters of the field with the actual types from the key
+        tps
+          .iter()
+          .map(|t| type_substs.get(t).map(|&t| t))
+          .collect::<Option<Vec<Type>>>()
+          // and recurse to find the argument
+          .and_then(|recv_tps| self.extract_method_receiver(&TypeClassKey { id, recv_tps }))
+      }
+      _ => None,
+    }
   }
 
   /// Tries to extract a call to 'this' as a method receiver, returns None if the
