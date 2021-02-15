@@ -418,13 +418,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
               }
 
-              // If the type arguments are ADT types, we need to match on _their_ type parameters
-              // too. Possibly recurse and find the evidence arguments for the contained type
-              // parameters.
+              // If the type arguments are of **the same** ADT type, we need to
+              // match on _their_ type parameters too. Possibly recurse and find
+              // the evidence arguments for the contained type parameters.
               (
-                &[Type::ADTType(st::ADTType { tps: ctps, .. }), ..],
-                &[Type::ADTType(st::ADTType { tps: ktps, .. }), ..],
-              ) => {
+                &[Type::ADTType(st::ADTType {
+                  id: c_adt_id,
+                  tps: ctps,
+                }), ..],
+                &[Type::ADTType(st::ADTType {
+                  id: k_adt_id,
+                  tps: ktps,
+                }), ..],
+              ) if c_adt_id == k_adt_id => {
                 // Correlate the key type parameters with the ones from the class.
                 let ctype_to_ktype: HashMap<Type<'l>, Type<'l>> =
                   ctps.clone().into_iter().zip(ktps.clone()).collect();
