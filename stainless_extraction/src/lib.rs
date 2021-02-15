@@ -392,55 +392,64 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .or_else(|| self.extract_evidence_arg_call(key))
       // otherwise, go through the classes and search the receiver.
       .or_else(|| {
-        // The receiver can't be an  abstract class nor the current class.
-        let (ground_cls, arg_cls): (Vec<_>, Vec<_>) = self.base.with_extraction(|xt| {
-          xt.classes
-            .values()
-            .filter(|cd| {
-              !cd.flags.contains(&f.IsAbstract().into())
-                && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
-            })
-            .map(|&cd| cd)
-            .partition(|cd| cd.fields.is_empty())
-        });
+        let cls: Vec<_> = self
+          .base
+          .with_extraction(|xt| xt.classes.values().map(|&cd| cd).collect());
 
-        // Ground instances are the ones without further type params. This also
-        // means, they need no evidence args.
-        ground_cls
+        cls
           .iter()
-          .find_map(|cd| {
-            if method_call_rcv_key(cd) == *key {
-              Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
-            } else {
-              None
-            }
+          // The receiver can't be an  abstract class nor the current class.
+          .filter(|cd| {
+            !cd.flags.contains(&f.IsAbstract().into())
+              && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
           })
-          // The last thing to check are classes that have type parameters and
-          // hence, need evidence args. To find the args, we'll recurse.
-          .or_else(|| {
-            arg_cls.iter().find_map(|cd| {
-              let class_key = method_call_rcv_key(cd);
+          .find_map(|cd| {
+            let class_key = method_call_rcv_key(cd);
 
-              // If the type argument of the key is an ADT, find the evidence argument for the
-              // contained type param.
-              match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
-                (
-                  &[Type::ADTType(st::ADTType { .. }), ..],
-                  &[Type::ADTType(st::ADTType { tps, .. }), ..],
-                ) if class_key.id == key.id => {
-                  let ev_arg = self.extract_method_receiver(&TypeClassKey {
-                    id: class_key.id,
-                    recv_tps: tps.clone(),
-                  });
+            match (class_key.recv_tps.as_slice(), key.recv_tps.as_slice()) {
+              // If the class id is not the same, we're looking for the wrong type class.
+              _ if class_key.id != key.id => None,
 
-                  ev_arg.map(|a| {
-                    f.ClassConstructor(f.ClassType(cd.id, tps.clone()), vec![a])
-                      .into()
-                  })
-                }
-                _ => None,
+              // If the types match exactly, we can create a ground instance without evidence args.
+              (ctps, ktps) if ctps == ktps => {
+                Some(f.ClassConstructor(f.class_def_to_type(cd), vec![]).into())
               }
-            })
+
+              // If the type arguments are ADT types, we need to match on _their_ type parameters
+              // too. Possibly recurse and find the evidence arguments for the contained type
+              // parameters.
+              (
+                &[Type::ADTType(st::ADTType { .. }), ..],
+                &[Type::ADTType(st::ADTType { tps, .. }), ..],
+              ) => {
+                // Recurse to find the evidence arguments in the fields. If
+                // only one of them is not found, return None.
+                let args: Option<Vec<_>> = if cd.fields.is_empty() {
+                  // Prevent returning None, if fields is empty.
+                  Some(vec![])
+                } else {
+                  cd.fields
+                    .iter()
+                    .map(
+                      |&st::ValDef {
+                         v: st::Variable { id, tpe, .. },
+                       }| {
+                        self.extract_method_receiver(&TypeClassKey {
+                          id,
+                          recv_tps: vec![*tpe],
+                        })
+                      },
+                    )
+                    .collect()
+                };
+
+                args.map(|a| {
+                  f.ClassConstructor(f.ClassType(cd.id, tps.clone()), a)
+                    .into()
+                })
+              }
+              _ => None,
+            }
           })
       })
   }
