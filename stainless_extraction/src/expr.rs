@@ -44,16 +44,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         scrutinee,
         mut arms,
       } => {
-        // TODO: Avoid this clone by just looking up the type of scrutinee for looks_like_if
-        let scrutinee_ = scrutinee.clone();
-        match self.looks_like_if(scrutinee, &arms) {
+        let scrutinee = self.mirror(scrutinee);
+        match self.looks_like_if(&scrutinee, &arms) {
           Some(has_elze) => {
             let elze = arms.pop().unwrap().body;
             let then = arms.pop().unwrap().body;
             let elze_opt = if has_elze { Some(elze) } else { None };
-            self.extract_if(scrutinee_, then, elze_opt)
+            self.extract_if(scrutinee, then, elze_opt)
           }
-          None => self.extract_match(scrutinee_, arms),
+          None => self.extract_match(scrutinee, arms),
         }
       }
 
@@ -547,12 +546,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_if(
     &mut self,
-    cond: ExprRef<'tcx>,
+    cond: Expr<'tcx>,
     then: ExprRef<'tcx>,
     elze_opt: Option<ExprRef<'tcx>>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let cond = self.extract_expr_ref(cond);
+    let cond = self.extract_expr(cond);
     let then = self.extract_expr_ref(then);
     let elze = elze_opt
       .map(|e| self.extract_expr_ref(e))
@@ -563,8 +562,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     f.IfExpr(cond, then, elze).into()
   }
 
-  fn extract_match(&mut self, scrutinee: ExprRef<'tcx>, arms: Vec<Arm<'tcx>>) -> st::Expr<'l> {
-    let scrutinee = self.extract_expr_ref(scrutinee);
+  fn extract_match(&mut self, scrutinee: Expr<'tcx>, arms: Vec<Arm<'tcx>>) -> st::Expr<'l> {
+    let scrutinee = self.extract_expr(scrutinee);
     let cases = arms.into_iter().map(|arm| self.extract_arm(arm)).collect();
     self.factory().MatchExpr(scrutinee, cases).into()
   }
@@ -790,16 +789,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  /// Try to detect whether the given match corresponds to an if expression.
-  /// Returns None if it is not an if expression and Some(has_elze) otherwise.
-  fn looks_like_if(&mut self, scrutinee: ExprRef<'tcx>, arms: &[Arm<'tcx>]) -> Option<bool> {
-    let cond = self.mirror(scrutinee);
+  /// Detect whether the given match corresponds to an if expression by its
+  /// shape.
+  fn looks_like_if(&mut self, scrutinee: &Expr<'tcx>, arms: &[Arm<'tcx>]) -> Option<bool> {
+    // Ifs are encoded as ExprKind::Match with two arms, one for the then_expr,
+    // one for the else_expr. The then_expr's pattern is a constant 'true' pattern, while
+    // the else_expr's is a wildcard pattern. The else_expr may contain itself an ExprKind::Match
+    // for a possible 'else if {}' (recurse on 'if {}').
     let is_if = arms.len() == 2
-      && cond.ty.is_bool()
+      && scrutinee.ty.is_bool()
       && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
         (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
           match Literal::try_from(*konst) {
-            Ok(Literal::Bool(true)) => true,
+            Ok(Literal::Bool(b)) => b,
             _ => false,
           }
         }
@@ -814,6 +816,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           let elze_missing = stmts.is_empty() && expr.is_none();
           Some(!elze_missing)
         }
+        ExprKind::Match { .. } => Some(true),
         _ => unreachable!(),
       }
     } else {
