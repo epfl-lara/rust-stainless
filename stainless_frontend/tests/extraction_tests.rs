@@ -83,6 +83,7 @@ define_tests!(
   pass: fn_ref_param,
   pass: generic_id,
   pass: generic_option,
+  pass: generic_result,
   pass: impl_fns,
   pass: insertion_sort,
   pass: int_operators,
