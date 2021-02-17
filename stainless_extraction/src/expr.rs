@@ -3,6 +3,8 @@ use super::std_items::StdItem;
 use super::std_items::StdItem::*;
 use super::*;
 
+use crate::spec::SpecType;
+
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
@@ -707,20 +709,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       match stmt.kind {
         // Spec expressions
-        StmtKind::Let {
-          // The lint level contains the HIR id we need to retrieve the
-          // attributes. Attributes mark spec closure expressions.
-          lint_level: hair::LintLevel::Explicit(stmt_hir_id),
-          initializer:
-            Some(hair::ExprRef::Hair(hir::Expr {
+        StmtKind::Expr {
+          expr:
+            hair::ExprRef::Hair(hir::Expr {
               hir_id,
               kind: hir::ExprKind::Closure(hir::CaptureBy::Ref, _, _, _, Option::None),
-              ..
-            })),
-          ref pattern,
+              attrs,
+              span,
+            }),
           ..
         } => {
-          if let Some(spec_type) = self.base.extract_flags(stmt_hir_id).0.get_spec_type() {
+          if let Ok(spec_type) = SpecType::try_from(&**attrs) {
             // first extract the rest of the block, to wrap the spec around it
             let exprs = acc_exprs.clone();
             acc_exprs.clear();
@@ -730,7 +729,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             let spec_expr = self.extract_spec_closure(*hir_id, spec_type, body_expr);
             finish(exprs, spec_expr)
           } else {
-            bail("Cannot extract closure that is not a spec.", pattern.span)
+            bail("Cannot extract closure that is not a spec.", *span)
           }
         }
 

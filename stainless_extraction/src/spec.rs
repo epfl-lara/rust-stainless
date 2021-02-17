@@ -3,9 +3,11 @@ use std::convert::TryFrom;
 use std::result::Result;
 
 use super::*;
+use crate::flags::{extract_flag, Flag};
 use crate::ty::{all_generic_params_of, TyExtractionCtxt};
 
-use crate::flags::Flag;
+use rustc_ast::ast::Attribute;
+
 use stainless_data::ast as st;
 
 /// Types of spec functions (pre-, postconditions, ...) and some helping
@@ -37,16 +39,31 @@ impl SpecType {
   }
 }
 
-impl TryFrom<&Flag> for SpecType {
+impl TryFrom<Flag> for SpecType {
   type Error = ();
 
-  fn try_from(flag: &Flag) -> Result<Self, Self::Error> {
+  fn try_from(flag: Flag) -> Result<Self, Self::Error> {
     match flag {
       Flag::Pre => Ok(SpecType::Pre),
       Flag::Post => Ok(SpecType::Post),
       Flag::Measure => Ok(SpecType::Measure),
       _ => Err(()),
     }
+  }
+}
+
+impl TryFrom<&[Attribute]> for SpecType {
+  type Error = ();
+
+  fn try_from(attrs: &[Attribute]) -> Result<Self, Self::Error> {
+    attrs
+      .iter()
+      .find_map(|a| {
+        extract_flag(a)
+          .ok()
+          .and_then(|(flag, _)| SpecType::try_from(flag).ok())
+      })
+      .ok_or(())
   }
 }
 

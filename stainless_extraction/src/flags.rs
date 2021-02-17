@@ -1,15 +1,12 @@
 use super::*;
 
 use std::collections::HashSet;
-use std::convert::TryFrom;
 
-use rustc_ast::ast::{AttrKind, MacArgs};
+use rustc_ast::ast::{self as ast, AttrKind, Attribute, MacArgs};
 use rustc_ast::token::{Lit, LitKind, TokenKind};
 use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_hir::HirId;
 use rustc_span::symbol::{kw, Symbol};
-
-use crate::spec::SpecType;
 
 use stainless_data::ast as st;
 
@@ -58,10 +55,6 @@ impl Flags {
       })
       .collect()
   }
-
-  pub fn get_spec_type(&self) -> Option<SpecType> {
-    self.set.iter().map(SpecType::try_from).find_map(|r| r.ok())
-  }
 }
 
 use Flag::*;
@@ -96,6 +89,32 @@ lazy_static! {
   };
 }
 
+pub(super) fn extract_flag(
+  attr: &Attribute,
+) -> Result<(Flag, Option<TokenStream>), Option<String>> {
+  match &attr.kind {
+    AttrKind::Normal(ast::AttrItem {
+      path: ast::Path { ref segments, .. },
+      args,
+      ..
+    }) if segments.len() == 3 && segments[1].ident.to_string() == "stainless" => {
+      let name = segments[2].ident.to_string();
+
+      Flag::from_name(name.as_str())
+        .ok_or(Some(format!("Unknown stainless annotation: {}", name)))
+        .and_then(|flag| match &args {
+          MacArgs::Empty => Ok((flag, None)),
+          MacArgs::Delimited(_, _, tokens) => Ok((flag, Some(tokens.clone()))),
+
+          _ => Err(Some(
+            "Unsupported target specified on stainless annotation".into(),
+          )),
+        })
+    }
+    _ => Err(None),
+  }
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_flags(&self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
     let attrs = self.tcx.hir().attrs(carrier_hid);
@@ -103,35 +122,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut flags_by_symbol: HashMap<Symbol, Flags> = HashMap::new();
 
     for attr in attrs {
-      let (flag, arg_tokens) = if let AttrKind::Normal(ref attr) = attr.kind {
-        let segments = &attr.path.segments;
-        if segments.len() == 3 && segments[1].ident.to_string() == "stainless" {
-          let name = segments[2].ident.to_string();
-          if let Some(flag) = Flag::from_name(name.as_str()) {
-            let arg_tokens: Option<TokenStream> = match &attr.args {
-              MacArgs::Empty => None,
-              MacArgs::Delimited(_, _, tokens) => Some(tokens.clone()),
-              _ => {
-                self.tcx.sess.span_warn(
-                  attr.span(),
-                  "Unsupported target specified on stainless annotation",
-                );
-                continue;
-              }
-            };
-            (flag, arg_tokens)
-          } else {
-            self.tcx.sess.span_warn(
-              attr.span(),
-              format!("Unknown stainless annotation: {}", name).as_str(),
-            );
-            continue;
-          }
-        } else {
+      let (flag, arg_tokens) = match extract_flag(attr) {
+        Ok((f, a)) => (f, a),
+        Err(Some(mess)) => {
+          self.tcx.sess.span_warn(attr.span, &mess);
           continue;
         }
-      } else {
-        continue;
+        Err(None) => continue,
       };
 
       let mut add_by_symbol = |symbol: Symbol| {
