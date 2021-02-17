@@ -13,8 +13,6 @@ use rustc_hair::hair::{
   Mirror, Pat, PatKind, StmtKind, StmtRef,
 };
 
-use stainless_data::ast as st;
-
 type Result<T> = std::result::Result<T, &'static str>;
 
 /// Extraction of bodies (i.e., expressions, for the most part)
@@ -723,16 +721,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           } else if let Err(reason) = var_result {
             // TODO: Desugar complex patterns
             bail(format!("Cannot extract complex pattern in let: {}", reason).as_str())
-          } else if initializer.is_none() {
-            bail("Cannot extract let without initializer")
-          } else {
+          } else if let Some(init) = initializer {
             let vd = f.ValDef(var_result.unwrap());
-            let init = self.extract_expr_ref(initializer.unwrap());
+            let init = self.extract_expr_ref(init);
             let exprs = acc_exprs.clone();
             acc_exprs.clear();
             let body_expr = self.extract_block_(stmts, acc_exprs, final_expr);
             let last_expr = f.Let(vd, init, body_expr).into();
             finish(exprs, last_expr)
+          } else {
+            bail("Cannot extract let without initializer")
           }
         }
 

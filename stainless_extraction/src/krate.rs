@@ -449,18 +449,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .base
           .extract_ty(sig.output(), &bxtor.txtcx, decl.output.span());
 
-        let params: Params<'l> = bxtor
-          .body
-          .params
-          .iter()
-          .map(|param| &*f.ValDef(bxtor.fetch_var(param.pat.hir_id)))
-          .collect();
-
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
 
-        (params, return_tpe, body_expr)
+        (bxtor.body_params(), return_tpe, body_expr)
       });
 
     self.report_unused_flags(hir_id, &flags_by_symbol);
@@ -569,7 +562,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     };
 
     let hir_id = self.tcx.hir().as_local_hir_id(def_id.expect_local());
-    // FIXME: provide real tc_instances
     self.enter_body(hir_id, txtcx, None, |bxtor| {
       // Correlate term parameters
       let mut param_hir_ids: Vec<HirId> = bxtor
@@ -578,24 +570,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .iter()
         .map(|param| param.pat.hir_id)
         .collect();
-      let return_hir_id = if return_var.is_some() {
-        Some(
-          param_hir_ids
-            .pop()
-            .expect("No return parameter on post spec function"),
-        )
-      } else {
-        None
-      };
+
+      // Preregister `ret` binding with return_id, if any
+      if let Some(rv) = return_var {
+        let return_hir_id = param_hir_ids
+          .pop()
+          .expect("No return parameter on post spec function");
+
+        bxtor.dcx.add_var(return_hir_id, rv);
+      }
 
       assert_eq!(original_params.len(), param_hir_ids.len());
       for (vd, hir_id) in original_params.iter().zip(param_hir_ids) {
         bxtor.dcx.add_var(hir_id, vd.v);
-      }
-
-      // Preregister `ret` binding with return_id, if any
-      if let Some(return_var) = return_var {
-        bxtor.dcx.add_var(return_hir_id.unwrap(), return_var);
       }
 
       // Pick up any additional local bindings

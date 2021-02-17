@@ -80,7 +80,7 @@ lazy_static! {
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  pub(super) fn extract_flags(&mut self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
+  pub(super) fn extract_flags(&self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
     let attrs = self.tcx.hir().attrs(carrier_hid);
     let mut carrier_flags = Flags::new();
     let mut flags_by_symbol: HashMap<Symbol, Flags> = HashMap::new();
