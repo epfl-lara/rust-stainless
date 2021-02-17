@@ -1,12 +1,15 @@
 use super::*;
 
 use std::collections::HashSet;
+use std::convert::TryFrom;
 
 use rustc_ast::ast::{AttrKind, MacArgs};
 use rustc_ast::token::{Lit, LitKind, TokenKind};
 use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_hir::HirId;
 use rustc_span::symbol::{kw, Symbol};
+
+use crate::spec::SpecType;
 
 use stainless_data::ast as st;
 
@@ -17,6 +20,9 @@ pub(super) enum Flag {
   IsMutable,
   IsVar,
   Law,
+  Pre,
+  Post,
+  Measure,
 }
 
 #[derive(Clone, Debug)]
@@ -39,14 +45,22 @@ impl Flags {
     self
       .set
       .iter()
-      .map(|flag| match flag {
-        Extern => f.Extern().into(),
-        IsPure => f.IsPure().into(),
-        IsMutable => f.IsMutable().into(),
-        IsVar => f.IsVar().into(),
-        Law => f.Law().into(),
+      .filter_map(|flag| match flag {
+        Extern => Some(f.Extern().into()),
+        IsPure => Some(f.IsPure().into()),
+        IsMutable => Some(f.IsMutable().into()),
+        IsVar => Some(f.IsVar().into()),
+        Law => Some(f.Law().into()),
+
+        // Or pattern instead of wildcard '_' to keep the compiler checking that
+        // all variants are covered.
+        Pre | Post | Measure => None,
       })
       .collect()
+  }
+
+  pub fn get_spec_type(&self) -> Option<SpecType> {
+    self.set.iter().map(SpecType::try_from).find_map(|r| r.ok())
   }
 }
 
@@ -60,6 +74,9 @@ impl Flag {
       IsMutable => "mutable",
       IsVar => "var",
       Law => "law",
+      Pre => "pre",
+      Post => "post",
+      Measure => "measure",
     }
   }
 
@@ -69,7 +86,7 @@ impl Flag {
 }
 
 lazy_static! {
-  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law];
+  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law, Pre, Post, Measure];
   static ref FLAGS_BY_NAME: HashMap<&'static str, Flag> = {
     let mut flags: HashMap<&'static str, Flag> = HashMap::new();
     for &flag in FLAGS.iter() {

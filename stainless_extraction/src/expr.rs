@@ -698,29 +698,63 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     if let Some(stmt) = stmts.pop() {
       let stmt = self.mirror(stmt);
+
+      let bail = |msg, span| -> st::Expr<'l> {
+        self.base.unsupported(span, msg);
+        f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
+          .into()
+      };
+
       match stmt.kind {
+        // Spec expressions
+        StmtKind::Let {
+          // The lint level contains the HIR id we need to retrieve the
+          // attributes. Attributes mark spec closure expressions.
+          lint_level: hair::LintLevel::Explicit(stmt_hir_id),
+          initializer:
+            Some(hair::ExprRef::Hair(hir::Expr {
+              hir_id,
+              kind: hir::ExprKind::Closure(hir::CaptureBy::Ref, _, _, _, Option::None),
+              ..
+            })),
+          ref pattern,
+          ..
+        } => {
+          if let Some(spec_type) = self.base.extract_flags(stmt_hir_id).0.get_spec_type() {
+            // first extract the rest of the block, to wrap the spec around it
+            let exprs = acc_exprs.clone();
+            acc_exprs.clear();
+            let body_expr = self.extract_block_(stmts, acc_exprs, final_expr);
+
+            // extract the spec and wrap it around the body
+            let spec_expr = self.extract_spec_closure(*hir_id, spec_type, body_expr);
+            finish(exprs, spec_expr)
+          } else {
+            bail("Cannot extract closure that is not a spec.", pattern.span)
+          }
+        }
+
         StmtKind::Let {
           pattern,
           initializer,
           ..
         } => {
-          let span = pattern.span;
-          let bail = |msg| -> st::Expr<'l> {
-            self.base.unsupported(span, msg);
-            f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
-              .into()
-          };
-
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
           let var_result = self.try_pattern_to_var(&pattern.kind, false);
 
           if has_abnormal_source {
             // TODO: Support for loops
-            bail("Cannot extract let that resulted from desugaring")
+            bail(
+              "Cannot extract let that resulted from desugaring",
+              pattern.span,
+            )
           } else if let Err(reason) = var_result {
             // TODO: Desugar complex patterns
-            bail(format!("Cannot extract complex pattern in let: {}", reason).as_str())
+            bail(
+              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
+              pattern.span,
+            )
           } else if let Some(init) = initializer {
             let vd = f.ValDef(var_result.unwrap());
             let init = self.extract_expr_ref(init);
@@ -730,7 +764,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             let last_expr = f.Let(vd, init, body_expr).into();
             finish(exprs, last_expr)
           } else {
-            bail("Cannot extract let without initializer")
+            bail("Cannot extract let without initializer", pattern.span)
           }
         }
 
