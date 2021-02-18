@@ -1,9 +1,12 @@
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
-use syn::{parse_quote, Attribute, Expr, ItemFn, Result, ReturnType, Stmt, Type};
+use syn::{
+  parse_quote, Attribute, Expr, FnArg, ItemFn, Receiver, Result, ReturnType, Stmt, Token, Type,
+};
 
 use std::convert::TryFrom;
 use std::iter;
+use syn::punctuated::Punctuated;
 
 /// Specs (pre-, postconditions, ...)
 #[derive(Debug, PartialEq, Eq)]
@@ -92,7 +95,30 @@ fn try_parse(
 }
 
 fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
-  let fn_arg_tys = &item_fn.sig.inputs;
+  // Take the arguments of the actual function to create the arguments of the
+  // closure.
+  let fn_arg_tys: Vec<_> = item_fn.sig.inputs.iter().cloned().collect();
+
+  // Replace the [&]self param with a _self: [&]Self
+  let fn_arg_tys: Punctuated<FnArg, Token![,]> = (match &fn_arg_tys[..] {
+    [FnArg::Receiver(Receiver {
+      mutability: None,
+      reference,
+      ..
+    }), args @ ..] => {
+      let new_self: FnArg = if reference.is_some() {
+        parse_quote! { _self: &Self }
+      } else {
+        parse_quote! { _self: Self }
+      };
+      [&[new_self], args].concat()
+    }
+
+    args => args.to_vec(),
+  })
+  .into_iter()
+  .collect();
+
   let fn_return_ty: Type = match &item_fn.sig.output {
     ReturnType::Type(_, ty) => *ty.clone(),
     ReturnType::Default => parse_quote! { () },
@@ -106,14 +132,15 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
       _ => quote! {},
     };
 
-    let expr = spec.expr;
+    let expr: TokenStream = replace_ident(spec.expr.to_token_stream(), "self", "_self");
+
     let (return_type, body): (Type, TokenStream) = match spec.typ {
       SpecType::Measure => (parse_quote!(()), parse_quote! { #expr; }),
       _ => (parse_quote!(bool), parse_quote! { #expr }),
     };
 
     parse_quote! {
-      #[allow(unused_variables)]
+      #[allow(unused)]
       #[clippy::stainless::#spec_type]
       |#fn_arg_tys#ret_param| -> #return_type {
         #body
@@ -136,9 +163,9 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
   #[allow(clippy::reversed_empty_ranges)]
   {
     // Post specs need to go first, because they need to wrap the entire tree.
-    item_fn.block.stmts.splice(0..0, post_spec_fns);
     item_fn.block.stmts.splice(0..0, measure_spec_fns);
     item_fn.block.stmts.splice(0..0, pre_spec_fns);
+    item_fn.block.stmts.splice(0..0, post_spec_fns);
   }
   item_fn
 }
@@ -183,4 +210,24 @@ pub fn rewrite_flag(
     #[clippy::stainless::#flag_name#args]
     #item
   }
+}
+
+/// Recursively replaces any identifiers with the given string in the entire
+/// token stream by new identifiers with the 'replace_with' string.
+fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenStream {
+  stream
+    .into_iter()
+    .map(|tt| match tt {
+      TokenTree::Ident(ref i) if i.to_string() == ident => {
+        TokenTree::Ident(Ident::new(replace_with, i.span()))
+      }
+
+      TokenTree::Group(ref g) => TokenTree::Group(Group::new(
+        g.delimiter(),
+        replace_ident(g.stream(), ident, replace_with),
+      )),
+
+      t => t,
+    })
+    .collect()
 }
