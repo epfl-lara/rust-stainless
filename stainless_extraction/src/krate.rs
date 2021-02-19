@@ -2,7 +2,7 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, AssocItemKind, ItemKind};
+use rustc_hir::{self as hir, AssocItemKind, Defaultness, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{AssocKind, List};
 use rustc_span::DUMMY_SP;
@@ -76,30 +76,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .impl_trait_ref(def_id)
               .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
 
-            let fns = items
-              .iter()
-              .filter_map(|item| match item.kind {
-                AssocItemKind::Fn { .. } => {
-                  let fn_id = self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id();
-                  Some(
-                    self
-                      .xtor
-                      .create_fn_item(fn_id, !item.defaultness.has_value()),
-                  )
-                }
-                // ignore consts and type aliases in impl blocks
-                _ => None,
-              })
-              .collect::<Vec<_>>();
-
-            // Add the class with references to its methods to the extraction
-            class_def.map(|cd| {
-              self
-                .xtor
-                .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect())
-            });
-            // Add the functions to the visitor for further extraction
-            self.functions.extend(fns);
+            self.extract_class_item(
+              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              class_def,
+            )
           }
 
           // Extract the trait as an abstract class, the laws as normal
@@ -110,25 +90,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             // Laws and other concrete functions can be extracted like any
             // normal function. Abstract functions are marked and will be
             // treated accordingly.
-            let fns = items
-              .iter()
-              .filter_map(|item| match item.kind {
-                AssocItemKind::Fn { .. } => {
-                  let fn_id = self.xtor.tcx.hir().local_def_id(item.id.hir_id).to_def_id();
-                  Some(
-                    self
-                      .xtor
-                      .create_fn_item(fn_id, !item.defaultness.has_value()),
-                  )
-                }
-                _ => None,
-              })
-              .collect::<Vec<_>>();
-
-            self
-              .xtor
-              .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect());
-            self.functions.extend(fns)
+            self.extract_class_item(
+              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              Some(cd),
+            )
           }
 
           _ => {
@@ -159,6 +124,37 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             .xtor
             .unsupported(impl_item.span, "Impl item other than function"),
         }
+      }
+    }
+
+    impl<'l> ItemVisitor<'_, 'l, '_> {
+      fn extract_class_item<I>(&mut self, items: I, class_def: Option<&'l st::ClassDef<'l>>)
+      where
+        I: Iterator<Item = (HirId, AssocItemKind, Defaultness)>,
+      {
+        let fns = items
+          .filter_map(|(hir_id, kind, defaultness)| match kind {
+            AssocItemKind::Fn { .. } => {
+              let fn_id = self.xtor.tcx.hir().local_def_id(hir_id).to_def_id();
+              Some(FnItem::new(
+                fn_id,
+                self.extract_fn_ref(fn_id),
+                !defaultness.has_value(),
+              ))
+            }
+            // ignore consts and type aliases in impl blocks
+            _ => None,
+          })
+          .collect::<Vec<_>>();
+
+        // Add the class with references to its methods to the extraction
+        class_def.map(|cd| {
+          self
+            .xtor
+            .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect())
+        });
+        // Add the functions to the visitor for further extraction
+        self.functions.extend(fns);
       }
     }
 
@@ -205,10 +201,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let fd = self.extract_extern_fn(def_id);
         self.add_function(fd);
       })
-  }
-
-  fn create_fn_item(&mut self, def_id: DefId, is_abstract: bool) -> FnItem<'l> {
-    FnItem::new(def_id, self.extract_fn_ref(def_id), is_abstract)
   }
 
   /// Extract a function reference (regardless of whether it is local or external)
