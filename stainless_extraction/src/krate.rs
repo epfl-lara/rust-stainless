@@ -136,11 +136,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .filter_map(|(hir_id, kind, defaultness)| match kind {
             AssocItemKind::Fn { .. } => {
               let fn_id = self.xtor.tcx.hir().local_def_id(hir_id).to_def_id();
-              Some(FnItem::new(
-                fn_id,
-                self.extract_fn_ref(fn_id),
-                !defaultness.has_value(),
-              ))
+              Some(self.xtor.create_fn_item(fn_id, !defaultness.has_value()))
             }
             // ignore consts and type aliases in impl blocks
             _ => None,
@@ -170,7 +166,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     eprintln!();
 
     let (abstract_fns, fns): (Vec<FnItem>, Vec<FnItem>) =
-      visitor.functions.iter().partition(|f| f.is_abstract());
+      visitor.functions.iter().partition(|f| f.is_abstract);
 
     // Extract abstract functions
     for fun in abstract_fns {
@@ -201,6 +197,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let fd = self.extract_extern_fn(def_id);
         self.add_function(fd);
       })
+  }
+
+  fn create_fn_item(&mut self, def_id: DefId, is_abstract: bool) -> FnItem<'l> {
+    FnItem::new(def_id, self.extract_fn_ref(def_id), is_abstract)
   }
 
   /// Extract a function reference (regardless of whether it is local or external)

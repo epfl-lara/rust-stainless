@@ -12,8 +12,7 @@ use stainless_data::ast as st;
 pub struct FnItem<'a> {
   pub def_id: DefId,
   pub fd_id: &'a st::SymbolIdentifier<'a>,
-  // private to force the usage of FnItem::new
-  is_abstract: bool,
+  pub is_abstract: bool,
 }
 
 impl<'a> FnItem<'a> {
@@ -23,10 +22,6 @@ impl<'a> FnItem<'a> {
       fd_id,
       is_abstract,
     }
-  }
-
-  pub fn is_abstract(&self) -> bool {
-    self.is_abstract
   }
 }
 

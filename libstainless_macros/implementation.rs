@@ -148,25 +148,9 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
     }
   };
 
-  let (pre_specs, other): (Vec<Spec>, Vec<Spec>) = specs
-    .into_iter()
-    .partition(|spec| spec.typ == SpecType::Pre);
-
-  let (post_specs, measure_specs): (Vec<Spec>, Vec<Spec>) = other
-    .into_iter()
-    .partition(|spec| spec.typ == SpecType::Post);
-
-  let pre_spec_fns = pre_specs.into_iter().map(make_spec_fn);
-  let post_spec_fns = post_specs.into_iter().map(make_spec_fn);
-  let measure_spec_fns = measure_specs.into_iter().map(make_spec_fn);
-
+  let spec_closures = specs.into_iter().map(make_spec_fn);
   #[allow(clippy::reversed_empty_ranges)]
-  {
-    // Post specs need to go first, because they need to wrap the entire tree.
-    item_fn.block.stmts.splice(0..0, measure_spec_fns);
-    item_fn.block.stmts.splice(0..0, pre_spec_fns);
-    item_fn.block.stmts.splice(0..0, post_spec_fns);
-  }
+  item_fn.block.stmts.splice(0..0, spec_closures);
   item_fn
 }
 
