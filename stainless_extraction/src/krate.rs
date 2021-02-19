@@ -441,13 +441,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol);
 
-        // Extract the function signature
-        let sigs = bxtor.tables.liberated_fn_sigs();
-        let sig = sigs.get(hir_id).unwrap();
-        let decl = tcx.hir().fn_decl_by_hir_id(hir_id).unwrap();
-        let return_tpe = bxtor
-          .base
-          .extract_ty(sig.output(), &bxtor.txtcx, decl.output.span());
+        let return_tpe = bxtor.return_tpe();
 
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);

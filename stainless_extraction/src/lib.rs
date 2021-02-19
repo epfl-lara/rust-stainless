@@ -391,6 +391,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .collect()
   }
 
+  fn return_tpe(&mut self) -> st::Type<'l> {
+    let hir_id = self.hcx.root_lint_level;
+    let sigs = self.tables.liberated_fn_sigs();
+    let sig = sigs.get(hir_id).unwrap();
+    let decl = self.tcx().hir().fn_decl_by_hir_id(hir_id).unwrap();
+    self
+      .base
+      .extract_ty(sig.output(), &self.txtcx, decl.output.span())
+  }
+
   /// Extracts the receiver object/instance of a method call for a type class.
   /// In a way, this function retrofits Scala's implicit object lookup to Rust's
   /// completely invisible trait implementation lookup.

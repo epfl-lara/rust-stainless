@@ -686,6 +686,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
     acc_exprs: &mut Vec<st::Expr<'l>>,
+    // Accumulates the HirId's of all spec closures for later extraction
+    acc_specs: &mut HashMap<SpecType, Vec<HirId>>,
     final_expr: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
@@ -708,7 +710,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       };
 
       match stmt.kind {
-        // Spec expressions
+        // Spec expressions are recognized by their specific closure shape and
+        // their attributes (stainless::) flags.
         StmtKind::Expr {
           expr:
             hair::ExprRef::Hair(hir::Expr {
@@ -720,14 +723,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           ..
         } => {
           if let Ok(spec_type) = SpecType::try_from(&**attrs) {
-            // first extract the rest of the block, to wrap the spec around it
-            let exprs = acc_exprs.clone();
-            acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, final_expr);
-
-            // extract the spec and wrap it around the body
-            let spec_expr = self.extract_spec_closure(*hir_id, spec_type, body_expr);
-            finish(exprs, spec_expr)
+            acc_specs
+              .entry(spec_type)
+              .or_insert_with(Vec::new)
+              .push(*hir_id);
+            self.extract_block_(stmts, acc_exprs, acc_specs, final_expr)
           } else {
             bail("Cannot extract closure that is not a spec.", *span)
           }
@@ -759,7 +759,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             let init = self.extract_expr_ref(init);
             let exprs = acc_exprs.clone();
             acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, final_expr);
+            let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
             let last_expr = f.Let(vd, init, body_expr).into();
             finish(exprs, last_expr)
           } else {
@@ -770,7 +770,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         StmtKind::Expr { expr, .. } => {
           let expr = self.extract_expr_ref(expr);
           acc_exprs.push(expr);
-          self.extract_block_(stmts, acc_exprs, final_expr)
+          self.extract_block_(stmts, acc_exprs, acc_specs, final_expr)
         }
       }
     } else {
@@ -788,7 +788,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|e| self.extract_expr_ref(e))
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
     stmts.reverse();
-    self.extract_block_(&mut stmts, &mut vec![], final_expr)
+
+    let mut spec_ids = HashMap::new();
+    let body_expr = self.extract_block_(&mut stmts, &mut vec![], &mut spec_ids, final_expr);
+    self.extract_specs(&spec_ids, body_expr)
   }
 
   /// Factory helpers
