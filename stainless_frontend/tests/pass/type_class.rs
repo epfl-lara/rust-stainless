@@ -10,7 +10,6 @@ trait Equals {
   // - trait => abstract class
   // - take trait with all type params, add one new at the end
   // => abstract class Equals[T]
-
   fn equals(&self, x: &Self) -> bool;
 
   // type_class_insts: Map( ("Equals", "Self", []) -> "this" )
@@ -18,7 +17,7 @@ trait Equals {
     // => this.equals(self, x)
     !self.equals(x)
   }
-  /*
+
   #[law]
   fn law_reflexive(x: &Self) -> bool {
     // => this.equals(x, x)
@@ -33,7 +32,7 @@ trait Equals {
   #[law]
   fn law_transitive(x: &Self, y: &Self, z: &Self) -> bool {
     !(x.equals(y) && y.equals(z)) || x.equals(z)
-  }*/
+  }
 }
 
 /*
@@ -44,6 +43,7 @@ trait Equals {
 (the last two use the same translation)
 => case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
 */
+
 impl<T: Equals> Equals for List<T> {
   // #[measure(self)]
   fn equals(&self, other: &List<T>) -> bool {
@@ -51,6 +51,31 @@ impl<T: Equals> Equals for List<T> {
       (List::Nil, List::Nil) => true,
       (List::Cons(x, xs), List::Cons(y, ys)) => x.equals(y) && xs.equals(ys),
       _ => false,
+    }
+  }
+
+  fn law_reflexive(x: &Self) -> bool {
+    match x {
+      List::Cons(x, xs) => T::law_reflexive(x) && Self::law_reflexive(xs),
+      List::Nil => true,
+    }
+  }
+
+  fn law_symmetric(x: &Self, y: &Self) -> bool {
+    match (x, y) {
+      (List::Cons(x, xs), List::Cons(y, ys)) => {
+        T::law_symmetric(x, y) && Self::law_symmetric(xs, ys)
+      }
+      _ => true,
+    }
+  }
+
+  fn law_transitive(x: &Self, y: &Self, z: &Self) -> bool {
+    match (x, y, z) {
+      (List::Cons(x, xs), List::Cons(y, ys), List::Cons(z, zs)) => {
+        T::law_transitive(x, y, z) && Self::law_transitive(xs, ys, zs)
+      }
+      _ => true,
     }
   }
 }
@@ -72,8 +97,8 @@ pub fn main() {
   assert!(a.not_equals(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  assert!(list.equals(&list));
+  // let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  // assert!(list.equals(&list));
 }
 
 /*
@@ -110,36 +135,4 @@ case class ListEquals[A](ev: Equals[A]) extends Equals[List[A]] {
 case object IntEquals extends Equals[Int] {
   def equals(x: Int, y: Int): Boolean = x == y
 }
-
-// stainless extracts this as follows
-
- Symbols before PartialFunctions
-
--------------Functions-------------
-@abstract
-@method(Equals)
-def equals(x: T, y: T): Boolean = <empty tree>[Boolean]
-
-@law
-@method(Equals)
-def law_transitive(x: T, y: T, z: T): Boolean = ¬(this.equals(x, y) && this.equals(y, z)) || this.equals(x, z)
-
-@law
-@method(Equals)
-def law_symmetric(x: T, y: T): Boolean = this.equals(x, y) == this.equals(y, x)
-
-@method(IntEquals)
-def equals(x: Int, y: Int): Boolean = x == y
-
-@law
-@method(Equals)
-def law_reflexive(x: T): Boolean = this.equals(x, x)
-
--------------Classes-------------
-@caseObject
-case class IntEquals extends Equals[Int]
-
-@abstract
-abstract class Equals[T]
-
 */

@@ -1,77 +1,195 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::result::Result;
 
+use super::*;
+use crate::flags::{extract_flag, Flag};
+use crate::ty::{all_generic_params_of, TyExtractionCtxt};
+
+use rustc_ast::ast::Attribute;
+
+use stainless_data::ast as st;
+
 /// Types of spec functions (pre-, postconditions, ...) and some helping
 /// implementations.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub enum SpecType {
   Pre,
   Post,
   Measure,
 }
 
-impl SpecType {
-  /// Parses the spec type and the name of the function the spec belongs to from
-  /// the name of the spec function.
-  ///
-  /// Spec functions are named according to the following format
-  /// `__{spec_type}_{index}_{fn_name}`.
-  ///
-  pub fn parse_spec_type_fn_name(str: &str) -> Option<(SpecType, String)> {
-    let parts: Vec<&str> = str.split('_').collect();
-    match parts.as_slice() {
-      ["", "", spec_type, index, ..] if index.chars().all(char::is_numeric) => {
-        SpecType::try_from(*spec_type)
-          .ok()
-          .map(|sp| (sp, parts[4..].join("_")))
-      }
-      _ => None,
-    }
-  }
-}
-
-impl TryFrom<&str> for SpecType {
+impl TryFrom<Flag> for SpecType {
   type Error = ();
 
-  fn try_from(name: &str) -> Result<Self, Self::Error> {
-    match name {
-      "pre" => Ok(SpecType::Pre),
-      "post" => Ok(SpecType::Post),
-      "measure" => Ok(SpecType::Measure),
+  fn try_from(flag: Flag) -> Result<Self, Self::Error> {
+    match flag {
+      Flag::Pre => Ok(SpecType::Pre),
+      Flag::Post => Ok(SpecType::Post),
+      Flag::Measure => Ok(SpecType::Measure),
       _ => Err(()),
     }
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use crate::spec::SpecType;
+impl TryFrom<&[Attribute]> for SpecType {
+  type Error = ();
 
-  #[test]
-  fn test_parse_spec_type_fn_name() {
-    assert_eq!(
-      SpecType::parse_spec_type_fn_name("__pre_1_asdf"),
-      Some((SpecType::Pre, "asdf".to_string()))
-    );
-    assert_eq!(
-      SpecType::parse_spec_type_fn_name("__post_712341234_asdf"),
-      Some((SpecType::Post, "asdf".to_string()))
-    );
-    assert_eq!(
-      SpecType::parse_spec_type_fn_name("__pre__asdf"),
-      Some((SpecType::Pre, "asdf".to_string()))
-    );
-    assert_eq!(
-      SpecType::parse_spec_type_fn_name("__measure_2_dummy_for_specs_2"),
-      Some((SpecType::Measure, "dummy_for_specs_2".to_string()))
-    );
+  fn try_from(attrs: &[Attribute]) -> Result<Self, Self::Error> {
+    attrs
+      .iter()
+      .find_map(|a| {
+        extract_flag(a)
+          .ok()
+          .and_then(|(flag, _)| SpecType::try_from(flag).ok())
+      })
+      .ok_or(())
+  }
+}
 
+impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
+  /// Extract the body expression from a spec closure. This also replaces the
+  /// parameters of the closure with the actual parameters of the outer function
+  /// and the return value.
+  pub fn extract_spec_expr(
+    &mut self,
+    hir_id: HirId,
+    outer_fn_params: &Params<'l>,
+    return_var: Option<&'l st::Variable<'l>>,
+  ) -> st::Expr<'l> {
+    // Specs are encoded as closure expressions within the actual (outer)
+    // function being specified. They take their own parameters, though those
+    // parameters are in a one-to-one correspondence to the surrounding
+    // function's parameters. Here we try to match all of them up and coerce the
+    // extraction to directly translate them to the surrounding function's
+    // variables, instead of extracting new, unrelated identifiers.
+
+    let def_id = self.tcx().hir().local_def_id(hir_id).to_def_id();
+    let outer_fn_txtcx = &self.txtcx;
+    let f = self.factory();
+
+    // Correlate type parameters
+    // We need the generics of the parent (the outer function) to avoid some
+    // special closure generics in the list.
+    let parent_did = self.tcx().hir().get_parent_did(hir_id).to_def_id();
+    let generics = self.tcx().generics_of(parent_did);
+    let generic_params = all_generic_params_of(self.tcx(), parent_did);
     assert_eq!(
-      SpecType::parse_spec_type_fn_name("__measure_bcdf_asdf"),
-      None
+      generics.parent,
+      self.tcx().generics_of(outer_fn_txtcx.def_id).parent
     );
-    assert_eq!(SpecType::parse_spec_type_fn_name("_pre_asdf"), None);
-    assert_eq!(SpecType::parse_spec_type_fn_name("___pre_asdf"), None);
-    assert_eq!(SpecType::parse_spec_type_fn_name("__pr_asdf"), None);
+    assert_eq!(generic_params.len(), outer_fn_txtcx.index_to_tparam.len());
+    let index_to_tparam = generic_params
+      .iter()
+      .map(|param| {
+        (
+          param.index,
+          outer_fn_txtcx.index_to_tparam[&param.index].clone(),
+        )
+      })
+      .collect();
+
+    let txtcx = TyExtractionCtxt {
+      def_id,
+      index_to_tparam,
+    };
+
+    let spec_expr = self.base.enter_body(hir_id, txtcx, None, |bxtor| {
+      // Correlate spec params with outer fn params
+      let mut spec_param_ids: Vec<HirId> = bxtor.body.params.iter().map(|p| p.pat.hir_id).collect();
+
+      // If this is a post spec,
+      if let Some(return_var) = return_var {
+        // Remove the ret parameter from the spec parameters
+        let return_param_id = spec_param_ids
+          .pop()
+          .expect("No return parameter on post spec function");
+
+        // Preregister the ret binding with the return_id
+        bxtor.dcx.add_var(return_param_id, return_var);
+      }
+
+      // Register all other bindings
+      assert_eq!(outer_fn_params.len(), spec_param_ids.len());
+      for (vd, sid) in outer_fn_params.iter().zip(spec_param_ids) {
+        bxtor.dcx.add_var(sid, vd.v);
+      }
+      // Pick up any additional local bindings
+      bxtor.populate_def_context(&mut HashMap::new());
+
+      // Extract the spec function's body
+      let spec_expr = bxtor.hcx.mirror(&bxtor.body.value);
+      bxtor.extract_expr(spec_expr)
+    });
+
+    // The measure closure generated by the macro has a Unit return type to deal
+    // with the unknown type of the measure. The expression has a trailing ';'
+    // (UnitLiteral) to implement this. Here, we need to remove the UnitLiteral
+    // and actually return the measure in the block expression.
+    if let st::Expr::Block(st::Block {
+      exprs,
+      last: st::Expr::UnitLiteral(st::UnitLiteral {}),
+    }) = spec_expr
+    {
+      // Create a block that returns its last expression
+      let (last, other_exprs) = exprs.split_last().expect("No measure provided.");
+      st::Expr::Block(f.Block(other_exprs.to_vec(), *last)).into()
+    } else {
+      spec_expr
+    }
+  }
+
+  pub fn extract_specs(
+    &mut self,
+    specs: &HashMap<SpecType, Vec<HirId>>,
+    body_expr: st::Expr<'l>,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let outer_fn_params = self.body_params();
+
+    // Wrap body with measure expression
+    let body_expr = specs
+      .get(&SpecType::Measure)
+      .and_then(|m_exprs| {
+        if m_exprs.len() > 1 {
+          let span = self.tcx().hir().span(m_exprs[1]);
+          self.tcx().sess.span_err(span, "Multiple measures.");
+        }
+        m_exprs.first()
+      })
+      .map(|&hid| {
+        let expr = self.extract_spec_expr(hid, &outer_fn_params, None);
+        f.Decreases(expr, body_expr).into()
+      })
+      .unwrap_or(body_expr);
+
+    // Wrap body with require/pre spec
+    let body_expr = specs
+      .get(&SpecType::Pre)
+      .map(|pre_hids| {
+        let exprs = pre_hids
+          .iter()
+          .map(|&hid| self.extract_spec_expr(hid, &outer_fn_params, None))
+          .collect();
+
+        f.Require(f.make_and(exprs), body_expr).into()
+      })
+      .unwrap_or(body_expr);
+
+    let return_var = &*f.Variable(self.base.fresh_id("ret".into()), self.return_tpe(), vec![]);
+    let return_vd = f.ValDef(return_var);
+
+    specs
+      .get(&SpecType::Post)
+      .map(move |post_hids| {
+        let exprs = post_hids
+          .iter()
+          .map(|&hid| self.extract_spec_expr(hid, &outer_fn_params, Some(return_var)))
+          .collect();
+
+        f.Ensuring(body_expr, f.Lambda(vec![return_vd], f.make_and(exprs)))
+          .into()
+      })
+      .unwrap_or(body_expr)
   }
 }

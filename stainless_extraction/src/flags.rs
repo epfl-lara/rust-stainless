@@ -2,7 +2,7 @@ use super::*;
 
 use std::collections::HashSet;
 
-use rustc_ast::ast::{AttrKind, MacArgs};
+use rustc_ast::ast::{self as ast, AttrKind, Attribute, MacArgs};
 use rustc_ast::token::{Lit, LitKind, TokenKind};
 use rustc_ast::tokenstream::{TokenStream, TokenTree};
 use rustc_hir::HirId;
@@ -17,6 +17,9 @@ pub(super) enum Flag {
   IsMutable,
   IsVar,
   Law,
+  Pre,
+  Post,
+  Measure,
 }
 
 #[derive(Clone, Debug)]
@@ -39,12 +42,16 @@ impl Flags {
     self
       .set
       .iter()
-      .map(|flag| match flag {
-        Extern => f.Extern().into(),
-        IsPure => f.IsPure().into(),
-        IsMutable => f.IsMutable().into(),
-        IsVar => f.IsVar().into(),
-        Law => f.Law().into(),
+      .filter_map(|flag| match flag {
+        Extern => Some(f.Extern().into()),
+        IsPure => Some(f.IsPure().into()),
+        IsMutable => Some(f.IsMutable().into()),
+        IsVar => Some(f.IsVar().into()),
+        Law => Some(f.Law().into()),
+
+        // Or pattern instead of wildcard '_' to keep the compiler checking that
+        // all variants are covered.
+        Pre | Post | Measure => None,
       })
       .collect()
   }
@@ -60,6 +67,9 @@ impl Flag {
       IsMutable => "mutable",
       IsVar => "var",
       Law => "law",
+      Pre => "pre",
+      Post => "post",
+      Measure => "measure",
     }
   }
 
@@ -69,7 +79,7 @@ impl Flag {
 }
 
 lazy_static! {
-  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law];
+  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law, Pre, Post, Measure];
   static ref FLAGS_BY_NAME: HashMap<&'static str, Flag> = {
     let mut flags: HashMap<&'static str, Flag> = HashMap::new();
     for &flag in FLAGS.iter() {
@@ -79,42 +89,46 @@ lazy_static! {
   };
 }
 
+pub(super) fn extract_flag(
+  attr: &Attribute,
+) -> Result<(Flag, Option<TokenStream>), Option<String>> {
+  match &attr.kind {
+    AttrKind::Normal(ast::AttrItem {
+      path: ast::Path { ref segments, .. },
+      args,
+      ..
+    }) if segments.len() == 3 && segments[1].ident.to_string() == "stainless" => {
+      let name = segments[2].ident.to_string();
+
+      Flag::from_name(name.as_str())
+        .ok_or(Some(format!("Unknown stainless annotation: {}", name)))
+        .and_then(|flag| match &args {
+          MacArgs::Empty => Ok((flag, None)),
+          MacArgs::Delimited(_, _, tokens) => Ok((flag, Some(tokens.clone()))),
+
+          _ => Err(Some(
+            "Unsupported target specified on stainless annotation".into(),
+          )),
+        })
+    }
+    _ => Err(None),
+  }
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  pub(super) fn extract_flags(&mut self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
+  pub(super) fn extract_flags(&self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
     let attrs = self.tcx.hir().attrs(carrier_hid);
     let mut carrier_flags = Flags::new();
     let mut flags_by_symbol: HashMap<Symbol, Flags> = HashMap::new();
 
     for attr in attrs {
-      let (flag, arg_tokens) = if let AttrKind::Normal(ref attr) = attr.kind {
-        let segments = &attr.path.segments;
-        if segments.len() == 3 && segments[1].ident.to_string() == "stainless" {
-          let name = segments[2].ident.to_string();
-          if let Some(flag) = Flag::from_name(name.as_str()) {
-            let arg_tokens: Option<TokenStream> = match &attr.args {
-              MacArgs::Empty => None,
-              MacArgs::Delimited(_, _, tokens) => Some(tokens.clone()),
-              _ => {
-                self.tcx.sess.span_warn(
-                  attr.span(),
-                  "Unsupported target specified on stainless annotation",
-                );
-                continue;
-              }
-            };
-            (flag, arg_tokens)
-          } else {
-            self.tcx.sess.span_warn(
-              attr.span(),
-              format!("Unknown stainless annotation: {}", name).as_str(),
-            );
-            continue;
-          }
-        } else {
+      let (flag, arg_tokens) = match extract_flag(attr) {
+        Ok((f, a)) => (f, a),
+        Err(Some(mess)) => {
+          self.tcx.sess.span_warn(attr.span, &mess);
           continue;
         }
-      } else {
-        continue;
+        Err(None) => continue,
       };
 
       let mut add_by_symbol = |symbol: Symbol| {

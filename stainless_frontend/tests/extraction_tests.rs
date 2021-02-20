@@ -92,6 +92,7 @@ define_tests!(
   pass: monoid,
   pass: nested_spec,
   pass: nested_spec_impl,
+  pass: spec_on_trait_impl,
   pass: tuple_match,
   pass: tuples,
   pass: type_class,

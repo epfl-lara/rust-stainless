@@ -3,6 +3,8 @@ use super::std_items::StdItem;
 use super::std_items::StdItem::*;
 use super::*;
 
+use crate::spec::SpecType;
+
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
@@ -12,8 +14,6 @@ use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
   Mirror, Pat, PatKind, StmtKind, StmtRef,
 };
-
-use stainless_data::ast as st;
 
 type Result<T> = std::result::Result<T, &'static str>;
 
@@ -686,6 +686,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
     acc_exprs: &mut Vec<st::Expr<'l>>,
+    // Accumulates the HirId's of all spec closures for later extraction
+    acc_specs: &mut HashMap<SpecType, Vec<HirId>>,
     final_expr: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
@@ -700,46 +702,75 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     if let Some(stmt) = stmts.pop() {
       let stmt = self.mirror(stmt);
+
+      let bail = |msg, span| -> st::Expr<'l> {
+        self.base.unsupported(span, msg);
+        f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
+          .into()
+      };
+
       match stmt.kind {
+        // Spec expressions are recognized by their specific closure shape and
+        // their attributes (stainless::) flags.
+        StmtKind::Expr {
+          expr:
+            hair::ExprRef::Hair(hir::Expr {
+              hir_id,
+              kind: hir::ExprKind::Closure(hir::CaptureBy::Ref, _, _, _, Option::None),
+              attrs,
+              span,
+            }),
+          ..
+        } => {
+          if let Ok(spec_type) = SpecType::try_from(&**attrs) {
+            acc_specs
+              .entry(spec_type)
+              .or_insert_with(Vec::new)
+              .push(*hir_id);
+            self.extract_block_(stmts, acc_exprs, acc_specs, final_expr)
+          } else {
+            bail("Cannot extract closure that is not a spec.", *span)
+          }
+        }
+
         StmtKind::Let {
           pattern,
           initializer,
           ..
         } => {
-          let span = pattern.span;
-          let bail = |msg| -> st::Expr<'l> {
-            self.base.unsupported(span, msg);
-            f.Block(acc_exprs.clone(), f.NoTree(f.Untyped().into()).into())
-              .into()
-          };
-
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
           let var_result = self.try_pattern_to_var(&pattern.kind, false);
 
           if has_abnormal_source {
             // TODO: Support for loops
-            bail("Cannot extract let that resulted from desugaring")
+            bail(
+              "Cannot extract let that resulted from desugaring",
+              pattern.span,
+            )
           } else if let Err(reason) = var_result {
             // TODO: Desugar complex patterns
-            bail(format!("Cannot extract complex pattern in let: {}", reason).as_str())
-          } else if initializer.is_none() {
-            bail("Cannot extract let without initializer")
-          } else {
+            bail(
+              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
+              pattern.span,
+            )
+          } else if let Some(init) = initializer {
             let vd = f.ValDef(var_result.unwrap());
-            let init = self.extract_expr_ref(initializer.unwrap());
+            let init = self.extract_expr_ref(init);
             let exprs = acc_exprs.clone();
             acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, final_expr);
+            let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
             let last_expr = f.Let(vd, init, body_expr).into();
             finish(exprs, last_expr)
+          } else {
+            bail("Cannot extract let without initializer", pattern.span)
           }
         }
 
         StmtKind::Expr { expr, .. } => {
           let expr = self.extract_expr_ref(expr);
           acc_exprs.push(expr);
-          self.extract_block_(stmts, acc_exprs, final_expr)
+          self.extract_block_(stmts, acc_exprs, acc_specs, final_expr)
         }
       }
     } else {
@@ -757,7 +788,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|e| self.extract_expr_ref(e))
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
     stmts.reverse();
-    self.extract_block_(&mut stmts, &mut vec![], final_expr)
+
+    let mut spec_ids = HashMap::new();
+    let body_expr = self.extract_block_(&mut stmts, &mut vec![], &mut spec_ids, final_expr);
+    self.extract_specs(&spec_ids, body_expr)
   }
 
   /// Factory helpers

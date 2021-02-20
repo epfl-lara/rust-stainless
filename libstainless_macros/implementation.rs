@@ -1,9 +1,12 @@
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::{format_ident, quote, ToTokens};
-use syn::{parse_quote, Attribute, Expr, FnArg, Item, ItemFn, Result, ReturnType, Stmt, Type};
+use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
+use quote::{quote, ToTokens};
+use syn::{
+  parse_quote, Attribute, Expr, FnArg, ItemFn, Receiver, Result, ReturnType, Stmt, Token, Type,
+};
 
 use std::convert::TryFrom;
 use std::iter;
+use syn::punctuated::Punctuated;
 
 /// Specs (pre-, postconditions, ...)
 #[derive(Debug, PartialEq, Eq)]
@@ -75,7 +78,7 @@ fn try_parse(
     .chain(specs)
     .collect();
 
-  // Check whether any parsing has caused errors and failed if so.
+  // Check whether any parsing has caused errors and fail if so.
   if let Some((_, Err(err))) = specs.iter().find(|(_, cond)| cond.is_err()) {
     return Err(err.clone());
   }
@@ -91,67 +94,64 @@ fn try_parse(
   Ok((item_fn, specs))
 }
 
-fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> Vec<ItemFn> {
-  let fn_generics = &item_fn.sig.generics;
-  let fn_arg_tys = &item_fn.sig.inputs;
+fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
+  // Take the arguments of the actual function to create the arguments of the
+  // closure.
+  let fn_arg_tys: Vec<_> = item_fn.sig.inputs.iter().cloned().collect();
+
+  // Replace the [&]self param with a _self: [&]Self
+  let fn_arg_tys: Punctuated<FnArg, Token![,]> = (match &fn_arg_tys[..] {
+    [FnArg::Receiver(Receiver {
+      mutability: None,
+      reference,
+      ..
+    }), args @ ..] => {
+      let new_self: FnArg = if reference.is_some() {
+        parse_quote! { _self: &Self }
+      } else {
+        parse_quote! { _self: Self }
+      };
+      [&[new_self], args].concat()
+    }
+
+    args => args.to_vec(),
+  })
+  .into_iter()
+  .collect();
+
   let fn_return_ty: Type = match &item_fn.sig.output {
     ReturnType::Type(_, ty) => *ty.clone(),
     ReturnType::Default => parse_quote! { () },
   };
-  let fn_name = &item_fn.sig.ident.to_string();
 
-  let make_spec_fn = |(index, spec): (usize, Spec)| -> ItemFn {
-    // The spec identifier is of the form __{type}_{index}_{?name}
-    // For sibling specs, the name of the spec'ed function has to be given.
-    let spec_ident = format_ident!("__{}_{}_{}", spec.typ.name(), index + 1, fn_name);
+  let make_spec_fn = |spec: Spec| -> Stmt {
+    let spec_type = Ident::new(spec.typ.name(), Span::call_site());
 
     let ret_param: TokenStream = match spec.typ {
       SpecType::Post => quote! { , ret: #fn_return_ty },
       _ => quote! {},
     };
 
-    let expr = spec.expr;
+    let expr: TokenStream = replace_ident(spec.expr.to_token_stream(), "self", "_self");
+
     let (return_type, body): (Type, TokenStream) = match spec.typ {
       SpecType::Measure => (parse_quote!(()), parse_quote! { #expr; }),
       _ => (parse_quote!(bool), parse_quote! { #expr }),
     };
 
     parse_quote! {
-      #[doc(hidden)]
-      #[allow(unused_variables)]
-      fn #spec_ident#fn_generics(#fn_arg_tys#ret_param) -> #return_type {
+      #[allow(unused)]
+      #[clippy::stainless::#spec_type]
+      |#fn_arg_tys#ret_param| -> #return_type {
         #body
-      }
+      };
     }
   };
 
-  let specs = specs.into_iter().enumerate().map(make_spec_fn);
-
-  let has_self_param = item_fn
-    .sig
-    .inputs
-    .first()
-    .map(|first_input| match first_input {
-      FnArg::Receiver(_) => true,
-      _ => false,
-    })
-    .unwrap_or(false);
-
-  // If the function has the 'self' param, then the specs must be siblings
-  if has_self_param {
-    specs.chain(iter::once(item_fn.clone())).collect()
-  }
-  // otherwise the specs can be nested
-  else {
-    #[allow(clippy::reversed_empty_ranges)]
-    {
-      item_fn
-        .block
-        .stmts
-        .splice(0..0, specs.map(|s| Stmt::Item(Item::Fn(s))));
-    }
-    vec![item_fn]
-  }
+  let spec_closures = specs.into_iter().map(make_spec_fn);
+  #[allow(clippy::reversed_empty_ranges)]
+  item_fn.block.stmts.splice(0..0, spec_closures);
+  item_fn
 }
 
 /// Extract all the specs from a given function and insert spec functions
@@ -168,11 +168,7 @@ pub fn extract_specs_and_expand(
         .retain(|attr| SpecType::try_from(attr).is_err());
 
       // Build the spec function and insert it into the original function
-
-      generate_fn_with_spec(item_fn, specs)
-        .into_iter()
-        .map(|fn_item| fn_item.to_token_stream())
-        .collect()
+      generate_fn_with_spec(item_fn, specs).to_token_stream()
     }
     Err(err) => err.to_compile_error(),
   }
@@ -198,4 +194,24 @@ pub fn rewrite_flag(
     #[clippy::stainless::#flag_name#args]
     #item
   }
+}
+
+/// Recursively replaces any identifiers with the given string in the entire
+/// token stream by new identifiers with the 'replace_with' string.
+fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenStream {
+  stream
+    .into_iter()
+    .map(|tt| match tt {
+      TokenTree::Ident(ref i) if i.to_string() == ident => {
+        TokenTree::Ident(Ident::new(replace_with, i.span()))
+      }
+
+      TokenTree::Group(ref g) => TokenTree::Group(Group::new(
+        g.delimiter(),
+        replace_ident(g.stream(), ident, replace_with),
+      )),
+
+      t => t,
+    })
+    .collect()
 }

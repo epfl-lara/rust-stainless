@@ -56,13 +56,8 @@ impl List<i32> {
       List::Nil => Option::None,
       List::Cons(x, xs) => match xs.min() {
         Option::None => Option::Some(*x),
-        Option::Some(y) => {
-          if *x < y {
-            Option::Some(*x)
-          } else {
-            Option::Some(y)
-          }
-        }
+        Option::Some(y) if *x < y => Option::Some(*x),
+        Option::Some(y) => Option::Some(y),
       },
     }
   }
