@@ -10,7 +10,6 @@ trait Equals {
   // - trait => abstract class
   // - take trait with all type params, add one new at the end
   // => abstract class Equals[T]
-
   fn equals(&self, x: &Self) -> bool;
 
   // type_class_insts: Map( ("Equals", "Self", []) -> "this" )
@@ -36,22 +35,47 @@ trait Equals {
   }
 }
 
-impl<T: Equals> Equals for List<T> {
-  /*
-  - 'impl<..> Z for X' and has type params => case class
-  - impl<tps> => ListEquals[tps]
-  - trait bounds => trait bounds implemented by evidence params
-  - the trait with as last type param the 'for X' => extends trait[..., X]
-  (the last two use the same translation)
-  => case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
-  */
+/*
+- 'impl<..> Z for X' and has type params => case class
+- impl<tps> => ListEquals[tps]
+- trait bounds => trait bounds implemented by evidence params
+- the trait with as last type param the 'for X' => extends trait[..., X]
+(the last two use the same translation)
+=> case class ListEquals[T](ev: Equals[T]) extends Equals[List[T]]
+*/
 
+impl<T: Equals> Equals for List<T> {
   // #[measure(self)]
   fn equals(&self, other: &List<T>) -> bool {
     match (self, other) {
       (List::Nil, List::Nil) => true,
       (List::Cons(x, xs), List::Cons(y, ys)) => x.equals(y) && xs.equals(ys),
       _ => false,
+    }
+  }
+
+  fn law_reflexive(x: &Self) -> bool {
+    match x {
+      List::Cons(x, xs) => T::law_reflexive(x) && Self::law_reflexive(xs),
+      List::Nil => true,
+    }
+  }
+
+  fn law_symmetric(x: &Self, y: &Self) -> bool {
+    match (x, y) {
+      (List::Cons(x, xs), List::Cons(y, ys)) => {
+        T::law_symmetric(x, y) && Self::law_symmetric(xs, ys)
+      }
+      _ => true,
+    }
+  }
+
+  fn law_transitive(x: &Self, y: &Self, z: &Self) -> bool {
+    match (x, y, z) {
+      (List::Cons(x, xs), List::Cons(y, ys), List::Cons(z, zs)) => {
+        T::law_transitive(x, y, z) && Self::law_transitive(xs, ys, zs)
+      }
+      _ => true,
     }
   }
 }
@@ -65,31 +89,12 @@ impl Equals for i32 {
   }
 }
 
-trait Ord: Equals {
-  fn less_than_eq(&self, other: &Self) -> bool;
-
-  fn less_than(&self, other: &Self) -> bool {
-    self.less_than_eq(other) && self.not_equals(other)
-  }
-}
-
-impl Ord for i32 {
-  fn less_than_eq(&self, other: &Self) -> bool {
-    self <= other
-  }
-
-  fn less_than(&self, other: &Self) -> bool {
-    self < other
-  }
-}
-
 pub fn main() {
   let a = 2;
   let b = 4;
 
   // => IntEquals.equals(a, b)
   assert!(a.not_equals(&b));
-  assert!(a.less_than(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
   let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
@@ -130,36 +135,4 @@ case class ListEquals[A](ev: Equals[A]) extends Equals[List[A]] {
 case object IntEquals extends Equals[Int] {
   def equals(x: Int, y: Int): Boolean = x == y
 }
-
-// stainless extracts this as follows
-
- Symbols before PartialFunctions
-
--------------Functions-------------
-@abstract
-@method(Equals)
-def equals(x: T, y: T): Boolean = <empty tree>[Boolean]
-
-@law
-@method(Equals)
-def law_transitive(x: T, y: T, z: T): Boolean = ¬(this.equals(x, y) && this.equals(y, z)) || this.equals(x, z)
-
-@law
-@method(Equals)
-def law_symmetric(x: T, y: T): Boolean = this.equals(x, y) == this.equals(y, x)
-
-@method(IntEquals)
-def equals(x: Int, y: Int): Boolean = x == y
-
-@law
-@method(Equals)
-def law_reflexive(x: T): Boolean = this.equals(x, x)
-
--------------Classes-------------
-@caseObject
-case class IntEquals extends Equals[Int]
-
-@abstract
-abstract class Equals[T]
-
 */

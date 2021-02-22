@@ -97,8 +97,8 @@ pub fn main() {
   assert!(a.not_equals(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  // let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  // assert!(list.equals(&list));
+  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  assert!(list.equals(&list));
 }
 
 /*
