@@ -56,20 +56,18 @@ impl Backend {
       .arg("--interactive")
       .arg("--batched")
       .arg("--vc-cache=false")
+      .arg("--type-checker=false")
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
       .arg(format!("--print-types={}", config.print_types))
-      .arg(format!("--strict-arithmetic={}", config.strict_arithmetic))
-      // FIXME: Turn the measure inference back on as soon as
-      //   https://github.com/epfl-lara/rust-stainless/issues/68
-      //   is solved.
-      .arg("--infer-measures=no")
-      .arg("--check-measures=false");
+      .arg(format!("--strict-arithmetic={}", config.strict_arithmetic));
+
     if config.debug_trees {
       cmd
         .arg("--debug=trees")
         .arg(format!("--debug-phases={}", config.debug_phases.join(",")));
     }
+
     if let Ok(extra_flags) = env::var("STAINLESS_FLAGS") {
       cmd.args(extra_flags.split(' '));
     }
