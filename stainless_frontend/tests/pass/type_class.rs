@@ -45,7 +45,6 @@ trait Equals {
 */
 
 impl<T: Equals> Equals for List<T> {
-  // #[measure(self)]
   fn equals(&self, other: &List<T>) -> bool {
     match (self, other) {
       (List::Nil, List::Nil) => true,
@@ -97,8 +96,8 @@ pub fn main() {
   assert!(a.not_equals(&b));
 
   // => ListEquals.equals(list, list)(IntEquals)
-  // let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
-  // assert!(list.equals(&list));
+  let list = List::Cons(123, Box::new(List::Cons(456, Box::new(List::Nil))));
+  assert!(list.equals(&list));
 }
 
 /*
@@ -123,13 +122,14 @@ abstract class Equals[T] {
 
 case class ListEquals[A](ev: Equals[A]) extends Equals[List[A]] {
   def equals(xs: List[A], ys: List[A]): Boolean = {
-    decreases(xs.size)
     (xs, ys) match {
       case (Cons(x, xs), Cons(y, ys)) => ev.equals(x, y) && equals(xs, ys)
       case (Nil(), Nil()) => true
       case _ => false
     }
   }
+
+  // will also require manual proofs of the laws
 }
 
 case object IntEquals extends Equals[Int] {
