@@ -407,25 +407,20 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
-    let f = self.factory();
-    let mut args = args.to_vec();
-
-    assert_eq!(args.len(), 1);
-    let arg = args.pop().unwrap();
-    // FIXME: It seems that for expressions encoding panics, `expr.ty` always gives us the
-    // `never` type, rather than the expected one. We currently just use the Unit type here,
-    // because this is correct for panics resulting from asserts, but we should really recover,
-    // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
-    // programs.)
-    let tpe = f.UnitType().into();
-    let error_expr = f.Error(tpe, "Panic".into());
-
-    if is_fmt {
+    match &self.extract_expr_refs(args.to_vec())[..] {
       // TODO: Implement panic! with formatted message
-      self.unsupported_expr(span, "Cannot extract panic with formatted message")
-    } else {
-      let arg = self.extract_expr_ref(arg);
-      self.keep_for_effects(error_expr.into(), vec![arg])
+      _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
+
+      [st::Expr::StringLiteral(st::StringLiteral { value: message })] => {
+        let f = self.factory();
+        // Using the nothing type to be subtype of everything.
+        let tpe = f.NothingType().into();
+        f.Error(tpe, message.into()).into()
+      }
+      _ => self.unsupported_expr(
+        span,
+        "Cannot extract panic without a single literal string argument",
+      ),
     }
   }
 
@@ -794,13 +789,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.extract_specs(&spec_ids, body_expr)
   }
 
-  /// Factory helpers
-
-  fn keep_for_effects(&mut self, expr: st::Expr<'l>, exprs: Vec<st::Expr<'l>>) -> st::Expr<'l> {
-    self.factory().Block(exprs, expr).into()
-  }
-
-  /// Various helpers
+  // Various helpers
 
   fn mirror<M: Mirror<'tcx>>(&mut self, m: M) -> M::Output {
     m.make_mirror(&mut self.hcx)
