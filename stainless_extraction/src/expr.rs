@@ -407,17 +407,20 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
-    let f = self.factory();
-    if !is_fmt {
-      // Using the nothing type to be subtype of everything.
-      let tpe = f.NothingType().into();
-      let error_expr = f.Error(tpe, "Panic".into());
-      let args = self.extract_expr_refs(args.to_vec());
-      self.keep_for_effects(error_expr.into(), args)
-    }
-    // TODO: Implement panic! with formatted message
-    else {
-      self.unsupported_expr(span, "Cannot extract panic with formatted message")
+    match &self.extract_expr_refs(args.to_vec())[..] {
+      // TODO: Implement panic! with formatted message
+      _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
+
+      [st::Expr::StringLiteral(st::StringLiteral { value: message })] => {
+        let f = self.factory();
+        // Using the nothing type to be subtype of everything.
+        let tpe = f.NothingType().into();
+        f.Error(tpe, message.into()).into()
+      }
+      _ => self.unsupported_expr(
+        span,
+        "Cannot extract panic without a single literal string argument",
+      ),
     }
   }
 
@@ -786,13 +789,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.extract_specs(&spec_ids, body_expr)
   }
 
-  /// Factory helpers
-
-  fn keep_for_effects(&mut self, expr: st::Expr<'l>, exprs: Vec<st::Expr<'l>>) -> st::Expr<'l> {
-    self.factory().Block(exprs, expr).into()
-  }
-
-  /// Various helpers
+  // Various helpers
 
   fn mirror<M: Mirror<'tcx>>(&mut self, m: M) -> M::Output {
     m.make_mirror(&mut self.hcx)
