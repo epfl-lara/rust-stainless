@@ -417,7 +417,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // because this is correct for panics resulting from asserts, but we should really recover,
     // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
     // programs.)
-    let tpe = f.UnitType().into();
+    let tpe = f.NothingType().into();
     let error_expr = f.Error(tpe, "Panic".into());
 
     if is_fmt {
