@@ -8,6 +8,8 @@ use rustc_middle::ty::{
 };
 use rustc_span::{Span, DUMMY_SP};
 
+use std::collections::BTreeMap;
+
 use stainless_data::ast as st;
 
 /// Extraction of types
@@ -32,8 +34,10 @@ impl<'a, 'l> From<&'a TyParam<'l>> for st::Type<'l> {
 pub(super) struct TyExtractionCtxt<'l> {
   /// The DefId of the surrounding item,
   pub(super) def_id: DefId,
-  /// A mapping from parameter indices to stainless type parameters
-  pub(super) index_to_tparam: HashMap<u32, TyParam<'l>>,
+
+  /// A mapping from parameter indices to stainless type parameters, this should
+  /// be ordered by the index, hence BTreeMap.
+  pub(super) index_to_tparam: BTreeMap<u32, TyParam<'l>>,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
@@ -151,7 +155,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         vec![],
         TyExtractionCtxt {
           def_id,
-          index_to_tparam: HashMap::new(),
+          index_to_tparam: BTreeMap::new(),
         },
         vec![],
       );
@@ -220,7 +224,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     // Extract TypeParameterDefs for all normal generic parameters (ignoring HOF parameters)
-    let index_to_tparam: HashMap<u32, TyParam<'l>> = all_generic_params_of(tcx, def_id)
+    let index_to_tparam: BTreeMap<u32, TyParam<'l>> = all_generic_params_of(tcx, def_id)
       .iter()
       .filter_map(|param| match &param.kind {
         GenericParamDefKind::Type { .. } => {
