@@ -408,24 +408,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
     let f = self.factory();
-    let mut args = args.to_vec();
-
-    assert_eq!(args.len(), 1);
-    let arg = args.pop().unwrap();
-    // FIXME: It seems that for expressions encoding panics, `expr.ty` always gives us the
-    // `never` type, rather than the expected one. We currently just use the Unit type here,
-    // because this is correct for panics resulting from asserts, but we should really recover,
-    // or -- if necessary -- infer the correct type instead. (Stainless will reject any ill-typed
-    // programs.)
-    let tpe = f.NothingType().into();
-    let error_expr = f.Error(tpe, "Panic".into());
-
-    if is_fmt {
-      // TODO: Implement panic! with formatted message
+    if !is_fmt {
+      // Using the nothing type to be subtype of everything.
+      let tpe = f.NothingType().into();
+      let error_expr = f.Error(tpe, "Panic".into());
+      let args = self.extract_expr_refs(args.to_vec());
+      self.keep_for_effects(error_expr.into(), args)
+    }
+    // TODO: Implement panic! with formatted message
+    else {
       self.unsupported_expr(span, "Cannot extract panic with formatted message")
-    } else {
-      let arg = self.extract_expr_ref(arg);
-      self.keep_for_effects(error_expr.into(), vec![arg])
     }
   }
 
