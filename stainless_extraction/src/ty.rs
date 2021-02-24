@@ -1,4 +1,3 @@
-use super::std_items::StdItem::*;
 use super::*;
 
 use rustc_ast::ast;
@@ -10,6 +9,7 @@ use rustc_span::{Span, DUMMY_SP};
 
 use std::collections::BTreeMap;
 
+use crate::std_items::{CrateItem, StdItem};
 use stainless_data::ast as st;
 
 /// Extraction of types
@@ -110,12 +110,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       // All other ADTs
       TyKind::Adt(adt_def, substitutions) => {
-        // If the ADT is a std_item, we need to extract it separately
-        if let Some(std_item) = self.std_items.def_to_item_opt(adt_def.did) {
-          if std_item == SetType {
-            let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
-            return f.SetType(arg_ty).into();
-          }
+        if let Some(StdItem::CrateItem(CrateItem::SetType)) =
+          self.std_items.def_to_item_opt(adt_def.did)
+        {
+          let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
+          return f.SetType(arg_ty).into();
         }
 
         let sort_id = self.extract_adt_id(adt_def.did);
@@ -191,10 +190,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       };
     }
 
-    // Certain unextracted traits we don't complain about at all.
-    let should_silently_ignore_trait =
-      |trait_did: DefId| self.std_items.is_one_of(trait_did, &[SizedTrait]);
-
     // Discovering HOF parameters.
     // We extract `F: Fn*(S) -> T` trait predicates by replacing `F` by `S => T`.
     // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
@@ -207,7 +202,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         PredicateKind::Trait(ref data, _) => {
           let trait_ref = data.skip_binder().trait_ref;
           let trait_did = trait_ref.def_id;
-          if should_silently_ignore_trait(trait_did) {
+          // Certain unextracted traits we don't complain about at all.
+          if self.std_items.is_sized_trait(trait_did) {
             continue;
           }
 
@@ -215,7 +211,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let param_def = generics.type_param(&param_ty, tcx);
 
             // Extract as a closure, supersedes trait bound
-            if self.is_fn_like_trait(trait_did) {
+            if self.std_items.is_fn_like_trait(trait_did) {
               let params_ty = trait_ref.substs[1].expect_ty();
               let param_tys = params_ty.tuple_fields().collect();
               assert!(tparam_to_fun_params
@@ -236,7 +232,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
             let param_def = generics.type_param(&param_ty, tcx);
-            if self.is_fn_like_trait(trait_did) {
+            if self.std_items.is_fn_like_trait(trait_did) {
               let return_ty = data.skip_binder().ty;
               assert!(tparam_to_fun_return
                 .insert(param_def.index, (return_ty, *span))
@@ -338,13 +334,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect()
   }
 
-  /// Various helpers
-
-  pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    self
-      .std_items
-      .is_one_of(def_id, &[FnTrait, FnMutTrait, FnOnceTrait])
-  }
+  // Various helpers
 
   pub(super) fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
     match ty.kind {

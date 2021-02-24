@@ -1,18 +1,28 @@
 use std::collections::HashMap;
 
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
-use rustc_hir::lang_items::*;
+use rustc_hir::lang_items::LangItem as RustLangItem;
 use rustc_middle::ty::TyCtxt;
 use rustc_span::symbol::Symbol;
 
 /// A standard item, either a rust LangItem, or one of the stainless library
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum StdItem {
+  LangItem(LangItem),
+  CrateItem(CrateItem),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LangItem {
   FnTrait,
   FnMutTrait,
   FnOnceTrait,
   SizedTrait,
   BeginPanicFn,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CrateItem {
   BeginPanicFmtFn,
   // Set things,
   SetType,
@@ -25,9 +35,9 @@ pub(super) enum StdItem {
   SetSingletonFn,
 }
 
-const RUST_LANG_ITEMS: &[StdItem] = &[FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn];
+use CrateItem::*;
 
-const STAINLESS_ITEMS: &[StdItem] = &[
+const STAINLESS_ITEMS: &[CrateItem] = &[
   SetType,
   SetAddFn,
   SetDifferenceFn,
@@ -38,16 +48,9 @@ const STAINLESS_ITEMS: &[StdItem] = &[
   SetSingletonFn,
 ];
 
-use StdItem::*;
-
-impl StdItem {
+impl CrateItem {
   pub fn path(self) -> &'static str {
     match self {
-      FnTrait => "Fn",
-      FnMutTrait => "FnMut",
-      FnOnceTrait => "FnOnce",
-      SizedTrait => "Sized",
-      BeginPanicFn => "begin_panic",
       BeginPanicFmtFn => "begin_panic_fmt",
       SetType => "Set",
       SetAddFn => "add",
@@ -59,16 +62,22 @@ impl StdItem {
       SetSingletonFn => "singleton",
     }
   }
+}
 
-  pub fn lang_item(self) -> Option<LangItem> {
+impl LangItem {
+  fn rust_lang_item(self) -> RustLangItem {
     match self {
-      FnTrait => Some(FnTraitLangItem),
-      FnMutTrait => Some(FnMutTraitLangItem),
-      FnOnceTrait => Some(FnOnceTraitLangItem),
-      SizedTrait => Some(SizedTraitLangItem),
-      BeginPanicFn => Some(BeginPanicFnLangItem),
-      _ => None,
+      LangItem::FnTrait => RustLangItem::FnTraitLangItem,
+      LangItem::FnMutTrait => RustLangItem::FnMutTraitLangItem,
+      LangItem::FnOnceTrait => RustLangItem::FnOnceTraitLangItem,
+      LangItem::SizedTrait => RustLangItem::SizedTraitLangItem,
+      LangItem::BeginPanicFn => RustLangItem::BeginPanicFnLangItem,
     }
+  }
+
+  fn iter() -> impl Iterator<Item = &'static LangItem> {
+    use LangItem::*;
+    [FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn].iter()
   }
 }
 
@@ -81,9 +90,9 @@ const CRATE_NAMES: [&str; 2] = ["std", "stainless"];
 
 impl StdItems {
   pub(super) fn collect(tcx: TyCtxt) -> Self {
-    let def_to_item: HashMap<DefId, StdItem> = HashMap::new();
-
-    let mut this = Self { def_to_item };
+    let mut this = Self {
+      def_to_item: HashMap::new(),
+    };
 
     let crate_nums: HashMap<String, CrateNum> = tcx
       .crates()
@@ -101,7 +110,10 @@ impl StdItems {
     }
 
     // Register rust lang items
-    this.register_items_from_lang_items(tcx, RUST_LANG_ITEMS);
+    for item in LangItem::iter() {
+      let def_id = tcx.require_lang_item(item.rust_lang_item(), None);
+      this.def_to_item.insert(def_id, StdItem::LangItem(*item));
+    }
 
     // Register additional items from the rust standard library
     this.register_items_from_crate(tcx, &[BeginPanicFmtFn], *crate_nums.get("std").unwrap());
@@ -116,17 +128,10 @@ impl StdItems {
     }
   }
 
-  fn register_items_from_lang_items(&mut self, tcx: TyCtxt, items: &[StdItem]) {
-    for item in items {
-      let def_id = tcx.require_lang_item(item.lang_item().unwrap(), None);
-      self.def_to_item.insert(def_id, *item);
-    }
-  }
-
   // HACK(gsps): A horrible way to do this, but rustc -- as far as I can tell -- does not expose
   // any API for finding a specific item in, or enumerating all items of a crate.
-  fn register_items_from_crate(&mut self, tcx: TyCtxt, items: &[StdItem], cnum: CrateNum) {
-    let mut items: HashMap<Symbol, StdItem> = items
+  fn register_items_from_crate(&mut self, tcx: TyCtxt, items: &[CrateItem], cnum: CrateNum) {
+    let mut items: HashMap<Symbol, _> = items
       .iter()
       .map(|item| (Symbol::intern(item.path()), *item))
       .collect();
@@ -145,7 +150,7 @@ impl StdItems {
       {
         if let Some(item) = items.remove(name_sym) {
           dbg!(&tcx.def_path_str(def_id));
-          self.def_to_item.insert(def_id, item);
+          self.def_to_item.insert(def_id, StdItem::CrateItem(item));
         }
       }
     }
@@ -156,10 +161,19 @@ impl StdItems {
     self.def_to_item.get(&def_id).copied()
   }
 
-  #[inline]
-  pub(super) fn is_one_of(&self, def_id: DefId, items: &[StdItem]) -> bool {
+  pub(super) fn is_sized_trait(&self, def_id: DefId) -> bool {
     self
       .def_to_item_opt(def_id)
-      .map_or(false, |sti| items.contains(&sti))
+      .map_or(false, |sti| sti == StdItem::LangItem(LangItem::SizedTrait))
+  }
+
+  #[inline]
+  pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
+    match self.def_to_item_opt(def_id) {
+      Some(StdItem::LangItem(LangItem::FnTrait))
+      | Some(StdItem::LangItem(LangItem::FnMutTrait))
+      | Some(StdItem::LangItem(LangItem::FnOnceTrait)) => true,
+      _ => false,
+    }
   }
 }
