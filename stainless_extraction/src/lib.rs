@@ -1,5 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
+#![feature(bool_to_option)]
 
 #[macro_use]
 extern crate lazy_static;
