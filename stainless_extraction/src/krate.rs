@@ -64,7 +64,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           ItemKind::Enum(..) | ItemKind::Struct(..) => {
             eprintln!("  - ADT {}", def_path_str);
             let sort = self.xtor.extract_adt(def_id);
-            self.xtor.add_adt(sort.id, sort);
+            self.xtor.add_adt(sort);
           }
 
           // Store functions of impl blocks and their specs
@@ -328,17 +328,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut flags = carrier_flags.to_stainless(f);
 
     // Add flag specifying that this function is a method of its class (if there's a class)
-    flags.extend(class_def.into_iter().map(|cd| {
-      let flag: st::Flag<'l> = f.IsMethodOf(cd.id).into();
-      flag
-    }));
+    flags.extend(
+      class_def
+        .iter()
+        .map(|cd| -> st::Flag<'l> { f.IsMethodOf(cd.id).into() }),
+    );
 
     // Extract the function itself
-    type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
     let (tparams, txtcx, _) = self.extract_generics(fn_item.def_id);
 
-    let (params, return_tpe, body_expr): Parts<'l> =
-      self.enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
+    let (params, return_tpe, body_expr): (Params<'l>, st::Type<'l>, st::Expr<'l>) = self
+      .enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol);
 
@@ -362,7 +362,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     )
   }
 
-  /// Filter out the tparams of the class and the class itself
+  /// Filter out the tparams of the class and the class (as tparam) itself
   fn filter_class_tparams(
     &self,
     tparams: Vec<&'l st::TypeParameterDef<'l>>,

@@ -247,9 +247,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  fn add_adt(&mut self, id: StainlessSymId<'l>, adt: &'l st::ADTSort<'l>) {
+  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) {
     self.with_extraction_mut(|xt| {
-      assert!(xt.adts.insert(id, adt).is_none());
+      assert!(xt.adts.insert(adt.id, adt).is_none());
     })
   }
 

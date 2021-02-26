@@ -144,7 +144,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let tcx = self.tcx;
     let span = tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
     let generics = tcx.generics_of(def_id);
-    let predicates = tcx.predicates_of(def_id);
+    let predicates = tcx.predicates_defined_on(def_id);
 
     // Closures are strange. We just sanity check against the compiler internal type parameters
     // and don't try to extract anything else.
@@ -273,8 +273,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Convert trait refs in the trait bounds to types
     let bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
       .iter()
-      // Filter out the Self-trait-bound that rustc puts on traits
-      .filter(|&(tr, _)| tr.def_id != def_id)
       .map(|&(ty::TraitRef { def_id, substs }, span)| {
         let trait_id = self.get_or_register_def(def_id);
         let tps = self.extract_tys(substs.types(), &txtcx, span);
@@ -338,12 +336,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
   let mut all_generics: Vec<&Generics> = vec![generics];
-  while let Some(parent_id) = all_generics.last().unwrap().parent {
+  while let Some(parent_id) = all_generics.last().and_then(|g| g.parent) {
     all_generics.push(tcx.generics_of(parent_id));
   }
   all_generics
     .iter()
     .rev()
-    .flat_map(|generics| generics.params.iter().map(|param| param))
+    .flat_map(|generics| generics.params.iter())
     .collect()
 }
