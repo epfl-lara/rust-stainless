@@ -95,6 +95,7 @@ define_tests!(
   pass: nested_spec_impl,
   pass: panic_type,
   pass: spec_on_trait_impl,
+  pass: trait_bounds_impl,
   pass: tuple_match,
   pass: tuples,
   pass: type_class,
