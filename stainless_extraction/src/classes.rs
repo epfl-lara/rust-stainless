@@ -67,7 +67,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         &*f.ValDef(f.Variable(
           self.fresh_id(format!("ev{}", index)),
           ct.into(),
-          vec![f.Annotation("evidence".into(), vec![]).into()],
+          vec![f.evidence_flag()],
         ))
       })
       .collect()

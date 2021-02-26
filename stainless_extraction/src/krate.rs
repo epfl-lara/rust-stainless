@@ -335,20 +335,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     );
 
     // Extract the function itself
-    let (tparams, txtcx, _) = self.extract_generics(fn_item.def_id);
+    let (tparams, txtcx, trait_bounds) = self.extract_generics(fn_item.def_id);
+
+    // If this function is not on a class *but* has trait bounds, we need to add
+    // these as evidence parameters.
+    let ev_params = if class_def.is_none() {
+      self.evidence_params(trait_bounds)
+    } else {
+      vec![]
+    };
 
     let (params, return_tpe, body_expr): (Params<'l>, st::Type<'l>, st::Expr<'l>) = self
       .enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
-        bxtor.populate_def_context(&mut flags_by_symbol);
+        bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
 
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
 
-        (bxtor.body_params(), bxtor.return_tpe(), body_expr)
+        (bxtor.body_params().clone(), bxtor.return_tpe(), body_expr)
       });
-
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Wrap it all up in a Stainless function

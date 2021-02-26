@@ -4,7 +4,8 @@ use super::*;
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Generics, PredicateKind, TraitRef, Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, GenericPredicates, Generics, Predicate,
+  PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -172,7 +173,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
 
-    for (predicate, span) in predicates.predicates {
+    for (predicate, span) in self.all_predicates_of(def_id).iter() {
       match predicate.kind() {
         PredicateKind::Trait(ref data, _) => {
           let trait_ref = data.skip_binder().trait_ref;
@@ -294,6 +295,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       txtcx,
       bounds,
     )
+  }
+
+  fn all_predicates_of(&self, def_id: DefId) -> Vec<&(Predicate<'tcx>, Span)> {
+    let predicates = self.tcx.predicates_defined_on(def_id);
+    let mut all_predicates: Vec<GenericPredicates> = vec![predicates];
+    while let Some(parent_id) = all_predicates.last().and_then(|g| g.parent) {
+      all_predicates.push(self.tcx.predicates_defined_on(parent_id));
+    }
+    all_predicates
+      .iter()
+      .rev()
+      .flat_map(|pred| pred.predicates)
+      .collect()
   }
 
   /// Various helpers

@@ -9,14 +9,24 @@ use stainless_data::ast as st;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Build a DefContext that includes all variable bindings
-  pub(super) fn populate_def_context(&mut self, flags_by_symbol: &mut HashMap<Symbol, Flags>) {
+  pub(super) fn populate_def_context(
+    &mut self,
+    flags_by_symbol: &mut HashMap<Symbol, Flags>,
+    add_params: &Vec<&'l st::ValDef<'l>>,
+  ) {
     // Bindings from the params
     for param in self.body.params {
       let flags = param
         .pat
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
-      self.extract_binding(param.pat.hir_id, flags);
+      let var = self.extract_binding(param.pat.hir_id, flags);
+      self.dcx.add_param(self.factory().ValDef(var));
+    }
+
+    // Additional parameters (usually evidence parameters)
+    for v in add_params {
+      self.dcx.add_param(v);
     }
 
     // Bindings from the body
@@ -85,18 +95,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 #[derive(Clone, Debug)]
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
+  pub params: Vec<&'l st::ValDef<'l>>,
 }
 
 impl<'l> DefContext<'l> {
   pub(super) fn new() -> Self {
     Self {
       vars: HashMap::new(),
+      params: vec![],
     }
   }
 
   pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
     assert!(!self.vars.contains_key(&hir_id));
     self.vars.insert(hir_id, var);
+    self
+  }
+
+  pub(super) fn add_param(&mut self, val: &'l st::ValDef<'l>) -> &mut Self {
+    assert!(!self.params.contains(&val));
+    self.params.push(val);
     self
   }
 

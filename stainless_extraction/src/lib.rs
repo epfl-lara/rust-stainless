@@ -382,13 +382,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
 
-  fn body_params(&self) -> Params<'l> {
-    self
-      .body
-      .params
-      .iter()
-      .map(|param| &*self.factory().ValDef(self.fetch_var(param.pat.hir_id)))
-      .collect()
+  fn body_params(&self) -> &Params<'l> {
+    &self.dcx.params
   }
 
   fn return_tpe(&mut self) -> st::Type<'l> {

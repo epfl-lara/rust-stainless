@@ -115,7 +115,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         bxtor.dcx.add_var(sid, vd.v);
       }
       // Pick up any additional local bindings
-      bxtor.populate_def_context(&mut HashMap::new());
+      // (A spec neither has flags on the params, nor additional evidence params)
+      bxtor.populate_def_context(&mut HashMap::new(), &vec![]);
 
       // Extract the spec function's body
       let spec_expr = bxtor.hcx.mirror(&bxtor.body.value);
@@ -145,7 +146,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     body_expr: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let outer_fn_params = self.body_params();
+    let outer_fn_params = self.body_params().clone();
 
     // Wrap body with measure expression
     let body_expr = specs
