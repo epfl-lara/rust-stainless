@@ -36,6 +36,19 @@ impl<T: Equals> List<T> {
       _ => false,
     }
   }
+
+  pub fn combined_bound<U: Hash>(&self, x: &T, s: &U) -> i32 {
+    match self {
+      List::Cons(y, _) => {
+        if x.eq(y) {
+          0
+        } else {
+          -1
+        }
+      }
+      _ => s.hash(),
+    }
+  }
 }
 
 pub fn main() {
