@@ -1,5 +1,10 @@
 extern crate stainless;
 
+pub enum List<T> {
+  Nil,
+  Cons(T, Box<List<T>>),
+}
+
 pub trait Equals {
   fn eq(&self, other: &Self) -> bool;
 }
@@ -10,9 +15,18 @@ impl Equals for i32 {
   }
 }
 
-pub enum List<T> {
-  Nil,
-  Cons(T, Box<List<T>>),
+pub trait Hash {
+  fn hash(&self) -> i32;
+}
+
+impl Hash for i32 {
+  fn hash(&self) -> i32 {
+    *self - 1000000
+  }
+}
+
+fn super_hash<T: Hash>(x: &T) -> i32 {
+  x.hash() + 123
 }
 
 impl<T: Equals> List<T> {
@@ -38,6 +52,8 @@ pub fn main() {
       )),
     )),
   );
+
+  assert!(super_hash(&456) == 456 - 1000000 + 123);
 
   assert!(list.contains(&2));
   assert!(!list.contains(&3))
