@@ -46,7 +46,7 @@ use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::StdItems;
-use ty::TyExtractionCtxt;
+use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
 /// The entrypoint into extraction
@@ -83,6 +83,7 @@ type StainlessSymId<'l> = &'l st::SymbolIdentifier<'l>;
 type Params<'l> = Vec<&'l st::ValDef<'l>>;
 
 /// A mapping between Rust ids and Stainless ids
+#[derive(Default)]
 struct SymbolMapping<'l> {
   global_id_counter: UniqueCounter<()>,
   local_id_counter: UniqueCounter<String>,
@@ -97,6 +98,7 @@ struct Extraction<'l> {
   adts: HashMap<StainlessSymId<'l>, &'l st::ADTSort<'l>>,
   function_refs: HashSet<DefId>,
   method_to_class: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
+  generics: HashMap<StainlessSymId<'l>, Generics<'l>>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
   classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
 }
@@ -104,18 +106,14 @@ struct Extraction<'l> {
 impl<'l> Extraction<'l> {
   fn new(factory: &'l st::Factory) -> Self {
     Self {
-      mapping: SymbolMapping {
-        global_id_counter: UniqueCounter::new(),
-        local_id_counter: UniqueCounter::new(),
-        did_to_stid: HashMap::new(),
-        hid_to_stid: HashMap::new(),
-      },
       factory,
-      adts: HashMap::new(),
-      function_refs: HashSet::new(),
-      functions: HashMap::new(),
-      classes: HashMap::new(),
-      method_to_class: HashMap::new(),
+      mapping: Default::default(),
+      adts: Default::default(),
+      function_refs: Default::default(),
+      method_to_class: Default::default(),
+      generics: Default::default(),
+      functions: Default::default(),
+      classes: Default::default(),
     }
   }
 
