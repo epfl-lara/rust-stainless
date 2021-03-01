@@ -143,8 +143,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn get_generics(&mut self, def_id: DefId) -> Generics<'l> {
     let id = self.get_or_register_def(def_id);
 
-    // FIXME: There was no easy solution to convince the borrow checker to
-    //   return a reference to the generics instead of cloning them.
+    // We currently have to clone the generics because they otherwise mutably
+    // borrow the entire `self`. Maybe there is a better way of doing this?
     self
       .with_extraction(|xt| xt.generics.get(id).cloned())
       .unwrap_or_else(|| {
