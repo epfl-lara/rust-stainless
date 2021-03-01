@@ -19,7 +19,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
 
     let id = self.get_or_register_def(def_id);
-    let (tparams, tyxtctx, trait_bounds) = self.extract_generics(def_id);
+    let Generics {
+      tparams,
+      txtcx,
+      trait_bounds,
+    } = self.get_generics(def_id);
 
     // If this is an 'impl for trait', we extract a concrete class
     if let Some(ty::TraitRef {
@@ -29,7 +33,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     {
       // The parent (aka inherits from) the trait it implements
       let trait_id = self.get_or_register_def(trait_def_id);
-      let tps = self.extract_tys(substs.types(), &tyxtctx, span);
+      let tps = self.extract_tys(substs.types(), &txtcx, span);
       let parent = vec![&*f.ClassType(trait_id, tps)];
 
       let fields = trait_bounds
