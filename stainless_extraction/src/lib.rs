@@ -508,15 +508,27 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Returns None if no evidence argument matches the key.
   fn extract_evidence_arg_call(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
     let f = self.factory();
-    self.current_class.and_then(|cd| {
-      cd.fields.iter().find_map(|&vd| match vd.v.tpe {
-        st::Type::ClassType(class_type) if key == class_type => Some(
-          f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
-            .into(),
-        ),
+
+    // First try the current functions arguments
+    self
+      .body_params()
+      .iter()
+      .find_map(|&vd| match vd.v.tpe {
+        st::Type::ClassType(class_type) if key == class_type => Some(vd.v.into()),
         _ => None,
       })
-    })
+      // then search for an evidence argument in the current class
+      .or_else(|| {
+        self.current_class.and_then(|cd| {
+          cd.fields.iter().find_map(|&vd| match vd.v.tpe {
+            st::Type::ClassType(class_type) if key == class_type => Some(
+              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
+                .into(),
+            ),
+            _ => None,
+          })
+        })
+      })
   }
 }
 
