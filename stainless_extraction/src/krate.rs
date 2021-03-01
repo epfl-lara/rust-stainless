@@ -95,7 +95,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               Some(cd),
             )
           }
-
           _ => {
             self
               .xtor
