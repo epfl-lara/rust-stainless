@@ -38,3 +38,14 @@ pub struct TypeClassKey<'l> {
   /// parameters of the receiver type.
   pub recv_tps: Vec<st::Type<'l>>,
 }
+
+impl PartialEq<st::ClassType<'_>> for TypeClassKey<'_> {
+  fn eq(&self, other: &st::ClassType<'_>) -> bool {
+    let st::ClassType { id, tps } = other;
+    let key = TypeClassKey {
+      id: *id,
+      recv_tps: tps.clone(),
+    };
+    key == *self
+  }
+}
