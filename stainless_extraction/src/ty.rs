@@ -4,8 +4,8 @@ use super::*;
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, GenericPredicates, Generics, Predicate,
-  PredicateKind, TraitRef, Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, GenericPredicates, Generics as RustGenerics,
+  Predicate, PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -39,6 +39,13 @@ pub(super) struct TyExtractionCtxt<'l> {
   /// A mapping from parameter indices to stainless type parameters, this should
   /// be ordered by the index, hence BTreeMap.
   pub(super) index_to_tparam: BTreeMap<u32, TyParam<'l>>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct Generics<'l> {
+  pub tparams: Vec<&'l st::TypeParameterDef<'l>>,
+  pub txtcx: TyExtractionCtxt<'l>,
+  pub trait_bounds: Vec<&'l st::ClassType<'l>>,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
@@ -131,16 +138,22 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect()
   }
 
-  /// Generics
+  /// Get the extracted generics for a def_id, usually a function or a class.
+  /// Generics are cached after the first computation.
+  pub(super) fn get_generics(&mut self, def_id: DefId) -> Generics<'l> {
+    let id = self.get_or_register_def(def_id);
 
-  pub(super) fn extract_generics(
-    &mut self,
-    def_id: DefId,
-  ) -> (
-    Vec<&'l st::TypeParameterDef<'l>>,
-    TyExtractionCtxt<'l>,
-    Vec<&'l st::ClassType<'l>>,
-  ) {
+    // FIXME: There was no easy solution to convince the borrow checker to
+    //   return a reference to the generics instead of cloning them.
+    self
+      .with_extraction(|xt| xt.generics.get(id).cloned())
+      .unwrap_or_else(|| {
+        let gen = self.extract_generics(def_id);
+        self.with_extraction_mut(|xt| xt.generics.entry(id).or_insert(gen).clone())
+      })
+  }
+
+  fn extract_generics(&mut self, def_id: DefId) -> Generics<'l> {
     let f = self.factory();
     let tcx = self.tcx;
     let span = tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
@@ -152,14 +165,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     if tcx.is_closure(def_id) {
       assert_eq!(generics.count(), 3);
       assert_eq!(predicates.predicates.len(), 0);
-      return (
-        vec![],
-        TyExtractionCtxt {
+      return Generics {
+        tparams: vec![],
+        txtcx: TyExtractionCtxt {
           def_id,
           index_to_tparam: BTreeMap::new(),
         },
-        vec![],
-      );
+        trait_bounds: vec![],
+      };
     }
 
     // Certain unextracted traits we don't complain about at all.
@@ -272,7 +285,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     // Convert trait refs in the trait bounds to types
-    let bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
+    let trait_bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
       .iter()
       .map(|&(ty::TraitRef { def_id, substs }, span)| {
         let trait_id = self.get_or_register_def(def_id);
@@ -283,8 +296,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect();
 
     // And we're done.
-    (
-      txtcx
+    Generics {
+      tparams: txtcx
         .index_to_tparam
         .values()
         .filter_map(|tparam| match tparam {
@@ -293,8 +306,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         })
         .collect(),
       txtcx,
-      bounds,
-    )
+      trait_bounds,
+    }
   }
 
   fn all_predicates_of(&self, def_id: DefId) -> Vec<&(Predicate<'tcx>, Span)> {
@@ -349,7 +362,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
-  let mut all_generics: Vec<&Generics> = vec![generics];
+  let mut all_generics: Vec<&RustGenerics> = vec![generics];
   while let Some(parent_id) = all_generics.last().and_then(|g| g.parent) {
     all_generics.push(tcx.generics_of(parent_id));
   }

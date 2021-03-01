@@ -355,11 +355,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
     let class_def = self.base.get_class_of_method(fd_id);
-    let (tparams, _, trait_bounds): (
-      Vec<&'l st::TypeParameterDef<'l>>,
-      TyExtractionCtxt<'l>,
-      Vec<&'l st::ClassType<'l>>,
-    ) = self.base.extract_generics(def_id);
+    let Generics {
+      tparams,
+      trait_bounds,
+      ..
+    } = self.base.get_generics(def_id);
 
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:

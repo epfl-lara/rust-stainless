@@ -293,7 +293,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
 
     // Extract the function signature
-    let (tparams, txtcx, _) = self.extract_generics(def_id);
+    let Generics { tparams, txtcx, .. } = self.get_generics(def_id);
     let poly_fn_sig = self.tcx.fn_sig(def_id);
     let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
     let params: Params<'l> = fn_sig
@@ -334,7 +334,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     );
 
     // Extract the function itself
-    let (tparams, txtcx, trait_bounds) = self.extract_generics(fn_item.def_id);
+    let Generics {
+      tparams,
+      txtcx,
+      trait_bounds,
+    } = self.get_generics(fn_item.def_id);
 
     // If this function is not on a class *but* has trait bounds, we need to add
     // these as evidence parameters.
@@ -427,7 +431,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         };
 
         // Extract generics
-        let (tparams, txtcx, _) = self.extract_generics(def_id);
+        let Generics { tparams, txtcx, .. } = self.get_generics(def_id);
 
         // Extract constructors
         let constructors = adt_def
