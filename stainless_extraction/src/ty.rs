@@ -56,6 +56,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     span: Span,
   ) -> st::Type<'l> {
     let f = self.factory();
+    let usize_bits = self.tcx.data_layout.pointer_size.bits() as i32;
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
 
@@ -71,6 +72,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       TyKind::Uint(ast::UintTy::U32) => f.BVType(false, 32).into(),
       TyKind::Uint(ast::UintTy::U64) => f.BVType(false, 64).into(),
       TyKind::Uint(ast::UintTy::U128) => f.BVType(false, 128).into(),
+
+      TyKind::Int(ast::IntTy::Isize) => f.BVType(true, usize_bits).into(),
+      TyKind::Uint(ast::UintTy::Usize) => f.BVType(false, usize_bits).into(),
 
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), txtcx, span);
