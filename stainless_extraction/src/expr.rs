@@ -10,6 +10,7 @@ use std::convert::TryFrom;
 use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
+use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
   Mirror, Pat, PatKind, StmtKind, StmtRef,
@@ -21,8 +22,8 @@ type Result<T> = std::result::Result<T, &'static str>;
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     match expr.kind {
-      ExprKind::Literal { literal: konst, .. } => match Literal::try_from(konst) {
-        Ok(lit) => lit.as_st_literal(self.factory()),
+      ExprKind::Literal { literal: konst, .. } => match Literal::from(konst, self.tcx()) {
+        Some(lit) => lit.as_st_literal(self.factory()),
         _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
       },
       ExprKind::Unary { .. } => self.extract_unary(expr),
@@ -162,7 +163,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_shift(
     &mut self,
     arg1: st::Expr<'l>,
-    mut arg2: st::Expr<'l>,
+    arg2: st::Expr<'l>,
     arg1_ty: Ty<'tcx>,
     arg2_ty: Ty<'tcx>,
     is_shl: bool,
@@ -170,45 +171,37 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let bail = |bxtor: &mut BodyExtractor<'_, 'l, 'tcx>, msg| bxtor.unsupported_expr(span, msg);
-    match (&arg1_ty.kind, &arg2_ty.kind) {
-      (kind1, kind2) if kind1 == kind2 => {} // No need to adapt anything,
-      (TyKind::Int(int_ty1), TyKind::Int(int_ty2)) => {
-        match (int_ty1.bit_width(), int_ty2.bit_width()) {
-          (Some(width1), Some(width2)) => {
-            if width1 > width2 {
-              arg2 = f.BVWideningCast(arg2, f.BVType(true, width1 as i32)).into();
-            } else {
-              return bail(self, "Adapting lhs shift argument would change result type");
-            }
-          }
-          _ => {
-            return bail(self, "Cannot adapt shift arguments of unknown bit widths");
-          }
+
+    // No need to adapt anything,
+    let arg2 = if &arg1_ty.kind == &arg2_ty.kind {
+      arg2
+    } else {
+      let (width1, width2, signed) = match (&arg1_ty.kind, &arg2_ty.kind) {
+        (TyKind::Int(int_ty1), TyKind::Int(int_ty2)) => (
+          int_bit_width(*int_ty1, self.tcx()),
+          int_bit_width(*int_ty2, self.tcx()),
+          true,
+        ),
+        (TyKind::Uint(uint_ty1), TyKind::Uint(uint_ty2)) => (
+          uint_bit_width(*uint_ty1, self.tcx()),
+          uint_bit_width(*uint_ty2, self.tcx()),
+          false,
+        ),
+        _ => {
+          return bail(
+            self,
+            "Cannot extract shift mixing signed and unsigned operands",
+          );
         }
-      }
-      (TyKind::Uint(uint_ty1), TyKind::Uint(uint_ty2)) => {
-        match (uint_ty1.bit_width(), uint_ty2.bit_width()) {
-          (Some(width1), Some(width2)) => {
-            if width1 > width2 {
-              arg2 = f
-                .BVWideningCast(arg2, f.BVType(false, width1 as i32))
-                .into();
-            } else {
-              return bail(self, "Adapting lhs shift argument would change result type");
-            }
-          }
-          _ => {
-            return bail(self, "Cannot adapt shift arguments of unknown bit widths");
-          }
-        }
-      }
-      _ => {
-        return bail(
-          self,
-          "Cannot extract shift mixing signed and unsigned operands",
-        );
+      };
+      if width1 > width2 {
+        f.BVWideningCast(arg2, f.BVType(signed, width1 as i32))
+          .into()
+      } else {
+        return bail(self, "Adapting lhs shift argument would change result type");
       }
     };
+
     if is_shl {
       f.BVShiftLeft(arg1, arg2).into()
     } else if self.base.is_signed_bv_type(arg1_ty) {
@@ -639,8 +632,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ),
       },
 
-      box PatKind::Constant { value: konst } => match Literal::try_from(konst) {
-        Ok(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),
+      box PatKind::Constant { value: konst } => match Literal::from(konst, self.tcx()) {
+        Some(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),
         _ => self.unsupported_pattern(pattern.span, "Unsupported kind of literal in pattern"),
       },
 
@@ -806,8 +799,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       && scrutinee.ty.is_bool()
       && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
         (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
-          match Literal::try_from(*konst) {
-            Ok(Literal::Bool(b)) => b,
+          match Literal::from(*konst, self.tcx()) {
+            Some(Literal::Bool(b)) => b,
             _ => false,
           }
         }

@@ -32,6 +32,38 @@ pub fn i32_ops(x: i32, y: i32) {
   // assert!(x == !!x);
 }
 
+pub fn isize_ops(x: isize, y: isize) {
+  assert!(x + y == y + x);
+  assert!(x + x == 2 * x);
+  assert!(x + x == x << 1);
+  if x >= 0 && x < 1 << 30 {
+    assert!(x == (x + x) / 2);
+  }
+
+  assert!(x - y == -y + x);
+  assert!(x - x == 0);
+
+  assert!(x * y == y * x);
+  assert!(x == 0 || x % x == 0);
+
+  if x > 0 && x < 128 && y >= 0 && y <= 128 {
+    assert!((x * y) % x == 0);
+  }
+
+  assert!(x | y == y | x);
+  assert!(x | x == x);
+
+  assert!(x & y == y & x);
+  assert!(x & x == x);
+  assert!(x & 0 == 0);
+
+  assert!(x ^ y == y ^ x);
+  assert!(x ^ x == 0);
+
+  // FIXME: Enable once missing case in Stainless typechecker is added
+  // assert!(x == !!x);
+}
+
 pub fn u32_ops(x: u32, y: u32) {
   assert!(x + y == y + x);
   assert!(x + x == 2 * x);
@@ -61,8 +93,8 @@ pub fn u32_ops(x: u32, y: u32) {
 pub fn usize_ops(x: usize, y: usize) {
   assert!(x + y == y + x);
   assert!(x + x == 2 * x);
-  assert!(x + x == x << 1u32);
-  assert!(x >= 1 << 31u32 || x == (x + x) / 2);
+  assert!(x + x == x << 1usize);
+  assert!(x >= 1 << 31usize || x == (x + x) / 2);
 
   assert!(x - x == 0);
 

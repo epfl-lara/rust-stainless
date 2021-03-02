@@ -48,6 +48,17 @@ pub(super) struct Generics<'l> {
   pub trait_bounds: Vec<&'l st::ClassType<'l>>,
 }
 
+fn usize_bit_width(tcx: TyCtxt<'_>) -> u64 {
+  tcx.data_layout.pointer_size.bits()
+}
+
+pub fn int_bit_width(int_ty: ast::IntTy, tcx: TyCtxt<'_>) -> u64 {
+  int_ty.bit_width().unwrap_or(usize_bit_width(tcx))
+}
+pub fn uint_bit_width(int_ty: ast::UintTy, tcx: TyCtxt<'_>) -> u64 {
+  int_ty.bit_width().unwrap_or(usize_bit_width(tcx))
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_ty(
     &mut self,
@@ -56,7 +67,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     span: Span,
   ) -> st::Type<'l> {
     let f = self.factory();
-    let usize_bits = self.tcx.data_layout.pointer_size.bits() as i32;
     match ty.kind {
       TyKind::Bool => f.BooleanType().into(),
 
@@ -73,8 +83,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       TyKind::Uint(ast::UintTy::U64) => f.BVType(false, 64).into(),
       TyKind::Uint(ast::UintTy::U128) => f.BVType(false, 128).into(),
 
-      TyKind::Int(ast::IntTy::Isize) => f.BVType(true, usize_bits).into(),
-      TyKind::Uint(ast::UintTy::Usize) => f.BVType(false, usize_bits).into(),
+      TyKind::Int(ast::IntTy::Isize) => f.BVType(true, usize_bit_width(self.tcx) as i32).into(),
+      TyKind::Uint(ast::UintTy::Usize) => f.BVType(false, usize_bit_width(self.tcx) as i32).into(),
 
       TyKind::Tuple(..) => {
         let arg_tps = self.extract_tys(ty.tuple_fields(), txtcx, span);
