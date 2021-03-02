@@ -30,7 +30,7 @@ impl Literal {
     }
   }
 
-  pub fn from(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
+  pub fn from_const(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
     match konst.ty.kind {
       _ if konst.ty.is_unit() => Some(Literal::Unit),
 

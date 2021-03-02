@@ -22,7 +22,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     match expr.kind {
-      ExprKind::Literal { literal: konst, .. } => match Literal::from(konst, self.tcx()) {
+      ExprKind::Literal { literal: konst, .. } => match Literal::from_const(konst, self.tcx()) {
         Some(lit) => lit.as_st_literal(self.factory()),
         _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
       },
@@ -632,7 +632,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ),
       },
 
-      box PatKind::Constant { value: konst } => match Literal::from(konst, self.tcx()) {
+      box PatKind::Constant { value: konst } => match Literal::from_const(konst, self.tcx()) {
         Some(lit) => f.LiteralPattern(binder, lit.as_st_literal(f)).into(),
         _ => self.unsupported_pattern(pattern.span, "Unsupported kind of literal in pattern"),
       },
@@ -799,7 +799,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       && scrutinee.ty.is_bool()
       && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
         (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
-          match Literal::from(*konst, self.tcx()) {
+          match Literal::from_const(*konst, self.tcx()) {
             Some(Literal::Bool(b)) => b,
             _ => false,
           }
