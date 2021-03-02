@@ -1,9 +1,8 @@
-use std::convert::TryFrom;
-
 use rustc_middle::mir::interpret::ConstValue;
-use rustc_middle::ty::{self, ConstKind, TyKind};
+use rustc_middle::ty::{self, ConstKind, TyCtxt, TyKind};
 use rustc_target::abi;
 
+use crate::ty::{int_bit_width, uint_bit_width};
 use stainless_data::ast as st;
 use stainless_data::ser::types as st_types;
 
@@ -30,36 +29,30 @@ impl Literal {
       Literal::String(value) => f.StringLiteral(value.clone()).into(),
     }
   }
-}
 
-impl<'tcx> TryFrom<&'tcx ty::Const<'tcx>> for Literal {
-  type Error = ();
-
-  fn try_from(konst: &'tcx ty::Const<'tcx>) -> Result<Self, Self::Error> {
+  pub fn from_const(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
     match konst.ty.kind {
-      _ if konst.ty.is_unit() => Ok(Literal::Unit),
+      _ if konst.ty.is_unit() => Some(Literal::Unit),
+
       TyKind::Bool => {
         let value = konst.val.try_to_bits(abi::Size::from_bits(1)).unwrap() == 1;
-        Ok(Literal::Bool(value))
+        Some(Literal::Bool(value))
       }
-      // TODO: Handle `isize` and `usize`
-      TyKind::Int(int_ty) => int_ty
-        .bit_width()
-        .and_then(|size| {
-          let value = konst.val.try_to_bits(abi::Size::from_bits(size));
-          value.map(|value| Literal::Int {
-            value: value as i128,
-            size,
-          })
+
+      TyKind::Int(int_ty) => {
+        let size = int_bit_width(int_ty, tcx);
+        let value = konst.val.try_to_bits(abi::Size::from_bits(size));
+        value.map(|value| Literal::Int {
+          value: value as i128,
+          size,
         })
-        .ok_or(()),
-      TyKind::Uint(uint_ty) => uint_ty
-        .bit_width()
-        .and_then(|size| {
-          let value = konst.val.try_to_bits(abi::Size::from_bits(size));
-          value.map(|value| Literal::Uint { value, size })
-        })
-        .ok_or(()),
+      }
+      TyKind::Uint(uint_ty) => {
+        let size = uint_bit_width(uint_ty, tcx);
+        let value = konst.val.try_to_bits(abi::Size::from_bits(size));
+        value.map(|value| Literal::Uint { value, size })
+      }
+
       TyKind::Ref(
         _,
         ty::TyS {
@@ -70,11 +63,11 @@ impl<'tcx> TryFrom<&'tcx ty::Const<'tcx>> for Literal {
         ConstKind::Value(ConstValue::Slice { data, start, end }) => {
           let slice = data.inspect_with_undef_and_ptr_outside_interpreter(start..end);
           let s = ::std::str::from_utf8(slice).expect("Expected UTF8 str in ConstValue");
-          Ok(Literal::String(s.into()))
+          Some(Literal::String(s.into()))
         }
-        _ => Err(()),
+        _ => None,
       },
-      _ => Err(()),
+      _ => None,
     }
   }
 }
