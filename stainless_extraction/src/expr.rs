@@ -518,7 +518,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     } = expr.kind
     {
-      // TODO: Also consider type arguments
       let sort = self.base.extract_adt(adt_def.did);
       let constructor = sort.constructors[variant_index.index()];
       let arg_tps = self.extract_arg_types(substs.types(), expr.span);
