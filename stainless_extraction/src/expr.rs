@@ -12,8 +12,8 @@ use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
-  Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, Guard, LogicalOp,
-  Mirror, Pat, PatKind, StmtKind, StmtRef,
+  Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,
+  LogicalOp, Mirror, Pat, PatKind, StmtKind, StmtRef,
 };
 
 type Result<T> = std::result::Result<T, &'static str>;
@@ -511,20 +511,40 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     } = expr.kind
     {
-      if base.is_some() {
-        self.unsupported_expr(expr.span, "Cannot extract ADT constructions with bases")
-      } else {
-        // TODO: Also consider type arguments
-        let sort = self.base.extract_adt(adt_def.did);
-        let constructor = sort.constructors[variant_index.index()];
-        let arg_tps = self.extract_arg_types(substs.types(), expr.span);
+      let sort = self.base.extract_adt(adt_def.did);
+      let constructor = sort.constructors[variant_index.index()];
+      let arg_tps = self.extract_arg_types(substs.types(), expr.span);
+
+      // If the ADT is constructed with "struct update syntax"
+      let args = if let Some(FruInfo { base, .. }) = base {
+        // we take the explicit fields
+        let fields_by_index = fields
+          .into_iter()
+          .map(|f| (f.name.index(), self.extract_expr_ref(f.expr)))
+          .collect::<HashMap<_, _>>();
+        let adt = self.extract_expr_ref(base);
+        // and fill the rest in from the base ADT
+        constructor
+          .fields
+          .iter()
+          .enumerate()
+          .map(|(index, fi)| {
+            fields_by_index
+              .get(&index)
+              .map(|&e| e)
+              .unwrap_or_else(|| f.ADTSelector(adt, fi.v.id).into())
+          })
+          .collect()
+      }
+      // Otherwise, just normally extract the field expressions.
+      else {
         fields.sort_by_key(|field| field.name.index());
-        let args = fields
+        fields
           .into_iter()
           .map(|field| self.extract_expr_ref(field.expr))
-          .collect();
-        f.ADT(constructor.id, arg_tps, args).into()
-      }
+          .collect()
+      };
+      f.ADT(constructor.id, arg_tps, args).into()
     } else {
       unreachable!()
     }
