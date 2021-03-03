@@ -31,7 +31,7 @@ fn test_many_queries() {
     if let Ok(report) = response.into_verification_report() {
       assert!(reponse_has_no_errors(report));
     } else {
-      assert!(false);
+      panic!("no report")
     }
   }
 }

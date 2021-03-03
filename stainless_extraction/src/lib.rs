@@ -132,7 +132,7 @@ struct BaseExtractor<'l, 'tcx: 'l> {
   extraction: Option<Box<Extraction<'l>>>,
 }
 
-fn sanitize_path_name(s: &String) -> String {
+fn sanitize_path_name(s: &str) -> String {
   // Remove forbidden characters
   let s = s.replace(&[' ', '<', '>'][..], "");
   assert!(
@@ -207,7 +207,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     def_id: DefId,
     symbol_path: Vec<String>,
   ) -> StainlessSymId<'l> {
-    let path: Vec<String> = symbol_path.iter().map(sanitize_path_name).collect();
+    let path: Vec<String> = symbol_path.iter().map(|n| sanitize_path_name(n)).collect();
     let name = path.last().unwrap().clone();
 
     self.with_extraction_mut(|xt| {
@@ -267,7 +267,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// defined as method. If the function is not a method, None is returned. The
   /// function is identified by its id.
   fn get_class_of_method(&mut self, id: StainlessSymId<'l>) -> Option<&'l st::ClassDef<'l>> {
-    self.with_extraction(|xt| xt.method_to_class.get(&id).map(|&cd| cd))
+    self.with_extraction(|xt| xt.method_to_class.get(&id).copied())
   }
 
   /// Add a class to the extraction along with references from all its methods
@@ -414,7 +414,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .or_else(|| {
         let cls: Vec<_> = self
           .base
-          .with_extraction(|xt| xt.classes.values().map(|&cd| cd).collect());
+          .with_extraction(|xt| xt.classes.values().copied().collect());
 
         cls
           .iter()
@@ -488,7 +488,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         // substitute the type parameters of the field with the actual types from the key
         tps
           .iter()
-          .map(|t| type_substs.get(t).map(|&t| t))
+          .map(|t| type_substs.get(t).copied())
           .collect::<Option<Vec<Type>>>()
           // and recurse to find the argument
           .and_then(|recv_tps| self.extract_method_receiver(&TypeClassKey { id, recv_tps }))

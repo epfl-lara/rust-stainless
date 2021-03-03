@@ -173,7 +173,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let bail = |bxtor: &mut BodyExtractor<'_, 'l, 'tcx>, msg| bxtor.unsupported_expr(span, msg);
 
     // No need to adapt anything,
-    let arg2 = if &arg1_ty.kind == &arg2_ty.kind {
+    let arg2 = if arg1_ty.kind == arg2_ty.kind {
       arg2
     } else {
       let (width1, width2, signed) = match (&arg1_ty.kind, &arg2_ty.kind) {
@@ -569,7 +569,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .map(|(index, fi)| {
             fields_by_index
               .get(&index)
-              .map(|&e| e)
+              .copied()
               .unwrap_or_else(|| f.ADTSelector(adt, fi.v.id).into())
           })
           .collect()

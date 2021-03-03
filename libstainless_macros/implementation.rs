@@ -202,7 +202,7 @@ fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenS
   stream
     .into_iter()
     .map(|tt| match tt {
-      TokenTree::Ident(ref i) if i.to_string() == ident => {
+      TokenTree::Ident(ref i) if *i == ident => {
         TokenTree::Ident(Ident::new(replace_with, i.span()))
       }
 
