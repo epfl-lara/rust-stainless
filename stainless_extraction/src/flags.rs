@@ -101,7 +101,7 @@ pub(super) fn extract_flag(
       let name = segments[2].ident.to_string();
 
       Flag::from_name(name.as_str())
-        .ok_or(Some(format!("Unknown stainless annotation: {}", name)))
+        .ok_or_else(|| Some(format!("Unknown stainless annotation: {}", name)))
         .and_then(|flag| match &args {
           MacArgs::Empty => Ok((flag, None)),
           MacArgs::Delimited(_, _, tokens) => Ok((flag, Some(tokens.clone()))),

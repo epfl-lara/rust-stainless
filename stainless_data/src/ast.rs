@@ -223,8 +223,8 @@ impl Factory {
     self.ClassType(
       id,
       tparams
-        .into_iter()
-        .map(|TypeParameterDef { tp }| tp.clone().into())
+        .iter()
+        .map(|TypeParameterDef { tp }| (*tp).into())
         .collect(),
     )
   }
