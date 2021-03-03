@@ -109,6 +109,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         self.extract_ty(substitutions.type_at(0), txtcx, span)
       }
 
+      // String type
+      TyKind::Adt(adt_def, _) if self.is_string(adt_def) => f.StringType().into(),
+
+      // String slice, erased to a plain String
+      TyKind::Str => f.StringType().into(),
+
       // All other ADTs
       TyKind::Adt(adt_def, substitutions) => {
         // If the ADT is a std_item, we need to extract it separately
@@ -361,6 +367,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn is_bigint(&self, adt_def: &'tcx AdtDef) -> bool {
     // TODO: Add a check for BigInt that avoids generating the string?
     self.tcx.def_path_str(adt_def.did) == "num_bigint::BigInt"
+  }
+
+  pub(super) fn is_string(&self, adt_def: &'tcx AdtDef) -> bool {
+    // TODO: Add a check for String that avoids generating the string?
+    self.tcx.def_path_str(adt_def.did) == "std::string::String"
   }
 }
 

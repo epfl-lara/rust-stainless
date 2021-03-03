@@ -352,8 +352,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:
     //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if fd_id.symbol_path == ["std", "boxed", "Box", "T", "new"] {
-      return self.extract_expr_ref(args.first().cloned().unwrap());
+    if let Some(expr) = self.extract_box_new(fd_id, args) {
+      return expr;
+    }
+
+    // Special case for &str::to_string, erase it and return the argument directly.
+    if let Some(expr) = self.extract_str_to_string(fd_id, args) {
+      return expr;
     }
 
     // FIXME: Filter out as many type params of the function as the classdef
@@ -365,6 +370,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       span,
     );
+
     let args = self.extract_expr_refs(args.to_vec());
 
     // If this function is a method, then we may need to extract it as a method call.
@@ -384,6 +390,38 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .factory()
         .FunctionInvocation(fd_id, arg_tps_without_parents, args)
         .into(),
+    }
+  }
+
+  fn extract_box_new(
+    &mut self,
+    fd_id: &st::SymbolIdentifier,
+    args: &Vec<ExprRef<'tcx>>,
+  ) -> Option<st::Expr<'l>> {
+    if fd_id.symbol_path != ["std", "boxed", "Box", "T", "new"] {
+      return None;
+    }
+
+    Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+  }
+
+  fn extract_str_to_string(
+    &mut self,
+    fd_id: &st::SymbolIdentifier,
+    args: &Vec<ExprRef<'tcx>>,
+  ) -> Option<st::Expr<'l>> {
+    if args.len() != 1 || fd_id.symbol_path != ["std", "string", "ToString", "to_string"] {
+      return None;
+    }
+
+    let arg = args.first().cloned().unwrap();
+    let expr = self.mirror(arg);
+    let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+
+    if let st::Type::StringType(_) = ty {
+      Some(self.extract_expr(expr))
+    } else {
+      None
     }
   }
 

@@ -102,6 +102,7 @@ define_tests!(
   pass: type_class_multi_lookup,
   pass: type_class_without_evidence,
   pass: use_std,
+  pass: strings,
   fail_verification: box_as_ref,
   fail_extraction: double_measure,
   fail_extraction: double_measure_impl,
