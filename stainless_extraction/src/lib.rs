@@ -372,7 +372,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.factory()
   }
 
-  fn fetch_var(&self, hir_id: HirId) -> &'l st::Variable<'l> {
+  fn fetch_var(&self, hir_id: HirId) -> (&'l st::Variable<'l>, bool) {
     let span: Span = self.tcx().hir().span(hir_id);
     self
       .dcx

@@ -20,7 +20,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .pat
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
-      let var = self.extract_binding(param.pat.hir_id, flags);
+      let (var, _) = self.extract_binding(param.pat.hir_id, flags);
       self.dcx.add_param(self.factory().ValDef(var));
     }
 
@@ -35,15 +35,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extracted before.
-  fn extract_binding(&mut self, hir_id: HirId, flags: Option<Flags>) -> &'l st::Variable<'l> {
+  fn extract_binding(
+    &mut self,
+    hir_id: HirId,
+    flags: Option<Flags>,
+  ) -> (&'l st::Variable<'l>, bool) {
     self.dcx.get_var(hir_id).unwrap_or_else(|| {
       let xtor = &mut self.base;
 
       // Extract ident from corresponding HIR node, sanity-check binding mode
-      let (id, span) = {
+      let (id, span, mutable) = {
         let node = xtor.tcx.hir().find(hir_id).unwrap();
 
-        let ident = if let Node::Binding(Pat {
+        let (ident, mutable) = if let Node::Binding(Pat {
           kind: PatKind::Binding(_, _, ident, _),
           hir_id,
           span,
@@ -55,13 +59,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           {
             // allowed binding modes
             Some(ty::BindByValue(hir::Mutability::Not))
-            | Some(ty::BindByReference(hir::Mutability::Not)) => ident,
+            | Some(ty::BindByReference(hir::Mutability::Not)) => (ident, false),
+            Some(ty::BindByValue(hir::Mutability::Mut)) => (ident, true),
 
             // For the forbidden binding modes, return the identifier anyway
             // because failure will occur later.
             _ => {
               xtor.unsupported(*span, "Only immutable bindings are supported");
-              ident
+              (ident, false)
             }
           }
         } else {
@@ -75,6 +80,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         (
           xtor.register_hir(hir_id, ident.name.to_string()),
           ident.span,
+          mutable,
         )
       };
 
@@ -84,8 +90,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .map(|flags| flags.to_stainless(xtor.factory()))
         .unwrap_or_default();
       let var = xtor.factory().Variable(id, tpe, flags);
-      self.dcx.add_var(hir_id, var);
-      var
+      self.dcx.add_var(hir_id, var, mutable);
+      (var, mutable)
     })
   }
 }
@@ -93,7 +99,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 /// DefContext tracks available bindings
 #[derive(Clone, Debug)]
 pub(super) struct DefContext<'l> {
-  vars: HashMap<HirId, &'l st::Variable<'l>>,
+  vars: HashMap<HirId, (&'l st::Variable<'l>, bool)>,
   params: Vec<&'l st::ValDef<'l>>,
 }
 
@@ -109,9 +115,14 @@ impl<'l> DefContext<'l> {
     &self.params[..]
   }
 
-  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+  pub(super) fn add_var(
+    &mut self,
+    hir_id: HirId,
+    var: &'l st::Variable<'l>,
+    mutable: bool,
+  ) -> &mut Self {
     assert!(!self.vars.contains_key(&hir_id));
-    self.vars.insert(hir_id, var);
+    self.vars.insert(hir_id, (var, mutable));
     self
   }
 
@@ -122,7 +133,7 @@ impl<'l> DefContext<'l> {
   }
 
   #[inline]
-  pub(super) fn get_var(&self, hir_id: HirId) -> Option<&'l st::Variable<'l>> {
+  pub(super) fn get_var(&self, hir_id: HirId) -> Option<(&'l st::Variable<'l>, bool)> {
     self.vars.get(&hir_id).copied()
   }
 }

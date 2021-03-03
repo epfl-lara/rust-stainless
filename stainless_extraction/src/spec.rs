@@ -106,13 +106,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .expect("No return parameter on post spec function");
 
         // Preregister the ret binding with the return_id
-        bxtor.dcx.add_var(return_param_id, return_var);
+        bxtor.dcx.add_var(return_param_id, return_var, false);
       }
 
       // Register all other bindings
       assert_eq!(outer_fn_params.len(), spec_param_ids.len());
       for (vd, sid) in outer_fn_params.iter().zip(spec_param_ids) {
-        bxtor.dcx.add_var(sid, vd.v);
+        bxtor.dcx.add_var(sid, vd.v, false);
       }
       // Pick up any additional local bindings
       // (A spec neither has flags on the params, nor additional evidence params)

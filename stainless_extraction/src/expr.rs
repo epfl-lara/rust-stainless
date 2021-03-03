@@ -31,7 +31,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::LogicalOp { .. } => self.extract_logical_op(expr),
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { .. } => self.extract_field(expr),
-      ExprKind::VarRef { id } => self.fetch_var(id).into(),
+      ExprKind::VarRef { id } => self.fetch_var(id).0.into(),
       ExprKind::Call { ty, ref args, .. } => self.extract_call_like(ty, args, expr.span),
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
@@ -618,7 +618,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       box kind @ PatKind::Binding { .. } => {
         assert!(binder.is_none());
         match self.try_pattern_to_var(&kind, true) {
-          Ok(binder) => match kind {
+          Ok((binder, _)) => match kind {
             PatKind::Binding {
               subpattern: Some(subpattern),
               ..
@@ -787,12 +787,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 &format!("Cannot extract complex pattern in let: {}", reason),
                 pattern.span,
               ),
-              Ok(vd) => {
-                let init = self.extract_expr_ref(init);
+              Ok((vd, mutable)) => {
+                // recurse the extract all the following statements
                 let exprs = acc_exprs.clone();
                 acc_exprs.clear();
                 let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
-                let last_expr = f.Let(vd, init, body_expr).into();
+                // wrap that body expression into the Let
+                let init = self.extract_expr_ref(init);
+                let last_expr = if mutable {
+                  f.LetVar(vd, init, body_expr).into()
+                } else {
+                  f.Let(vd, init, body_expr).into()
+                };
                 finish(exprs, last_expr)
               }
             }
@@ -856,29 +862,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &self,
     pat_kind: &PatKind<'tcx>,
     allow_subpattern: bool,
-  ) -> Result<&'l st::ValDef<'l>> {
+  ) -> Result<(&'l st::ValDef<'l>, bool)> {
     match pat_kind {
-      PatKind::Binding {
-        mutability: Mutability::Mut,
-        ..
-      } => Err("Mutable bindings are not supported"),
-
       PatKind::Binding {
         subpattern: Some(_),
         ..
       } if !allow_subpattern => Err("Subpatterns are not supported here"),
 
       PatKind::Binding {
-        mutability: Mutability::Not,
-        mode,
+        mutability,
+        mode: BindingMode::ByValue,
         var: hir_id,
         ..
-      } => match mode {
-        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
-          Ok(self.factory().ValDef(self.fetch_var(*hir_id)))
+      }
+      | PatKind::Binding {
+        mutability,
+        mode: BindingMode::ByRef(BorrowKind::Shared),
+        var: hir_id,
+        ..
+      } => {
+        let (var, mutable) = self.fetch_var(*hir_id);
+        if *mutability == Mutability::Not || mutable {
+          Ok((self.factory().ValDef(var), mutable))
+        } else {
+          Err("Binding mode not allowed")
         }
-        _ => Err("Binding mode not allowed"),
-      },
+      }
 
       // This encodes a user-written type ascription: let a: u32 = ...
       // Rustc needs these for borrow-checking but stainless doesn't, therefore
