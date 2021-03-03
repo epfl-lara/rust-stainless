@@ -133,7 +133,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     {
       // Create a block that returns its last expression
       let (last, other_exprs) = exprs.split_last().expect("No measure provided.");
-      st::Expr::Block(f.Block(other_exprs.to_vec(), *last)).into()
+      st::Expr::Block(f.Block(other_exprs.to_vec(), *last))
     } else {
       spec_expr
     }

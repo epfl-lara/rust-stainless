@@ -100,6 +100,8 @@ impl<'a> fmt::Display for Expr<'a> {
       Expr::BooleanLiteral(e) => e.fmt(f),
       Expr::IntegerLiteral(e) => e.fmt(f),
       Expr::BVLiteral(e) => e.fmt(f),
+      Expr::StringLiteral(e) => e.fmt(f),
+      Expr::StringLength(e) => e.fmt(f),
       Expr::ADT(e) => e.fmt(f),
       Expr::UMinus(e) => e.fmt(f),
       Expr::BVNot(e) => e.fmt(f),
@@ -125,6 +127,7 @@ impl<'a> fmt::Display for Expr<'a> {
       Expr::LetVar(e) => e.fmt(f),
       Expr::Ensuring(e) => e.fmt(f),
       Expr::MatchExpr(e) => e.fmt(f),
+      Expr::Error(e) => e.fmt(f),
       Expr::NoTree(e) => e.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
@@ -139,10 +142,12 @@ impl<'a> fmt::Display for Type<'a> {
       Type::BooleanType(t) => t.fmt(f),
       Type::IntegerType(t) => t.fmt(f),
       Type::BVType(t) => t.fmt(f),
+      Type::StringType(t) => t.fmt(f),
       Type::TupleType(t) => t.fmt(f),
       Type::FunctionType(t) => t.fmt(f),
       Type::AnyType(t) => t.fmt(f),
       Type::ADTType(t) => t.fmt(f),
+      Type::TypeParameter(t) => t.fmt(f),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -159,8 +164,9 @@ impl<'a> fmt::Display for Pattern<'a> {
 }
 
 impl<'a> fmt::Display for Flag<'a> {
-  fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
+      Flag::Extern(_) => write!(f, "#[extern]"),
       _ => unimplemented!("No formatter for {:?}", self),
     }
   }
@@ -198,6 +204,12 @@ impl fmt::Display for BVType {
       write!(f, "u")?;
     }
     write!(f, "{}", self.size)
+  }
+}
+
+impl fmt::Display for StringType {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "String")
   }
 }
 
@@ -285,6 +297,18 @@ impl fmt::Display for BVLiteral {
   }
 }
 
+impl fmt::Display for StringLiteral {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{:?}", self.value)
+  }
+}
+
+impl<'a> fmt::Display for StringLength<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}.len()", self.expr)
+  }
+}
+
 impl<'a> fmt::Display for ADT<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{}", self.id)?;
@@ -338,6 +362,12 @@ impl<'a> fmt::Display for Division<'a> {
 impl<'a> fmt::Display for Not<'a> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "(!{})", self.expr)
+  }
+}
+
+impl<'a> fmt::Display for Error<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "panic!(\"{}\")", self.description)
   }
 }
 

@@ -16,7 +16,7 @@ impl Response {
         .find(|report| match report {
           Report::Verification { .. } => true,
         })
-        .ok_or("No verification report found".into()),
+        .ok_or_else(|| "No verification report found".into()),
 
       Response::Error { msg } => Err(msg),
     }

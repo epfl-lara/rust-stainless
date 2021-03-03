@@ -59,14 +59,14 @@ fn pointer_bit_width(tcx: TyCtxt<'_>) -> u64 {
 /// `bit_width` in `ast` or the width of an isize, see [pointer_bit_width()].
 #[inline]
 pub fn int_bit_width(int_ty: ast::IntTy, tcx: TyCtxt<'_>) -> u64 {
-  int_ty.bit_width().unwrap_or(pointer_bit_width(tcx))
+  int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
 /// Get the bit width of an integer type (unsigned) which is either the hardcoded
 /// `bit_width` in `ast` or the width of an usize, see [pointer_bit_width()].
 #[inline]
 pub fn uint_bit_width(int_ty: ast::UintTy, tcx: TyCtxt<'_>) -> u64 {
-  int_ty.bit_width().unwrap_or(pointer_bit_width(tcx))
+  int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
@@ -311,7 +311,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let tps = self.extract_tys(substs.types(), &txtcx, span);
         &*f.ClassType(trait_id, tps)
       })
-      .into_iter()
       .collect();
 
     // And we're done.
