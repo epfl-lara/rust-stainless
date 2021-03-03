@@ -144,9 +144,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .collect::<Vec<_>>();
 
         // Add the class with references to its methods to the extraction
-        if let Some(cd) = class_def { self
+        if let Some(cd) = class_def {
+          self
             .xtor
-            .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect()) }
+            .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect())
+        }
         // Add the functions to the visitor for further extraction
         self.functions.extend(fns);
       }
@@ -447,7 +449,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           })
           .collect();
 
-        if let Some(hir_id) = hir_id_opt { self.report_unused_flags(hir_id, &flags_by_symbol) }
+        if let Some(hir_id) = hir_id_opt {
+          self.report_unused_flags(hir_id, &flags_by_symbol)
+        }
         f.ADTSort(adt_id, tparams, constructors, flags)
       }
     }
