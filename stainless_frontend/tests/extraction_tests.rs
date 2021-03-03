@@ -96,6 +96,7 @@ define_tests!(
   pass: panic_type,
   pass: spec_on_trait_impl,
   pass: trait_bounds,
+  pass: struct_update,
   pass: tuple_match,
   pass: tuples,
   pass: type_class,
