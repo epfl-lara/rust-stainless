@@ -36,58 +36,57 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extracted before.
   fn extract_binding(&mut self, hir_id: HirId, flags: Option<Flags>) -> &'l st::Variable<'l> {
-    let xtor = &mut self.base;
-    let tcx = xtor.tcx;
-    let dcx = &mut self.dcx;
+    self.dcx.get_var(hir_id).unwrap_or_else(|| {
+      let xtor = &mut self.base;
 
-    match dcx.vars.get(&hir_id) {
-      Some(var) => var,
-      None => {
-        // Extract ident from corresponding HIR node, sanity-check binding mode
-        let (id, span) = {
-          let node = tcx.hir().find(hir_id).unwrap();
+      // Extract ident from corresponding HIR node, sanity-check binding mode
+      let (id, span) = {
+        let node = xtor.tcx.hir().find(hir_id).unwrap();
 
-          let ident = if let Node::Binding(Pat {
-            kind: PatKind::Binding(_, _, ident, _),
-            hir_id,
-            span,
-          }) = node
+        let ident = if let Node::Binding(Pat {
+          kind: PatKind::Binding(_, _, ident, _),
+          hir_id,
+          span,
+        }) = node
+        {
+          match self
+            .tables
+            .extract_binding_mode(xtor.tcx.sess, *hir_id, *span)
           {
-            match self.tables.extract_binding_mode(tcx.sess, *hir_id, *span) {
-              // allowed binding modes
-              Some(ty::BindByValue(hir::Mutability::Not))
-              | Some(ty::BindByReference(hir::Mutability::Not)) => ident,
+            // allowed binding modes
+            Some(ty::BindByValue(hir::Mutability::Not))
+            | Some(ty::BindByReference(hir::Mutability::Not)) => ident,
 
-              // For the forbidden binding modes, return the identifier anyway
-              // because failure will occur later.
-              _ => {
-                xtor.unsupported(*span, "Only immutable bindings are supported");
-                ident
-              }
+            // For the forbidden binding modes, return the identifier anyway
+            // because failure will occur later.
+            _ => {
+              xtor.unsupported(*span, "Only immutable bindings are supported");
+              ident
             }
-          } else {
-            xtor.unsupported(
-              node.ident().map(|ident| ident.span).unwrap_or_default(),
-              "Cannot extract complex pattern in binding (cannot recover from this)",
-            );
-            unreachable!()
-          };
-
-          (
-            xtor.register_hir(hir_id, ident.name.to_string()),
-            ident.span,
-          )
+          }
+        } else {
+          xtor.unsupported(
+            node.ident().map(|ident| ident.span).unwrap_or_default(),
+            "Cannot extract complex pattern in binding (cannot recover from this)",
+          );
+          unreachable!()
         };
 
-        // Build a Variable node
-        let f = xtor.factory();
-        let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
-        let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
-        let var = f.Variable(id, tpe, flags);
-        self.dcx.add_var(hir_id, var);
-        var
-      }
-    }
+        (
+          xtor.register_hir(hir_id, ident.name.to_string()),
+          ident.span,
+        )
+      };
+
+      // Build a Variable node
+      let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
+      let flags = flags
+        .map(|flags| flags.to_stainless(xtor.factory()))
+        .unwrap_or_default();
+      let var = xtor.factory().Variable(id, tpe, flags);
+      self.dcx.add_var(hir_id, var);
+      var
+    })
   }
 }
 

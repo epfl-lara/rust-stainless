@@ -401,15 +401,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Extract an ADT (regardless of whether it is local or external)
   pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
-    let sort_opt = self.with_extraction(|xt| {
-      self
-        .get_id_from_def(def_id)
-        .and_then(|id| xt.adts.get(id).copied())
-    });
-
-    match sort_opt {
-      Some(sort) => sort,
-      None => {
+    self
+      .with_extraction(|xt| {
+        self
+          .get_id_from_def(def_id)
+          .and_then(|id| xt.adts.get(id).copied())
+      })
+      .unwrap_or_else(|| {
         let f = self.factory();
         let adt_id = self.get_or_register_def(def_id);
         let adt_def = self.tcx.adt_def(def_id);
@@ -463,7 +461,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           self.report_unused_flags(hir_id, &flags_by_symbol)
         }
         f.ADTSort(adt_id, tparams, constructors, flags)
-      }
-    }
+      })
   }
 }

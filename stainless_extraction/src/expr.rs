@@ -618,19 +618,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       box kind @ PatKind::Binding { .. } => {
         assert!(binder.is_none());
         match self.try_pattern_to_var(&kind, true) {
-          Ok(binder) => {
-            let binder = f.ValDef(binder);
-            match kind {
-              PatKind::Binding {
-                subpattern: Some(subpattern),
-                ..
-              } => self.extract_pattern(subpattern, Some(binder)),
-              PatKind::Binding {
-                subpattern: None, ..
-              } => f.WildcardPattern(Some(binder)).into(),
-              _ => unreachable!(),
-            }
-          }
+          Ok(binder) => match kind {
+            PatKind::Binding {
+              subpattern: Some(subpattern),
+              ..
+            } => self.extract_pattern(subpattern, Some(binder)),
+            PatKind::Binding {
+              subpattern: None, ..
+            } => f.WildcardPattern(Some(binder)).into(),
+            _ => unreachable!(),
+          },
           Err(reason) => self.unsupported_pattern(
             pattern.span,
             format!("Unsupported pattern binding: {}", reason),
@@ -713,7 +710,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     subpatterns
   }
 
-  #[allow(clippy::unnecessary_unwrap)]
   fn extract_block_(
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
@@ -767,35 +763,39 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         StmtKind::Let {
           pattern,
-          initializer,
+          initializer: None,
+          ..
+        } => bail("Cannot extract let without initializer", pattern.span),
+
+        StmtKind::Let {
+          pattern,
+          initializer: Some(init),
           ..
         } => {
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
-          let var_result = self.try_pattern_to_var(&pattern.kind, false);
-
           if has_abnormal_source {
             // TODO: Support for loops
             bail(
               "Cannot extract let that resulted from desugaring",
               pattern.span,
             )
-          } else if let Err(reason) = var_result {
-            // TODO: Desugar complex patterns
-            bail(
-              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
-              pattern.span,
-            )
-          } else if let Some(init) = initializer {
-            let vd = f.ValDef(var_result.unwrap());
-            let init = self.extract_expr_ref(init);
-            let exprs = acc_exprs.clone();
-            acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
-            let last_expr = f.Let(vd, init, body_expr).into();
-            finish(exprs, last_expr)
           } else {
-            bail("Cannot extract let without initializer", pattern.span)
+            match self.try_pattern_to_var(&pattern.kind, false) {
+              // TODO: Desugar complex patterns
+              Err(reason) => bail(
+                &format!("Cannot extract complex pattern in let: {}", reason),
+                pattern.span,
+              ),
+              Ok(vd) => {
+                let init = self.extract_expr_ref(init);
+                let exprs = acc_exprs.clone();
+                acc_exprs.clear();
+                let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
+                let last_expr = f.Let(vd, init, body_expr).into();
+                finish(exprs, last_expr)
+              }
+            }
           }
         }
 
@@ -856,7 +856,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &self,
     pat_kind: &PatKind<'tcx>,
     allow_subpattern: bool,
-  ) -> Result<&'l st::Variable<'l>> {
+  ) -> Result<&'l st::ValDef<'l>> {
     match pat_kind {
       PatKind::Binding {
         mutability: Mutability::Mut,
@@ -875,7 +875,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ..
       } => match mode {
         BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
-          Ok(self.fetch_var(*hir_id))
+          Ok(self.factory().ValDef(self.fetch_var(*hir_id)))
         }
         _ => Err("Binding mode not allowed"),
       },
