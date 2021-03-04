@@ -361,6 +361,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       return expr;
     }
 
+    // Special case for PartialEq::eq on strings.
+    if let Some(expr) = self.extract_str_eq(fd_id, args) {
+      return expr;
+    }
+
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
     //   parent etc. => improve
@@ -422,6 +427,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       Some(self.extract_expr(expr))
     } else {
       None
+    }
+  }
+
+  fn extract_str_eq(
+    &mut self,
+    fd_id: &st::SymbolIdentifier,
+    args: &Vec<ExprRef<'tcx>>,
+  ) -> Option<st::Expr<'l>> {
+    if args.len() != 2 || fd_id.symbol_path != ["std", "cmp", "PartialEq", "eq"] {
+      return None;
+    }
+
+    for arg in args {
+      let expr = self.mirror(arg.clone());
+      let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+      dbg!(&ty);
+      if !matches!(ty, st::Type::StringType(_)) {
+        dbg!("not string");
+        return None;
+      }
+    }
+
+    let f = self.factory();
+    match self.extract_expr_refs(args.to_vec())[..] {
+      [lhs, rhs] => Some(f.Equals(lhs, rhs).into()),
+      _ => unreachable!(),
     }
   }
 

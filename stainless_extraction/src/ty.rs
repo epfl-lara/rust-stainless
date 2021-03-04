@@ -112,8 +112,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       // String type
       TyKind::Adt(adt_def, _) if self.is_string(adt_def) => f.StringType().into(),
 
-      // String slice, erased to a plain String
-      TyKind::Str => f.StringType().into(),
+      // Immutably borrowed string slice, erased to a plain String
+      TyKind::Ref(_, ty, Mutability::Not) if ty.kind == TyKind::Str => f.StringType().into(),
 
       // All other ADTs
       TyKind::Adt(adt_def, substitutions) => {

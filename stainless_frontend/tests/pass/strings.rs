@@ -11,3 +11,9 @@ pub fn take_static_str(_s: &'static str) {}
 pub fn return_static_str() -> &'static str {
   "Hello, static world"
 }
+
+pub fn test_eq() {
+  assert!(return_string() == return_string());
+  assert!(return_static_str() == return_static_str());
+  assert!(return_string() == return_static_str());
+}
