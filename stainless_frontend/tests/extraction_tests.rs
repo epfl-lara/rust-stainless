@@ -91,6 +91,7 @@ define_tests!(
   pass: let_type,
   pass: list_binary_search,
   pass: monoid,
+  pass: mut_local_fields,
   pass: mut_local_lets,
   pass: mut_local_params,
   pass: mut_ref_immut_borrow,

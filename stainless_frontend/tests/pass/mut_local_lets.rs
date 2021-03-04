@@ -7,10 +7,6 @@ pub enum IntOption {
   Some(i32),
 }
 
-struct S {
-  field: i32,
-}
-
 pub fn main() {
   // Local mutation is ok.
   let mut x = 1;
@@ -24,10 +20,4 @@ pub fn main() {
   let mut option = IntOption::None;
   option2 = option;
   option = IntOption::Some(123);
-
-  // field assignment
-  let mut s = S { field: 123 };
-  assert!(s.field == 123);
-  s.field = 456;
-  assert!(s.field == 456);
 }
