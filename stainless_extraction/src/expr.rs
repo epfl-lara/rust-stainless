@@ -348,6 +348,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
     let class_def = self.base.get_class_of_method(fd_id);
+    let Generics {
+      tparams,
+      trait_bounds,
+      ..
+    } = self.base.get_generics(def_id);
 
     // Special case for Box::new, erase it and return the argument directly.
     // TODO: turn Box::new to a StdItem and use that. Tracked here:
@@ -365,7 +370,25 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       span,
     );
-    let args = self.extract_expr_refs(args.to_vec());
+    let mut args = self.extract_expr_refs(args.to_vec());
+
+    // If the function has trait bounds but is not on a class, we must find the
+    // corresponding evidence arguments.
+    if class_def.is_none() && !trait_bounds.is_empty() {
+      let type_substs = tparams
+        .iter()
+        .map(|st::TypeParameterDef { tp }| (*tp).into())
+        .zip(arg_tps_without_parents.as_slice().iter().copied())
+        .collect();
+
+      self
+        .base
+        .evidence_params(trait_bounds)
+        .iter()
+        .map(|vd| self.find_evidence_arg(vd, &type_substs))
+        .collect::<Option<Vec<_>>>()
+        .map(|evidence_args| args.extend(evidence_args));
+    }
 
     // If this function is a method, then we may need to extract it as a method call.
     // To do so, we need a type class instance as receiver.
@@ -380,6 +403,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .factory()
         .MethodInvocation(recv, fd_id, arg_tps_without_parents, args)
         .into(),
+
       None => self
         .factory()
         .FunctionInvocation(fd_id, arg_tps_without_parents, args)

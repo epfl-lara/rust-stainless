@@ -228,4 +228,8 @@ impl Factory {
         .collect(),
     )
   }
+
+  pub fn evidence_flag(&self) -> Flag<'_> {
+    self.Annotation("evidence".into(), vec![]).into()
+  }
 }

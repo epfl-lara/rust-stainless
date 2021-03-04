@@ -64,7 +64,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           ItemKind::Enum(..) | ItemKind::Struct(..) => {
             eprintln!("  - ADT {}", def_path_str);
             let sort = self.xtor.extract_adt(def_id);
-            self.xtor.add_adt(sort.id, sort);
+            self.xtor.add_adt(sort);
           }
 
           // Store functions of impl blocks and their specs
@@ -95,7 +95,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               Some(cd),
             )
           }
-
           _ => {
             self
               .xtor
@@ -328,27 +327,38 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut flags = carrier_flags.to_stainless(f);
 
     // Add flag specifying that this function is a method of its class (if there's a class)
-    flags.extend(class_def.into_iter().map(|cd| {
-      let flag: st::Flag<'l> = f.IsMethodOf(cd.id).into();
-      flag
-    }));
+    flags.extend(
+      class_def
+        .iter()
+        .map(|cd| -> st::Flag<'l> { f.IsMethodOf(cd.id).into() }),
+    );
 
     // Extract the function itself
-    type Parts<'l> = (Params<'l>, st::Type<'l>, st::Expr<'l>);
-    let Generics { tparams, txtcx, .. } = self.get_generics(fn_item.def_id);
+    let Generics {
+      tparams,
+      txtcx,
+      trait_bounds,
+    } = self.get_generics(fn_item.def_id);
 
-    let (params, return_tpe, body_expr): Parts<'l> =
-      self.enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
+    // If this function is not on a class *but* has trait bounds, we need to add
+    // these as evidence parameters.
+    let ev_params = if class_def.is_none() {
+      self.evidence_params(trait_bounds)
+    } else {
+      vec![]
+    };
+
+    let (params, return_tpe, body_expr): (Params<'l>, st::Type<'l>, st::Expr<'l>) = self
+      .enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
-        bxtor.populate_def_context(&mut flags_by_symbol);
+        bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
 
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
 
-        (bxtor.body_params(), bxtor.return_tpe(), body_expr)
+        (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
-
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Wrap it all up in a Stainless function
@@ -362,7 +372,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     )
   }
 
-  /// Filter out the tparams of the class and the class itself
+  /// Filter out the tparams of the class and the class (as tparam) itself
   fn filter_class_tparams(
     &self,
     tparams: Vec<&'l st::TypeParameterDef<'l>>,

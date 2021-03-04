@@ -4,8 +4,7 @@ use super::*;
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Generics as RustGenerics, PredicateKind, TraitRef,
-  Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, Predicate, PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -160,8 +159,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn get_generics(&mut self, def_id: DefId) -> Generics<'l> {
     let id = self.get_or_register_def(def_id);
 
-    // FIXME: There was no easy solution to convince the borrow checker to
-    //   return a reference to the generics instead of cloning them.
+    // We currently have to clone the generics because they otherwise mutably
+    // borrow the entire `self`. Maybe there is a better way of doing this?
     self
       .with_extraction(|xt| xt.generics.get(id).cloned())
       .unwrap_or_else(|| {
@@ -175,7 +174,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let tcx = self.tcx;
     let span = tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
     let generics = tcx.generics_of(def_id);
-    let predicates = tcx.predicates_of(def_id);
+    let predicates = tcx.predicates_defined_on(def_id);
 
     // Closures are strange. We just sanity check against the compiler internal type parameters
     // and don't try to extract anything else.
@@ -203,7 +202,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
 
-    for (predicate, span) in predicates.predicates {
+    for (predicate, span) in self.all_predicates_of(def_id).iter() {
       match predicate.kind() {
         PredicateKind::Trait(ref data, _) => {
           let trait_ref = data.skip_binder().trait_ref;
@@ -304,8 +303,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Convert trait refs in the trait bounds to types
     let trait_bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
       .iter()
-      // Filter out the Self-trait-bound that rustc puts on traits
-      .filter(|&(tr, _)| tr.def_id != def_id)
       .map(|&(ty::TraitRef { def_id, substs }, span)| {
         let trait_id = self.get_or_register_def(def_id);
         let tps = self.extract_tys(substs.types(), &txtcx, span);
@@ -326,6 +323,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       txtcx,
       trait_bounds,
     }
+  }
+
+  fn all_predicates_of(&self, def_id: DefId) -> Vec<&(Predicate<'tcx>, Span)> {
+    let predicates = self.tcx.predicates_defined_on(def_id);
+    let mut all_predicates = vec![predicates];
+    while let Some(parent_id) = all_predicates.last().and_then(|g| g.parent) {
+      all_predicates.push(self.tcx.predicates_defined_on(parent_id));
+    }
+    all_predicates
+      .iter()
+      .rev()
+      .flat_map(|pred| pred.predicates)
+      .collect()
   }
 
   /// Various helpers
@@ -367,13 +377,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
-  let mut all_generics: Vec<&RustGenerics> = vec![generics];
-  while let Some(parent_id) = all_generics.last().unwrap().parent {
+  let mut all_generics = vec![generics];
+  while let Some(parent_id) = all_generics.last().and_then(|g| g.parent) {
     all_generics.push(tcx.generics_of(parent_id));
   }
   all_generics
     .iter()
     .rev()
-    .flat_map(|generics| generics.params.iter().map(|param| param))
+    .flat_map(|generics| generics.params.iter())
     .collect()
 }

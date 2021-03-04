@@ -245,9 +245,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  fn add_adt(&mut self, id: StainlessSymId<'l>, adt: &'l st::ADTSort<'l>) {
+  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) {
     self.with_extraction_mut(|xt| {
-      assert!(xt.adts.insert(id, adt).is_none());
+      assert!(xt.adts.insert(adt.id, adt).is_none());
     })
   }
 
@@ -380,15 +380,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
 
-  fn body_params(&self) -> Params<'l> {
-    self
-      .body
-      .params
-      .iter()
-      .map(|param| &*self.factory().ValDef(self.fetch_var(param.pat.hir_id)))
-      .collect()
-  }
-
   fn return_tpe(&mut self) -> st::Type<'l> {
     let hir_id = self.hcx.root_lint_level;
     let sigs = self.tables.liberated_fn_sigs();
@@ -421,7 +412,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // The receiver can't be an  abstract class nor the current class.
           .filter(|cd| {
             !cd.flags.contains(&f.IsAbstract().into())
-              && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
+              && self.current_class.map_or(true, |tc| tc.id != cd.id)
           })
           .find_map(|cd| {
             let class_key = method_call_rcv_key(cd);
@@ -507,29 +498,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|cd| f.This(f.class_def_to_type(cd)).into())
   }
 
-  /// Tries to extract a call to an evidence argument of the current class.
+  /// Tries to extract an evidence argument of the current function or the current class.
   /// Returns None if no evidence argument matches the key.
   fn extract_evidence_arg_call(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
     let f = self.factory();
-    self.current_class.and_then(|cd| {
-      cd.fields.iter().find_map(|&vd| match vd.v.tpe {
-        st::Type::ClassType(st::ClassType { id, tps }) => {
-          let k = TypeClassKey {
-            id: *id,
-            recv_tps: tps.clone(),
-          };
 
-          if k == *key {
-            return Some(
-              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
-                .into(),
-            );
-          }
-          None
-        }
+    // First try the current functions arguments
+    self
+      .dcx
+      .params()
+      .iter()
+      .find_map(|&vd| match vd.v.tpe {
+        st::Type::ClassType(class_type) if key == class_type => Some(vd.v.into()),
         _ => None,
       })
-    })
+      // then search for an evidence argument in the current class
+      .or_else(|| {
+        self.current_class.and_then(|cd| {
+          cd.fields.iter().find_map(|&vd| match vd.v.tpe {
+            st::Type::ClassType(class_type) if key == class_type => Some(
+              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
+                .into(),
+            ),
+            _ => None,
+          })
+        })
+      })
   }
 }
 
