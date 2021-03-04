@@ -95,7 +95,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 #[derive(Clone, Debug)]
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
-  pub params: Vec<&'l st::ValDef<'l>>,
+  params: Vec<&'l st::ValDef<'l>>,
 }
 
 impl<'l> DefContext<'l> {
@@ -104,6 +104,10 @@ impl<'l> DefContext<'l> {
       vars: HashMap::new(),
       params: vec![],
     }
+  }
+
+  pub(super) fn params(&self) -> &[&'l st::ValDef<'l>] {
+    &self.params[..]
   }
 
   pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {

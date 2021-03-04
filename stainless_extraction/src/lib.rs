@@ -380,10 +380,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
   }
 
-  fn body_params(&self) -> &Params<'l> {
-    &self.dcx.params
-  }
-
   fn return_tpe(&mut self) -> st::Type<'l> {
     let hir_id = self.hcx.root_lint_level;
     let sigs = self.tables.liberated_fn_sigs();
@@ -509,7 +505,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     // First try the current functions arguments
     self
-      .body_params()
+      .dcx
+      .params()
       .iter()
       .find_map(|&vd| match vd.v.tpe {
         st::Type::ClassType(class_type) if key == class_type => Some(vd.v.into()),

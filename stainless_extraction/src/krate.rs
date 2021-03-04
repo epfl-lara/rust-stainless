@@ -357,7 +357,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
 
-        (bxtor.body_params().clone(), bxtor.return_tpe(), body_expr)
+        (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
     self.report_unused_flags(hir_id, &flags_by_symbol);
 

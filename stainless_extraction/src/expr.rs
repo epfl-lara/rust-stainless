@@ -378,7 +378,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let type_substs = tparams
         .iter()
         .map(|st::TypeParameterDef { tp }| (*tp).into())
-        .zip(arg_tps_without_parents.clone())
+        .zip(arg_tps_without_parents.as_slice().iter().copied())
         .collect();
 
       self
@@ -386,7 +386,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .evidence_params(trait_bounds)
         .iter()
         .map(|vd| self.find_evidence_arg(vd, &type_substs))
-        .collect::<Option<Vec<st::Expr<'l>>>>()
+        .collect::<Option<Vec<_>>>()
         .map(|evidence_args| args.extend(evidence_args));
     }
 

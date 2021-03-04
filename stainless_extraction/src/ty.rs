@@ -4,8 +4,7 @@ use super::*;
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, GenericPredicates, Generics as RustGenerics,
-  Predicate, PredicateKind, TraitRef, Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, Predicate, PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -329,7 +328,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   fn all_predicates_of(&self, def_id: DefId) -> Vec<&(Predicate<'tcx>, Span)> {
     let predicates = self.tcx.predicates_defined_on(def_id);
-    let mut all_predicates: Vec<GenericPredicates> = vec![predicates];
+    let mut all_predicates = vec![predicates];
     while let Some(parent_id) = all_predicates.last().and_then(|g| g.parent) {
       all_predicates.push(self.tcx.predicates_defined_on(parent_id));
     }
@@ -379,7 +378,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
-  let mut all_generics: Vec<&RustGenerics> = vec![generics];
+  let mut all_generics = vec![generics];
   while let Some(parent_id) = all_generics.last().and_then(|g| g.parent) {
     all_generics.push(tcx.generics_of(parent_id));
   }

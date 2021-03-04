@@ -54,7 +54,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub fn extract_spec_expr(
     &mut self,
     hir_id: HirId,
-    outer_fn_params: &Params<'l>,
     return_var: Option<&'l st::Variable<'l>>,
   ) -> st::Expr<'l> {
     // Specs are encoded as closure expressions within the actual (outer)
@@ -66,6 +65,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     let def_id = self.tcx().hir().local_def_id(hir_id).to_def_id();
     let outer_fn_txtcx = &self.txtcx;
+    let outer_fn_params = self.dcx.params();
     let f = self.factory();
 
     // Correlate type parameters
@@ -146,7 +146,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     body_expr: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let outer_fn_params = self.body_params().clone();
 
     // Wrap body with measure expression
     let body_expr = specs
@@ -159,7 +158,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         m_exprs.first()
       })
       .map(|&hid| {
-        let expr = self.extract_spec_expr(hid, &outer_fn_params, None);
+        let expr = self.extract_spec_expr(hid, None);
         f.Decreases(expr, body_expr).into()
       })
       .unwrap_or(body_expr);
@@ -170,7 +169,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|pre_hids| {
         let exprs = pre_hids
           .iter()
-          .map(|&hid| self.extract_spec_expr(hid, &outer_fn_params, None))
+          .map(|&hid| self.extract_spec_expr(hid, None))
           .collect();
 
         f.Require(f.make_and(exprs), body_expr).into()
@@ -185,7 +184,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(move |post_hids| {
         let exprs = post_hids
           .iter()
-          .map(|&hid| self.extract_spec_expr(hid, &outer_fn_params, Some(return_var)))
+          .map(|&hid| self.extract_spec_expr(hid, Some(return_var)))
           .collect();
 
         f.Ensuring(body_expr, f.Lambda(vec![return_vd], f.make_and(exprs)))
