@@ -7,7 +7,7 @@ use crate::spec::SpecType;
 
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
+use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 
 use crate::ty::{int_bit_width, uint_bit_width};
@@ -30,7 +30,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Binary { .. } => self.extract_binary(expr),
       ExprKind::LogicalOp { .. } => self.extract_logical_op(expr),
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
-      ExprKind::Field { .. } => self.extract_field(expr),
+      ExprKind::Field { lhs, name } => self.extract_field(lhs, name),
       ExprKind::VarRef { id } => self.fetch_var(id).0.into(),
       ExprKind::Call { ty, ref args, .. } => self.extract_call_like(ty, args, expr.span),
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
@@ -68,6 +68,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         borrow_kind: BorrowKind::Shared,
         arg,
       } => self.extract_expr_ref(arg),
+
+      ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
       _ => self.unsupported_expr(
         expr.span,
@@ -244,33 +246,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+  fn extract_field(&mut self, lhs: ExprRef<'tcx>, field: Field) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Field { lhs, name } = expr.kind {
-      let lhs = self.mirror(lhs);
-      let lhs_ty = lhs.ty;
-      let index = name.index();
-      match lhs_ty.kind {
-        TyKind::Tuple(_) => {
-          let lhs = self.extract_expr(lhs);
-          f.TupleSelect(lhs, (index as i32) + 1).into()
-        }
-        TyKind::Adt(adt_def, _) => {
-          let sort = self.base.extract_adt(adt_def.did);
-          assert_eq!(sort.constructors.len(), 1);
-          let constructor = sort.constructors[0];
-          assert!(index < constructor.fields.len());
-          let lhs = self.extract_expr(lhs);
-          f.ADTSelector(lhs, constructor.fields[index].v.id).into()
-        }
-        ref kind => unexpected(
-          expr.span,
-          format!("Unexpected kind of field selection: {:?}", kind),
-        ),
+    let lhs = self.mirror(lhs);
+    match lhs.ty.kind {
+      TyKind::Tuple(_) => {
+        let lhs = self.extract_expr(lhs);
+        f.TupleSelect(lhs, (field.index() as i32) + 1).into()
       }
-    } else {
-      unreachable!()
+      TyKind::Adt(adt_def, _) => {
+        let selector = self.extract_field_selector(adt_def.did, field);
+        let lhs = self.extract_expr(lhs);
+        f.ADTSelector(lhs, selector).into()
+      }
+      ref kind => unexpected(
+        lhs.span,
+        format!("Unexpected kind of field selection: {:?}", kind),
+      ),
     }
+  }
+
+  fn extract_field_selector(&mut self, adt_def_id: DefId, field: Field) -> StainlessSymId<'l> {
+    let sort = self.base.extract_adt(adt_def_id);
+    assert_eq!(sort.constructors.len(), 1);
+    let constructor = sort.constructors[0];
+    assert!(field.index() < constructor.fields.len());
+    constructor.fields[field.index()].v.id
   }
 
   fn extract_call_like(
@@ -708,6 +709,45 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       subpatterns.push(next);
     }
     subpatterns
+  }
+
+  fn extract_assignment(&mut self, lhs: ExprRef<'tcx>, rhs: ExprRef<'tcx>) -> st::Expr<'l> {
+    let value = self.extract_expr_ref(rhs);
+    let lhs = self.mirror(lhs);
+    let lhs = self.strip_scope(lhs);
+    match lhs.kind {
+      ExprKind::VarRef { id } => self
+        .factory()
+        .Assignment(self.fetch_var(id).0, value)
+        .into(),
+
+      ExprKind::Field { lhs, name } => {
+        let lhs = self.mirror(lhs);
+        match lhs.ty.kind {
+          TyKind::Adt(adt_def, _) => {
+            let adt = self.extract_expr(lhs);
+            let selector = self.extract_field_selector(adt_def.did, name);
+            self.factory().FieldAssignment(adt, selector, value).into()
+          }
+          ref t => self.unsupported_expr(
+            lhs.span,
+            format!("Cannot extract assignment to type {:?}", t),
+          ),
+        }
+      }
+
+      e => self.unsupported_expr(
+        lhs.span,
+        format!("Cannot extract assignment to kind {:?}", e),
+      ),
+    }
+  }
+
+  fn strip_scope(&mut self, expr: Expr<'tcx>) -> Expr<'tcx> {
+    match expr.kind {
+      ExprKind::Scope { value, .. } => self.mirror(value),
+      _ => expr,
+    }
   }
 
   fn extract_block_(
