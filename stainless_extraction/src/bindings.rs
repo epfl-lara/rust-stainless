@@ -20,7 +20,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .pat
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
-      let (var, _) = self.extract_binding(param.pat.hir_id, flags);
+      let var = self.extract_binding(param.pat.hir_id, flags);
       self.dcx.add_param(self.factory().ValDef(var));
     }
 
@@ -35,11 +35,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extracted before.
-  fn extract_binding(
-    &mut self,
-    hir_id: HirId,
-    flags: Option<Flags>,
-  ) -> (&'l st::Variable<'l>, bool) {
+  fn extract_binding(&mut self, hir_id: HirId, flags_opt: Option<Flags>) -> &'l st::Variable<'l> {
     self.dcx.get_var(hir_id).unwrap_or_else(|| {
       let xtor = &mut self.base;
 
@@ -85,13 +81,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       };
 
       // Build a Variable node
+      let f = xtor.factory();
       let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
-      let flags = flags
-        .map(|flags| flags.to_stainless(xtor.factory()))
-        .unwrap_or_default();
-      let var = xtor.factory().Variable(id, tpe, flags);
-      self.dcx.add_var(hir_id, var, mutable);
-      (var, mutable)
+      let flags = flags_opt
+        .map(|flags| flags.to_stainless(f))
+        .into_iter()
+        .flatten()
+        // Add @var flag if the param is mutable
+        .chain(mutable.then(|| f.IsVar().into()))
+        .collect();
+      let var = f.Variable(id, tpe, flags);
+      self.dcx.add_var(hir_id, var);
+      var
     })
   }
 }
@@ -99,7 +100,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 /// DefContext tracks available bindings
 #[derive(Clone, Debug)]
 pub(super) struct DefContext<'l> {
-  vars: HashMap<HirId, (&'l st::Variable<'l>, bool)>,
+  vars: HashMap<HirId, &'l st::Variable<'l>>,
   params: Vec<&'l st::ValDef<'l>>,
 }
 
@@ -115,14 +116,9 @@ impl<'l> DefContext<'l> {
     &self.params[..]
   }
 
-  pub(super) fn add_var(
-    &mut self,
-    hir_id: HirId,
-    var: &'l st::Variable<'l>,
-    mutable: bool,
-  ) -> &mut Self {
+  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
     assert!(!self.vars.contains_key(&hir_id));
-    self.vars.insert(hir_id, (var, mutable));
+    self.vars.insert(hir_id, var);
     self
   }
 
@@ -133,7 +129,7 @@ impl<'l> DefContext<'l> {
   }
 
   #[inline]
-  pub(super) fn get_var(&self, hir_id: HirId) -> Option<(&'l st::Variable<'l>, bool)> {
+  pub(super) fn get_var(&self, hir_id: HirId) -> Option<&'l st::Variable<'l>> {
     self.vars.get(&hir_id).copied()
   }
 }

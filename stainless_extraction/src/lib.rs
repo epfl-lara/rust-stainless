@@ -1,5 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
+#![feature(bool_to_option)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -372,7 +373,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.factory()
   }
 
-  fn fetch_var(&self, hir_id: HirId) -> (&'l st::Variable<'l>, bool) {
+  fn fetch_var(&self, hir_id: HirId) -> &'l st::Variable<'l> {
     let span: Span = self.tcx().hir().span(hir_id);
     self
       .dcx
