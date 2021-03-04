@@ -12,7 +12,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn populate_def_context(
     &mut self,
     flags_by_symbol: &mut HashMap<Symbol, Flags>,
-    add_params: &Vec<&'l st::ValDef<'l>>,
+    add_params: &[&'l st::ValDef<'l>],
   ) {
     // Bindings from the params
     for param in self.body.params {

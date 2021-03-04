@@ -15,5 +15,5 @@ pub fn main() {
   assert!(z == 5);
   let res = change(&z, &y);
   assert!(z == 5);
-  assert!(res == &y);
+  assert!(*res == y);
 }
