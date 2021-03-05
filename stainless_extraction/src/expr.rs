@@ -1,6 +1,4 @@
 use super::literal::Literal;
-use super::std_items::StdItem;
-use super::std_items::StdItem::*;
 use super::*;
 
 use crate::spec::SpecType;
@@ -8,8 +6,9 @@ use crate::spec::SpecType;
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
 
+use crate::std_items::{CrateItem, LangItem, StdItem};
 use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,
@@ -32,7 +31,21 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
       ExprKind::Field { lhs, name } => self.extract_field(lhs, name),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
-      ExprKind::Call { ty, ref args, .. } => self.extract_call_like(ty, args, expr.span),
+
+      ExprKind::Call {
+        ty: TyS {
+          kind: TyKind::FnDef(def_id, substs_ref),
+          ..
+        },
+        ref args,
+        ..
+      } => self.extract_call_like(*def_id, substs_ref, args, expr.span),
+
+      ExprKind::Call { .. } => self.unsupported_expr(
+        expr.span,
+        "Cannot extract call without statically known target",
+      ),
+
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
       ExprKind::Block { body: ast_block } => {
         let block = self.mirror(ast_block);
@@ -276,43 +289,57 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_call_like(
     &mut self,
-    ty: Ty<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    def_id: DefId,
+    substs_ref: SubstsRef<'tcx>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-      // If the call is a std item, extract it specially
-      match self.base.std_items.def_to_item_opt(def_id) {
-        Some(BeginPanicFn) => self.extract_panic(args, span, false),
-        Some(BeginPanicFmtFn) => self.extract_panic(args, span, true),
-
-        Some(SetEmptyFn) | Some(SetSingletonFn) => {
-          self.extract_set_creation(args, substs_ref, span)
+    // If the call is a std item, extract it specially
+    self
+      .base
+      .std_items
+      .def_to_item_opt(def_id)
+      .and_then(|sti| match sti {
+        // Panics
+        StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
+        StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
+          Some(self.extract_panic(args, span, true))
         }
-        Some(std_item)
-          if std_item == SetAddFn
-            || std_item == SetDifferenceFn
-            || std_item == SetIntersectionFn
-            || std_item == SetUnionFn
-            || std_item == SubsetOfFn =>
+
+        // Set things
+        StdItem::CrateItem(CrateItem::SetEmptyFn)
+        | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
+          Some(self.extract_set_creation(args, substs_ref, span))
+        }
+        StdItem::CrateItem(item)
+          if item == CrateItem::SetAddFn
+            || item == CrateItem::SetDifferenceFn
+            || item == CrateItem::SetIntersectionFn
+            || item == CrateItem::SetUnionFn
+            || item == CrateItem::SubsetOfFn =>
         {
-          self.extract_set_op(std_item, args, span)
+          Some(self.extract_set_op(item, args, span))
         }
 
-        // Otherwise, extract a normal call
-        _ => self.extract_call(def_id, substs_ref, args, span),
-      }
-    } else {
-      self.unsupported_expr(span, "Cannot extract call without statically known target")
-    }
+        // Box::new, erase it and return the argument directly.
+        StdItem::CrateItem(CrateItem::BoxNew) => {
+          Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+        }
+
+        _ => None,
+      })
+      // Otherwise, extract a normal call
+      .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
   }
 
   fn extract_set_op(
     &mut self,
-    std_item: StdItem,
-    args: &Vec<ExprRef<'tcx>>,
+    std_item: CrateItem,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
+    use CrateItem::*;
+
     if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
       return match std_item {
         SetAddFn => self.factory().SetAdd(*set, *arg).into(),
@@ -331,7 +358,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_set_creation(
     &mut self,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
@@ -344,7 +371,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
@@ -354,13 +381,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       trait_bounds,
       ..
     } = self.base.get_generics(def_id);
-
-    // Special case for Box::new, erase it and return the argument directly.
-    // TODO: turn Box::new to a StdItem and use that. Tracked here:
-    //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if fd_id.symbol_path == ["std", "boxed", "Box", "T", "new"] {
-      return self.extract_expr_ref(args.first().cloned().unwrap());
-    }
 
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
@@ -424,7 +444,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
-  fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
+  fn extract_panic(&mut self, args: &[ExprRef<'tcx>], span: Span, is_fmt: bool) -> st::Expr<'l> {
     match &self.extract_expr_refs(args.to_vec())[..] {
       // TODO: Implement panic! with formatted message
       _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
