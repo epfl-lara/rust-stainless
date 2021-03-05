@@ -290,7 +290,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     // If the call is a std item, extract it specially
@@ -326,7 +326,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_set_op(
     &mut self,
     std_item: CrateItem,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     use CrateItem::*;
@@ -349,7 +349,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_set_creation(
     &mut self,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
@@ -362,7 +362,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
@@ -442,7 +442,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
-  fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
+  fn extract_panic(&mut self, args: &[ExprRef<'tcx>], span: Span, is_fmt: bool) -> st::Expr<'l> {
     match &self.extract_expr_refs(args.to_vec())[..] {
       // TODO: Implement panic! with formatted message
       _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
