@@ -4,6 +4,8 @@ use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
 use rustc_hir::lang_items::LangItem as RustLangItem;
 use rustc_middle::ty::TyCtxt;
 
+use enum_iterator::IntoEnumIterator;
+
 /// A standard item, either a rust LangItem, or one of the stainless library
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum StdItem {
@@ -11,7 +13,7 @@ pub(super) enum StdItem {
   CrateItem(CrateItem),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
 pub enum LangItem {
   FnTrait,
   FnMutTrait,
@@ -20,10 +22,9 @@ pub enum LangItem {
   BeginPanicFn,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
 pub enum CrateItem {
   BeginPanicFmtFn,
-  // Set things,
   SetType,
   SetAddFn,
   SetDifferenceFn,
@@ -32,6 +33,7 @@ pub enum CrateItem {
   SubsetOfFn,
   SetEmptyFn,
   SetSingletonFn,
+  BoxNew,
 }
 
 use CrateItem::*;
@@ -49,6 +51,7 @@ impl CrateItem {
       SubsetOfFn => "stainless::Set::<T>::is_subset_of",
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
+      BoxNew => "std::boxed::Box::<T>::new",
     }
   }
 
@@ -56,24 +59,17 @@ impl CrateItem {
   /// of its [path()] suggests. This is due to the aliasing of `alloc` and other
   /// layers under `std`.
   pub fn crate_name(&self) -> &'static str {
-    self.path().splitn(2, "::").next().unwrap()
+    match self {
+      BoxNew => "alloc",
+      _ => self.path().splitn(2, "::").next().unwrap(),
+    }
   }
 }
 
 lazy_static! {
   static ref CRATE_ITEMS_BY_CRATE: HashMap<&'static str, Vec<CrateItem>> = {
     let mut map = HashMap::new();
-    for &c in &[
-      BeginPanicFmtFn,
-      SetType,
-      SetAddFn,
-      SetDifferenceFn,
-      SetIntersectionFn,
-      SetUnionFn,
-      SubsetOfFn,
-      SetEmptyFn,
-      SetSingletonFn,
-    ] {
+    for c in CrateItem::into_enum_iter() {
       map.entry(c.crate_name()).or_insert_with(Vec::new).push(c)
     }
     map
@@ -89,11 +85,6 @@ impl LangItem {
       LangItem::SizedTrait => RustLangItem::SizedTraitLangItem,
       LangItem::BeginPanicFn => RustLangItem::BeginPanicFnLangItem,
     }
-  }
-
-  fn iter() -> impl Iterator<Item = &'static LangItem> {
-    use LangItem::*;
-    [FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn].iter()
   }
 }
 
@@ -125,9 +116,9 @@ impl StdItems {
     }
 
     // Register rust lang items
-    for item in LangItem::iter() {
+    for item in LangItem::into_enum_iter() {
       let def_id = tcx.require_lang_item(item.rust_lang_item(), None);
-      this.def_to_item.insert(def_id, StdItem::LangItem(*item));
+      this.def_to_item.insert(def_id, StdItem::LangItem(item));
     }
 
     // Register additional items from the rust standard library

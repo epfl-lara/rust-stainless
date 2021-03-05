@@ -290,7 +290,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     // If the call is a std item, extract it specially
@@ -299,11 +299,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .std_items
       .def_to_item_opt(def_id)
       .and_then(|sti| match sti {
+        // Panics
         StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
         StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
           Some(self.extract_panic(args, span, true))
         }
 
+        // Set things
         StdItem::CrateItem(CrateItem::SetEmptyFn)
         | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
           Some(self.extract_set_creation(args, substs_ref, span))
@@ -317,6 +319,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         {
           Some(self.extract_set_op(item, args, span))
         }
+
+        // Box::new, erase it and return the argument directly.
+        StdItem::CrateItem(CrateItem::BoxNew) => {
+          Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+        }
+
         _ => None,
       })
       // Otherwise, extract a normal call
@@ -326,7 +334,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_set_op(
     &mut self,
     std_item: CrateItem,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     use CrateItem::*;
@@ -349,7 +357,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_set_creation(
     &mut self,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
@@ -362,7 +370,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
     let fd_id = self.base.extract_fn_ref(def_id);
@@ -372,13 +380,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       trait_bounds,
       ..
     } = self.base.get_generics(def_id);
-
-    // Special case for Box::new, erase it and return the argument directly.
-    // TODO: turn Box::new to a StdItem and use that. Tracked here:
-    //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if fd_id.symbol_path == ["std", "boxed", "Box", "T", "new"] {
-      return self.extract_expr_ref(args.first().cloned().unwrap());
-    }
 
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
@@ -442,7 +443,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
-  fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
+  fn extract_panic(&mut self, args: &[ExprRef<'tcx>], span: Span, is_fmt: bool) -> st::Expr<'l> {
     match &self.extract_expr_refs(args.to_vec())[..] {
       // TODO: Implement panic! with formatted message
       _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
