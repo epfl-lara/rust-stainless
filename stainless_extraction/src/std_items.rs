@@ -37,7 +37,8 @@ pub enum CrateItem {
 use CrateItem::*;
 
 impl CrateItem {
-  pub fn path(self) -> &'static str {
+  /// The path of a crate item, as returned by `tcx.def_path_str`.
+  pub fn path(&self) -> &'static str {
     match self {
       BeginPanicFmtFn => "std::rt::begin_panic_fmt",
       SetType => "stainless::Set",
@@ -49,6 +50,13 @@ impl CrateItem {
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
     }
+  }
+
+  /// An item can (unfortunately) be in a different crate than the first part
+  /// of its [path()] suggests. This is due to the aliasing of `alloc` and other
+  /// layers under `std`.
+  pub fn crate_name(&self) -> &'static str {
+    self.path().splitn(2, "::").next().unwrap()
   }
 }
 
@@ -66,10 +74,7 @@ lazy_static! {
       SetEmptyFn,
       SetSingletonFn,
     ] {
-      let path_elems: Vec<_> = c.path().splitn(2, "::").collect();
-      if let Some(&crate_name) = path_elems.first() {
-        map.entry(crate_name).or_insert_with(Vec::new).push(c)
-      }
+      map.entry(c.crate_name()).or_insert_with(Vec::new).push(c)
     }
     map
   };
