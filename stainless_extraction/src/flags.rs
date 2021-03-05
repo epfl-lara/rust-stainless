@@ -1,5 +1,6 @@
 use super::*;
 
+use enum_iterator::IntoEnumIterator;
 use std::collections::HashSet;
 
 use rustc_ast::ast::{self as ast, AttrKind, Attribute, MacArgs};
@@ -10,7 +11,7 @@ use rustc_span::symbol::{kw, Symbol};
 
 use stainless_data::ast as st;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
 pub(super) enum Flag {
   Extern,
   IsPure,
@@ -79,10 +80,9 @@ impl Flag {
 }
 
 lazy_static! {
-  static ref FLAGS: Vec<Flag> = vec![Extern, IsPure, IsMutable, IsVar, Law, Pre, Post, Measure];
   static ref FLAGS_BY_NAME: HashMap<&'static str, Flag> = {
     let mut flags: HashMap<&'static str, Flag> = HashMap::new();
-    for &flag in FLAGS.iter() {
+    for flag in Flag::into_enum_iter() {
       flags.insert(flag.name(), flag);
     }
     flags

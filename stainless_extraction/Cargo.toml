@@ -13,6 +13,7 @@ doctest = false
 rustc_hair = { git = "https://github.com/gsps/librustc_hair.git", branch = "nightly-2020-06-10" }
 stainless_data = { path = "../stainless_data" }
 lazy_static = "1.4.0"
+enum-iterator = "0.6.0"
 
 [features]
 default = []
