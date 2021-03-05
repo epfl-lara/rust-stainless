@@ -299,11 +299,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .std_items
       .def_to_item_opt(def_id)
       .and_then(|sti| match sti {
+        // Panics
         StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
         StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
           Some(self.extract_panic(args, span, true))
         }
 
+        // Set things
         StdItem::CrateItem(CrateItem::SetEmptyFn)
         | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
           Some(self.extract_set_creation(args, substs_ref, span))
@@ -317,6 +319,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         {
           Some(self.extract_set_op(item, args, span))
         }
+
+        // Box::new, erase it and return the argument directly.
+        StdItem::CrateItem(CrateItem::BoxNew) => {
+          Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+        }
+
         _ => None,
       })
       // Otherwise, extract a normal call
@@ -372,13 +380,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       trait_bounds,
       ..
     } = self.base.get_generics(def_id);
-
-    // Special case for Box::new, erase it and return the argument directly.
-    // TODO: turn Box::new to a StdItem and use that. Tracked here:
-    //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if fd_id.symbol_path == ["std", "boxed", "Box", "T", "new"] {
-      return self.extract_expr_ref(args.first().cloned().unwrap());
-    }
 
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one

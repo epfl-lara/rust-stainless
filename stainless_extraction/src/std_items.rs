@@ -33,6 +33,7 @@ pub enum CrateItem {
   SubsetOfFn,
   SetEmptyFn,
   SetSingletonFn,
+  BoxNew,
 }
 
 use CrateItem::*;
@@ -50,6 +51,7 @@ impl CrateItem {
       SubsetOfFn => "stainless::Set::<T>::is_subset_of",
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
+      BoxNew => "std::boxed::Box::<T>::new",
     }
   }
 
@@ -57,7 +59,10 @@ impl CrateItem {
   /// of its [path()] suggests. This is due to the aliasing of `alloc` and other
   /// layers under `std`.
   pub fn crate_name(&self) -> &'static str {
-    self.path().splitn(2, "::").next().unwrap()
+    match self {
+      BoxNew => "alloc",
+      _ => self.path().splitn(2, "::").next().unwrap(),
+    }
   }
 }
 
