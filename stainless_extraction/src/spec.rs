@@ -110,7 +110,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       }
 
       // Register all other bindings
-      assert_eq!(outer_fn_params.len(), spec_param_ids.len());
       for (vd, sid) in outer_fn_params.iter().zip(spec_param_ids) {
         bxtor.dcx.add_var(sid, vd.v);
       }

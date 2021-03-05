@@ -1,4 +1,5 @@
 extern crate stainless;
+use stainless::*;
 
 pub enum List<T> {
   Nil,
@@ -7,6 +8,11 @@ pub enum List<T> {
 
 pub trait Equals {
   fn eq(&self, other: &Self) -> bool;
+
+  #[law]
+  fn law_reflexive(x: &Self) -> bool {
+    x.eq(x)
+  }
 }
 
 impl Equals for i32 {
@@ -47,6 +53,31 @@ impl<T: Equals> List<T> {
         }
       }
       _ => s.hash(),
+    }
+  }
+}
+
+#[post(ret == 123)]
+pub fn fn_with_bound_and_spec<T: Equals>(x: &T) -> i32 {
+  if x.eq(x) {
+    123
+  } else {
+    123
+  }
+}
+
+impl<T: Equals> List<T> {
+  #[post(ret == 123)]
+  pub fn fn_with_bound_and_spec(&self) -> i32 {
+    match self {
+      List::Nil => 123,
+      List::Cons(x, _) => {
+        if x.eq(x) {
+          123
+        } else {
+          123
+        }
+      }
     }
   }
 }
