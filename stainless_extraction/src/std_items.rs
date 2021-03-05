@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
 use rustc_hir::lang_items::LangItem as RustLangItem;
 use rustc_middle::ty::TyCtxt;
-use rustc_span::symbol::Symbol;
 
 /// A standard item, either a rust LangItem, or one of the stainless library
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -37,31 +36,43 @@ pub enum CrateItem {
 
 use CrateItem::*;
 
-const STAINLESS_ITEMS: &[CrateItem] = &[
-  SetType,
-  SetAddFn,
-  SetDifferenceFn,
-  SetIntersectionFn,
-  SetUnionFn,
-  SubsetOfFn,
-  SetEmptyFn,
-  SetSingletonFn,
-];
-
 impl CrateItem {
   pub fn path(self) -> &'static str {
     match self {
-      BeginPanicFmtFn => "begin_panic_fmt",
-      SetType => "Set",
-      SetAddFn => "add",
-      SetDifferenceFn => "difference",
-      SetIntersectionFn => "intersection",
-      SetUnionFn => "union",
-      SubsetOfFn => "is_subset_of",
-      SetEmptyFn => "empty",
-      SetSingletonFn => "singleton",
+      BeginPanicFmtFn => "std::rt::begin_panic_fmt",
+      SetType => "stainless::Set",
+      SetAddFn => "stainless::Set::<T>::add",
+      SetDifferenceFn => "stainless::Set::<T>::difference",
+      SetIntersectionFn => "stainless::Set::<T>::intersection",
+      SetUnionFn => "stainless::Set::<T>::union",
+      SubsetOfFn => "stainless::Set::<T>::is_subset_of",
+      SetEmptyFn => "stainless::Set::<T>::empty",
+      SetSingletonFn => "stainless::Set::<T>::singleton",
     }
   }
+}
+
+lazy_static! {
+  static ref CRATE_ITEMS_BY_CRATE: HashMap<&'static str, Vec<CrateItem>> = {
+    let mut map = HashMap::new();
+    for &c in &[
+      BeginPanicFmtFn,
+      SetType,
+      SetAddFn,
+      SetDifferenceFn,
+      SetIntersectionFn,
+      SetUnionFn,
+      SubsetOfFn,
+      SetEmptyFn,
+      SetSingletonFn,
+    ] {
+      let path_elems: Vec<_> = c.path().splitn(2, "::").collect();
+      if let Some(&crate_name) = path_elems.first() {
+        map.entry(crate_name).or_insert_with(Vec::new).push(c)
+      }
+    }
+    map
+  };
 }
 
 impl LangItem {
@@ -86,20 +97,19 @@ pub(super) struct StdItems {
   def_to_item: HashMap<DefId, StdItem>,
 }
 
-const CRATE_NAMES: [&str; 2] = ["std", "stainless"];
-
 impl StdItems {
   pub(super) fn collect(tcx: TyCtxt) -> Self {
     let mut this = Self {
       def_to_item: HashMap::new(),
     };
 
-    let crate_nums: HashMap<String, CrateNum> = tcx
+    let crate_names: HashSet<_> = CRATE_ITEMS_BY_CRATE.keys().collect();
+    let crate_nums: HashMap<_, CrateNum> = tcx
       .crates()
       .iter()
       .filter_map(|&cnum| {
         let name = tcx.crate_name(cnum).to_string();
-        CRATE_NAMES.contains(&name.as_str()).then(|| (name, cnum))
+        crate_names.contains(&&name.as_str()).then(|| (name, cnum))
       })
       .collect();
 
@@ -116,8 +126,9 @@ impl StdItems {
     }
 
     // Register additional items from the rust standard library
-    this.register_items_from_crate(tcx, &[BeginPanicFmtFn], *crate_nums.get("std").unwrap());
-    this.register_items_from_crate(tcx, STAINLESS_ITEMS, *crate_nums.get("stainless").unwrap());
+    for (&crate_name, items) in CRATE_ITEMS_BY_CRATE.iter() {
+      this.register_items_from_crate(tcx, items, *crate_nums.get(crate_name).unwrap())
+    }
     this
   }
 
@@ -131,27 +142,16 @@ impl StdItems {
   // HACK(gsps): A horrible way to do this, but rustc -- as far as I can tell -- does not expose
   // any API for finding a specific item in, or enumerating all items of a crate.
   fn register_items_from_crate(&mut self, tcx: TyCtxt, items: &[CrateItem], cnum: CrateNum) {
-    let mut items: HashMap<Symbol, _> = items
-      .iter()
-      .map(|item| (Symbol::intern(item.path()), *item))
-      .collect();
+    let mut items: HashMap<&str, _> = items.iter().map(|item| (item.path(), *item)).collect();
 
     for index in 0.. {
+      // We found DefIds for all items, we're done.
       if items.is_empty() {
-        break; // We found DefIds for all items, we're done.
+        break;
       }
       let def_id = Self::make_def_id(cnum, index);
-
-      if let Some(ref name_sym) = tcx
-        .def_path(def_id)
-        .data
-        .last()
-        .map(|data| data.data.as_symbol())
-      {
-        if let Some(item) = items.remove(name_sym) {
-          dbg!(&tcx.def_path_str(def_id));
-          self.def_to_item.insert(def_id, StdItem::CrateItem(item));
-        }
+      if let Some(item) = items.remove(tcx.def_path_str(def_id).as_str()) {
+        self.def_to_item.insert(def_id, StdItem::CrateItem(item));
       }
     }
   }
