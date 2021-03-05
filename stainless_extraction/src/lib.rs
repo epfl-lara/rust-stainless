@@ -376,7 +376,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       tables,
       body,
       txtcx,
-      dcx: DefContext::new(),
+      dcx: DefContext::default(),
       current_class,
     }
   }

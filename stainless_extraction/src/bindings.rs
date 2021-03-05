@@ -21,12 +21,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
       let var = self.extract_binding(param.pat.hir_id, flags);
-      self.dcx.add_param(self.factory().ValDef(var));
+      self
+        .dcx
+        .add_param(self.factory().ValDef(var), &mut self.base);
     }
 
     // Additional parameters (usually evidence parameters)
     for v in add_params {
-      self.dcx.add_param(v);
+      self.dcx.add_param(v, &mut self.base);
     }
 
     // Bindings from the body
@@ -95,23 +97,46 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       var
     })
   }
+
+  /// Wraps the body expression into a LetVar for each mutable parameter of the
+  /// function recorded in the DefContext. Because, specs (Ensuring, Require,
+  /// Decreases) trees have to be the outermost trees, this also unpacks the
+  /// specs and repacks them around the body wrapped in LetVars.
+  pub fn wrap_body_let_vars(&self, body_expr: st::Expr<'l>) -> st::Expr<'l> {
+    let f = self.factory();
+    match body_expr {
+      st::Expr::Ensuring(st::Ensuring { body, pred }) => {
+        let wrapped_body = self.wrap_body_let_vars(*body);
+        f.Ensuring(wrapped_body, pred).into()
+      }
+      st::Expr::Require(st::Require { body, pred }) => {
+        let wrapped_body = self.wrap_body_let_vars(*body);
+        f.Require(*pred, wrapped_body).into()
+      }
+      st::Expr::Decreases(st::Decreases { measure, body }) => {
+        let wrapped_body = self.wrap_body_let_vars(*body);
+        f.Decreases(*measure, wrapped_body).into()
+      }
+      _ => self
+        .dcx
+        .let_var_pairs
+        .iter()
+        .fold(body_expr, |body, (vd, &v)| {
+          f.LetVar(vd, v.into(), body).into()
+        }),
+    }
+  }
 }
 
 /// DefContext tracks available bindings
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
   params: Vec<&'l st::ValDef<'l>>,
+  let_var_pairs: HashMap<&'l st::ValDef<'l>, &'l st::Variable<'l>>,
 }
 
 impl<'l> DefContext<'l> {
-  pub(super) fn new() -> Self {
-    Self {
-      vars: HashMap::new(),
-      params: vec![],
-    }
-  }
-
   pub(super) fn params(&self) -> &[&'l st::ValDef<'l>] {
     &self.params[..]
   }
@@ -122,9 +147,25 @@ impl<'l> DefContext<'l> {
     self
   }
 
-  pub(super) fn add_param(&mut self, val: &'l st::ValDef<'l>) -> &mut Self {
-    assert!(!self.params.contains(&val));
-    self.params.push(val);
+  /// Adds a parameter to the available bindings.
+  ///
+  /// If the parameter is mutable, a new immutable parameter is inserted in the
+  /// paramter list. The binding with a LetVar from the new param to the
+  /// variable in the function's body needs to be created later with
+  /// [BodyExtractor::wrap_body_let_vars].
+  pub(super) fn add_param(
+    &mut self,
+    vd: &'l st::ValDef<'l>,
+    xtor: &mut BaseExtractor<'l, '_>,
+  ) -> &mut Self {
+    assert!(!self.params.contains(&vd));
+    if vd.is_mutable() {
+      let new_param_var = xtor.immutable_var_with_name(vd.v, &format!("var{}", self.params.len()));
+      self.params.push(xtor.factory().ValDef(new_param_var));
+      self.let_var_pairs.insert(vd, new_param_var);
+    } else {
+      self.params.push(vd);
+    };
     self
   }
 

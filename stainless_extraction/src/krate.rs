@@ -356,39 +356,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
+        let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
-        // Create new immutable variables for all mutable params
-        let base = &mut bxtor.base;
-        let vd_to_var_params: Vec<_> = bxtor
-          .dcx
-          .params()
-          .iter()
-          .enumerate()
-          .map(|(i, vd)| {
-            if vd.is_mutable() {
-              (vd, base.immutable_var_with_name(vd.v, &format!("var{}", i)))
-            } else {
-              (vd, vd.v)
-            }
-          })
-          .collect();
-
-        // Wrap the body expression into a LetVar for each mutable param
-        let body_expr = vd_to_var_params.iter().fold(body_expr, |body, &(vd, v)| {
-          if vd.is_mutable() {
-            f.LetVar(vd, v.into(), body).into()
-          } else {
-            body
-          }
-        });
-
-        // For the actual function params, we take the new immutable ones,
-        // instead of the one in the LetVar.
-        let params = vd_to_var_params
-          .iter()
-          .map(|(vd, v)| if vd.is_mutable() { &*f.ValDef(v) } else { vd })
-          .collect();
-        (params, bxtor.return_tpe(), body_expr)
+        (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
 
     self.report_unused_flags(hir_id, &flags_by_symbol);
