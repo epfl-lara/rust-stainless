@@ -269,7 +269,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           f.TupleSelect(lhs, (index as i32) + 1).into()
         }
         TyKind::Adt(adt_def, _) => {
-          let sort = self.base.extract_adt(adt_def.did);
+          let sort = self.base.get_or_extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
           assert!(index < constructor.fields.len());
@@ -373,13 +373,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    let fd_id = self.base.extract_fn_ref(def_id);
+    let fd_id = self.base.get_or_extract_fn_ref(def_id);
     let class_def = self.base.get_class_of_method(fd_id);
     let Generics {
       tparams,
       trait_bounds,
       ..
-    } = self.base.get_generics(def_id);
+    } = self.base.get_or_extract_generics(def_id);
 
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
@@ -555,7 +555,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     } = expr.kind
     {
-      let sort = self.base.extract_adt(adt_def.did);
+      let sort = self.base.get_or_extract_adt(adt_def.did);
       let constructor = sort.constructors[variant_index.index()];
       let arg_tps = self.extract_arg_types(substs.types(), expr.span);
 
@@ -666,7 +666,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         subpatterns,
         substs,
       } => {
-        let sort = self.base.extract_adt(adt_def.did);
+        let sort = self.base.get_or_extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
         let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
         let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
@@ -678,7 +678,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // `Foo` is a variant name from an ADT with a single variant.
       box PatKind::Leaf { subpatterns } => match pattern.ty.kind {
         TyKind::Adt(adt_def, substs) => {
-          let sort = self.base.extract_adt(adt_def.did);
+          let sort = self.base.get_or_extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
           let arg_tps = self.extract_arg_types(substs.types(), pattern.span);

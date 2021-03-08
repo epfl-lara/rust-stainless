@@ -23,7 +23,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       txtcx,
       trait_bounds,
-    } = self.get_generics(def_id);
+    } = self.get_or_extract_generics(def_id);
 
     // If this is an 'impl for trait', we extract a concrete class
     if let Some(ty::TraitRef {

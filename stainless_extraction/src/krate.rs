@@ -63,8 +63,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           // Store ADTs
           ItemKind::Enum(..) | ItemKind::Struct(..) => {
             eprintln!("  - ADT {}", def_path_str);
-            let sort = self.xtor.extract_adt(def_id);
-            self.xtor.add_adt(sort);
+            self.xtor.get_or_extract_adt(def_id);
           }
 
           // Store functions of impl blocks and their specs
@@ -169,14 +168,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Extract abstract functions
     for fun in abstract_fns {
-      let fd = self.extract_abstract_fn(fun.def_id);
-      self.add_function(fd);
+      self.extract_abstract_fn(fun.def_id);
     }
 
     // Extract concrete local functions (this includes laws)
     for fn_item in fns {
-      let fd = self.extract_local_fn(&fn_item);
-      self.add_function(fd);
+      self.extract_local_fn(&fn_item);
     }
 
     // Extract external items as stubs
@@ -193,18 +190,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .iter()
       // And extract them as external functions
       .for_each(|&def_id| {
-        let fd = self.extract_extern_fn(def_id);
-        self.add_function(fd);
+        self.extract_extern_fn(def_id);
       })
   }
 
   fn create_fn_item(&mut self, def_id: DefId, is_abstract: bool) -> FnItem<'l> {
-    FnItem::new(def_id, self.extract_fn_ref(def_id), is_abstract)
+    FnItem::new(def_id, self.get_or_extract_fn_ref(def_id), is_abstract)
   }
 
   /// Extract a function reference (regardless of whether it is local or external)
   // TODO: Extract flags on functions and parameters
-  pub(super) fn extract_fn_ref(&mut self, def_id: DefId) -> StainlessSymId<'l> {
+  pub(super) fn get_or_extract_fn_ref(&mut self, def_id: DefId) -> StainlessSymId<'l> {
     self.get_id_from_def(def_id).unwrap_or_else(|| {
       self.add_function_ref(def_id);
 
@@ -251,14 +247,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let f = self.factory();
     let empty_body = f.NoTree(rtp).into();
-    f.FunDef(
+    self.add_function(f.FunDef(
       id,
       tparams,
       params,
       rtp,
       empty_body,
       vec![f.Extern().into()],
-    )
+    ))
   }
 
   pub fn extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
@@ -267,17 +263,19 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let f = self.factory();
     let empty_body = f.NoTree(rtp).into();
-    f.FunDef(
-      id,
-      self.filter_class_tparams(tparams, class_def),
-      params,
-      rtp,
-      empty_body,
-      class_def
-        .iter()
-        .map(|cd| f.IsMethodOf(cd.id).into())
-        .chain(iter::once(f.IsAbstract().into()))
-        .collect(),
+    self.add_function(
+      f.FunDef(
+        id,
+        self.filter_class_tparams(tparams, class_def),
+        params,
+        rtp,
+        empty_body,
+        class_def
+          .iter()
+          .map(|cd| f.IsMethodOf(cd.id).into())
+          .chain(iter::once(f.IsAbstract().into()))
+          .collect(),
+      ),
     )
   }
 
@@ -293,7 +291,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let f = self.factory();
 
     // Extract the function signature
-    let Generics { tparams, txtcx, .. } = self.get_generics(def_id);
+    let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
     let poly_fn_sig = self.tcx.fn_sig(def_id);
     let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
     let params: Params<'l> = fn_sig
@@ -309,7 +307,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect();
     let return_tpe = self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP);
 
-    let fun_id = self.extract_fn_ref(def_id);
+    let fun_id = self.get_or_extract_fn_ref(def_id);
     (fun_id, tparams, params, return_tpe)
   }
 
@@ -338,7 +336,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       txtcx,
       trait_bounds,
-    } = self.get_generics(fn_item.def_id);
+    } = self.get_or_extract_generics(fn_item.def_id);
 
     // If this function is not on a class *but* has trait bounds, we need to add
     // these as evidence parameters.
@@ -362,14 +360,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Wrap it all up in a Stainless function
-    f.FunDef(
+    self.add_function(f.FunDef(
       fn_item.fd_id,
       self.filter_class_tparams(tparams, class_def),
       params,
       return_tpe,
       body_expr,
       flags,
-    )
+    ))
   }
 
   /// Filter out the tparams of the class and the class (as tparam) itself
@@ -387,51 +385,35 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  /// Extract the definition ID of an ADT.
-  ///
-  /// If the ADT is already in the mappings, it will reuse the ID, otherwise the
-  /// function first parses the ADT, then uses the ID.
-  pub(super) fn extract_adt_id(&mut self, def_id: DefId) -> &'l st::SymbolIdentifier<'l> {
+  /// Extract an ADT (regardless of whether it is local or external) or return it from the map of
+  /// already extracted ADTs.
+  /// Caution: if you only need the ADT's id, you should call [extract_adt_id] because there are
+  /// cases where the ID is already in the cache but not the entire ADTSort. That may lead to
+  /// infinite recursion.
+  pub(super) fn get_or_extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
     self
-      // get known ID
       .get_id_from_def(def_id)
-      // otherwise extract ADT, then get the ID
-      .unwrap_or_else(|| &self.extract_adt(def_id).id)
-  }
-
-  /// Extract an ADT (regardless of whether it is local or external)
-  pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
-    let sort_opt = self.with_extraction(|xt| {
-      self
-        .get_id_from_def(def_id)
-        .and_then(|id| xt.adts.get(id).copied())
-    });
-
-    match sort_opt {
-      Some(sort) => sort,
-      None => {
+      .and_then(|id| self.with_extraction(|xt| xt.adts.get(id).copied()))
+      .unwrap_or_else(|| {
         let f = self.factory();
         let adt_id = self.get_or_register_def(def_id);
         let adt_def = self.tcx.adt_def(def_id);
 
-        // Extract flags
-        let local_def_id_opt = def_id.as_local();
-
         // Extract flags for local def ids.
-        let (flags, mut flags_by_symbol, hir_id_opt) = match local_def_id_opt {
-          Some(local_def_id) => {
+        let (flags, mut flags_by_symbol, hir_id_opt) = def_id
+          .as_local()
+          .map(|local_def_id| {
             let hir_id = self.tcx.hir().as_local_hir_id(local_def_id);
             let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
             (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
-          }
+          })
           // TODO: Extract external (non-local) flags. Tracked here:
           //   https://github.com/epfl-lara/rust-stainless/issues/36
           //   Currently, we just return empty flags for non-local ADTs.
-          _ => (vec![], HashMap::new(), None),
-        };
+          .unwrap_or_default();
 
         // Extract generics
-        let Generics { tparams, txtcx, .. } = self.get_generics(def_id);
+        let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
 
         // Extract constructors
         let constructors = adt_def
@@ -462,8 +444,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         if let Some(hir_id) = hir_id_opt {
           self.report_unused_flags(hir_id, &flags_by_symbol)
         }
-        f.ADTSort(adt_id, tparams, constructors, flags)
-      }
-    }
+
+        self.add_adt(f.ADTSort(adt_id, tparams, constructors, flags))
+      })
   }
 }

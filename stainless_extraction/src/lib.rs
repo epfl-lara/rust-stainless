@@ -246,9 +246,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) {
+  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) -> &'l st::ADTSort<'l> {
     self.with_extraction_mut(|xt| {
       assert!(xt.adts.insert(adt.id, adt).is_none());
+      adt
     })
   }
 
@@ -258,9 +259,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  fn add_function(&mut self, fd: &'l st::FunDef<'l>) {
+  fn add_function(&mut self, fd: &'l st::FunDef<'l>) -> &'l st::FunDef<'l> {
     self.with_extraction_mut(|xt| {
       assert!(xt.functions.insert(fd.id, fd).is_none());
+      fd
     })
   }
 
