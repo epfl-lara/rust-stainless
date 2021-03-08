@@ -68,32 +68,34 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           // Store functions of impl blocks and their specs
           ItemKind::Impl { items, .. } => {
+            let fns =
+              self.extract_items(items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)));
+
             // if the impl implements a trait, then we need to extract it as a class/object.
-            let class_def: Option<&'l st::ClassDef<'l>> = self
-              .xtor
-              .tcx
-              .impl_trait_ref(def_id)
-              .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
-
-            self.extract_class_item(
-              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
-              class_def,
-            )
+            self.xtor.tcx.impl_trait_ref(def_id).map(|trait_ref| {
+              self.xtor.extract_class(
+                def_id,
+                Some(trait_ref),
+                fns.iter().map(|fi| fi.fd_id),
+                item.span,
+              )
+            });
+            self.functions.extend(fns);
           }
 
-          // Extract the trait as an abstract class, the laws as normal
-          // functions and the abstract functions as empty functions.
+          // Extract the trait as an abstract class. Laws and other concrete
+          // functions can be extracted like any normal function. Abstract
+          // functions are marked and will be treated accordingly.
           ItemKind::Trait(_, _, _, _, items) => {
-            let cd = self.xtor.extract_class(def_id, None, item.span);
-
-            // Laws and other concrete functions can be extracted like any
-            // normal function. Abstract functions are marked and will be
-            // treated accordingly.
-            self.extract_class_item(
-              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
-              Some(cd),
-            )
+            let fns =
+              self.extract_items(items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)));
+            self
+              .xtor
+              .extract_class(def_id, None, fns.iter().map(|fi| fi.fd_id), item.span);
+            // Add the functions to the visitor for further extraction
+            self.functions.extend(fns);
           }
+
           _ => {
             self
               .xtor
@@ -126,11 +128,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     impl<'l> ItemVisitor<'_, 'l, '_> {
-      fn extract_class_item<I>(&mut self, items: I, class_def: Option<&'l st::ClassDef<'l>>)
+      fn extract_items<I>(&mut self, items: I) -> Vec<FnItem<'l>>
       where
         I: Iterator<Item = (HirId, AssocItemKind, Defaultness)>,
       {
-        let fns = items
+        items
           .filter_map(|(hir_id, kind, defaultness)| match kind {
             AssocItemKind::Fn { .. } => {
               let fn_id = self.xtor.tcx.hir().local_def_id(hir_id).to_def_id();
@@ -139,16 +141,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             // ignore consts and type aliases in impl blocks
             _ => None,
           })
-          .collect::<Vec<_>>();
-
-        // Add the class with references to its methods to the extraction
-        if let Some(cd) = class_def {
-          self
-            .xtor
-            .add_class(cd, fns.iter().map(|fi| fi.fd_id).collect())
-        }
-        // Add the functions to the visitor for further extraction
-        self.functions.extend(fns);
+          .collect::<Vec<_>>()
       }
     }
 

@@ -10,12 +10,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Extract a type class or type class implementation from a DefId.
   /// Case object implementations are also classes for stainless.
   ///
-  pub(super) fn extract_class(
+  pub(super) fn extract_class<I>(
     &mut self,
     def_id: DefId,
     impl_trait_ref: Option<ty::TraitRef<'tcx>>,
+    methods: I,
     span: Span,
-  ) -> &'l st::ClassDef<'l> {
+  ) -> &'l st::ClassDef<'l>
+  where
+    I: IntoIterator<Item = StainlessSymId<'l>>,
+  {
     let f = self.factory();
 
     let id = self.get_or_register_def(def_id);
@@ -26,7 +30,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     } = self.get_or_extract_generics(def_id);
 
     // If this is an 'impl for trait', we extract a concrete class
-    if let Some(ty::TraitRef {
+    let cd = if let Some(ty::TraitRef {
       def_id: trait_def_id,
       substs,
     }) = impl_trait_ref
@@ -56,7 +60,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         vec![],
         vec![f.IsAbstract().into()],
       )
-    }
+    };
+    self.add_class(cd, methods)
   }
 
   pub fn evidence_params<I>(&mut self, trait_bounds: I) -> Vec<&'l st::ValDef<'l>>
