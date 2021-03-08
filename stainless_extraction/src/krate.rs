@@ -13,32 +13,31 @@ use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 use crate::fns::FnItem;
 use std::iter;
 
-/// Top-level extraction
+fn pretty_path(path: &hir::Path<'_>) -> String {
+  pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
+}
 
+// TODO: Ignore certain boilerplate/compiler-generated items
+fn should_ignore(item: &hir::Item<'_>) -> bool {
+  match item.kind {
+    ItemKind::ExternCrate(_) => {
+      let name = item.ident.name.to_string();
+      name == "std" || name == "stainless"
+    }
+    ItemKind::Use(ref path, _) => {
+      let path_str = pretty_path(path);
+      path_str.contains("std::prelude") || path_str.starts_with("stainless")
+    }
+    // TODO: Quick fix to filter our synthetic functions
+    // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
+    _ => false,
+  }
+}
+
+/// Top-level extraction
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Entrypoint into Extractor
   pub fn process_crate(&mut self, _crate_name: String) {
-    fn pretty_path(path: &hir::Path<'_>) -> String {
-      pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
-    }
-
-    // TODO: Ignore certain boilerplate/compiler-generated items
-    fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
-      match item.kind {
-        ItemKind::ExternCrate(_) => {
-          let name = item.ident.name.to_string();
-          name == "std" || name == "stainless"
-        }
-        ItemKind::Use(ref path, _) => {
-          let path_str = pretty_path(path);
-          path_str.contains("std::prelude") || path_str.starts_with("stainless")
-        }
-        // TODO: Quick fix to filter our synthetic functions
-        // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
-        _ => false,
-      }
-    }
-
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
       functions: Vec<FnItem<'l>>,
@@ -50,7 +49,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
         match &item.kind {
-          // Ignore use and external crates, see #should_ignore.
+          // Ignore use and external crates.
           _ if should_ignore(item) => {}
 
           // Store top-level functions
