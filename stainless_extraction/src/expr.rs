@@ -8,7 +8,6 @@ use std::convert::TryFrom;
 use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
 
-use crate::std_items::LangItem;
 use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,
@@ -294,39 +293,27 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    // If the call is a std item, extract it specially
+    use StdItemFn::*;
     self
       .base
       .std_items
       .def_to_item_opt(def_id)
       .and_then(|sti| match sti {
+        StdItem::Fn(f) => Some(f),
+        _ => None,
+      })
+      // If the call is a std item, extract it specially
+      .and_then(|sti| match sti {
         // Panics
-        StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
-        StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
-          Some(self.extract_panic(args, span, true))
-        }
+        BeginPanic => Some(self.extract_panic(args, span, false)),
+        BeginPanicFmt => Some(self.extract_panic(args, span, true)),
 
-        // Set things
-        StdItem::CrateItem(CrateItem::SetEmptyFn)
-        | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
-          Some(self.extract_set_creation(args, substs_ref, span))
-        }
-        StdItem::CrateItem(item)
-          if item == CrateItem::SetAddFn
-            || item == CrateItem::SetDifferenceFn
-            || item == CrateItem::SetIntersectionFn
-            || item == CrateItem::SetUnionFn
-            || item == CrateItem::SubsetOfFn =>
-        {
-          Some(self.extract_set_op(item, args, span))
-        }
+        SetEmpty | SetSingleton => Some(self.extract_set_creation(args, substs_ref, span)),
 
         // Box::new, erase it and return the argument directly.
-        StdItem::CrateItem(CrateItem::BoxNew) => {
-          Some(self.extract_expr_ref(args.first().cloned().unwrap()))
-        }
+        BoxNew => Some(self.extract_expr_ref(args.first().cloned().unwrap())),
 
-        _ => None,
+        item => Some(self.extract_set_op(item, args, span)),
       })
       // Otherwise, extract a normal call
       .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
@@ -334,19 +321,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_set_op(
     &mut self,
-    std_item: CrateItem,
+    item: StdItemFn,
     args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    use CrateItem::*;
+    use StdItemFn::*;
 
     if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
-      return match std_item {
-        SetAddFn => self.factory().SetAdd(*set, *arg).into(),
-        SetDifferenceFn => self.factory().SetDifference(*set, *arg).into(),
-        SetIntersectionFn => self.factory().SetIntersection(*set, *arg).into(),
-        SetUnionFn => self.factory().SetUnion(*set, *arg).into(),
-        SubsetOfFn => self.factory().SubsetOf(*set, *arg).into(),
+      return match item {
+        SetAdd => self.factory().SetAdd(*set, *arg).into(),
+        SetDifference => self.factory().SetDifference(*set, *arg).into(),
+        SetIntersection => self.factory().SetIntersection(*set, *arg).into(),
+        SetUnion => self.factory().SetUnion(*set, *arg).into(),
+        SubsetOf => self.factory().SubsetOf(*set, *arg).into(),
         _ => unreachable!(),
       };
     }
