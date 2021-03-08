@@ -184,20 +184,36 @@ impl StdItems {
   }
 
   #[inline]
-  pub(super) fn def_to_item_opt(&self, def_id: DefId) -> Option<StdItem> {
+  fn get_item(&self, def_id: DefId) -> Option<StdItem> {
     self.def_to_item.get(&def_id).copied()
+  }
+
+  #[inline]
+  pub(super) fn get_fn_item(&self, def_id: DefId) -> Option<StdItemFn> {
+    self.get_item(def_id).and_then(|i| match i {
+      StdItem::Fn(f) => Some(f),
+      _ => None,
+    })
+  }
+
+  #[inline]
+  pub(super) fn get_ty_item(&self, def_id: DefId) -> Option<StdItemType> {
+    self.get_item(def_id).and_then(|i| match i {
+      StdItem::Type(t) => Some(t),
+      _ => None,
+    })
   }
 
   #[inline]
   pub(super) fn is_sized_trait(&self, def_id: DefId) -> bool {
     self
-      .def_to_item_opt(def_id)
+      .get_item(def_id)
       .map_or(false, |sti| sti == StdItem::Trait(Sized))
   }
 
   #[inline]
   pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    match self.def_to_item_opt(def_id) {
+    match self.get_item(def_id) {
       Some(StdItem::Trait(Fn)) | Some(StdItem::Trait(FnMut)) | Some(StdItem::Trait(FnOnce)) => true,
       _ => false,
     }

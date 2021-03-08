@@ -1,18 +1,16 @@
-use super::literal::Literal;
 use super::*;
-
-use crate::spec::SpecType;
 
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
-
-use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,
   LogicalOp, Mirror, Pat, PatKind, StmtKind, StmtRef,
 };
+use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
+
+use crate::spec::SpecType;
+use crate::ty::{int_bit_width, uint_bit_width};
 
 type Result<T> = std::result::Result<T, &'static str>;
 
@@ -297,17 +295,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self
       .base
       .std_items
-      .def_to_item_opt(def_id)
-      .and_then(|sti| match sti {
-        StdItem::Fn(f) => Some(f),
-        _ => None,
-      })
+      .get_fn_item(def_id)
       // If the call is a std item, extract it specially
       .and_then(|sti| match sti {
-        // Panics
         BeginPanic => Some(self.extract_panic(args, span, false)),
         BeginPanicFmt => Some(self.extract_panic(args, span, true)),
-
         SetEmpty | SetSingleton => Some(self.extract_set_creation(args, substs_ref, span)),
 
         // Box::new, erase it and return the argument directly.

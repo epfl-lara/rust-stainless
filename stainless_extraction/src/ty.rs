@@ -9,7 +9,6 @@ use rustc_span::{Span, DUMMY_SP};
 
 use std::collections::BTreeMap;
 
-use crate::std_items::StdItemType;
 use stainless_data::ast as st;
 
 /// Extraction of types
@@ -107,9 +106,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
 
       // "Real" ADTs
-      TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
+      TyKind::Adt(adt_def, substitutions) => match self.std_items.get_ty_item(adt_def.did) {
         // Stainless set type
-        Some(StdItem::Type(StdItemType::Set)) => {
+        Some(StdItemType::Set) => {
           let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
           f.SetType(arg_ty).into()
         }

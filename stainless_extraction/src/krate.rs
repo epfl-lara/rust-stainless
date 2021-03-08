@@ -11,7 +11,6 @@ use stainless_data::ast as st;
 use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 
 use crate::fns::FnItem;
-use crate::std_items::StdItemType;
 use std::iter;
 
 fn pretty_path(path: &hir::Path<'_>) -> String {
@@ -61,9 +60,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             _,
           ) => {
             // Extract the 'use PhantomData' statement as the PhantomData ADT definition.
-            if let Some(StdItem::Type(StdItemType::PhantomData)) =
-              self.xtor.std_items.def_to_item_opt(*def_id)
-            {
+            if let Some(StdItemType::PhantomData) = self.xtor.std_items.get_ty_item(*def_id) {
               self.xtor.get_or_extract_adt(*def_id);
             }
           }
