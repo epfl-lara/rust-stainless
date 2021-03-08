@@ -34,6 +34,7 @@ pub enum CrateItem {
   SetEmptyFn,
   SetSingletonFn,
   BoxNew,
+  PhantomData,
 }
 
 use CrateItem::*;
@@ -52,6 +53,7 @@ impl CrateItem {
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
       BoxNew => "std::boxed::Box::<T>::new",
+      PhantomData => "std::marker::PhantomData",
     }
   }
 
@@ -61,6 +63,7 @@ impl CrateItem {
   pub fn crate_name(&self) -> &'static str {
     match self {
       BoxNew => "alloc",
+      PhantomData => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }
