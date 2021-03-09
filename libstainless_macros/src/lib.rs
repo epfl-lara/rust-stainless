@@ -1,6 +1,10 @@
-use proc_macro::TokenStream;
 mod implementation;
+mod spec;
+
 use implementation::*;
+use spec::SpecType;
+
+use proc_macro::TokenStream;
 
 /// Specs
 
