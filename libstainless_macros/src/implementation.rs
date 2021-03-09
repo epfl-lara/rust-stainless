@@ -1,8 +1,8 @@
 use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use syn::{
-  parse_quote, punctuated::Punctuated, Expr, FnArg, ItemFn, Receiver, Result, ReturnType, Stmt,
-  Token, Type,
+  parse2, parse_quote, punctuated::Punctuated, token::Brace, Attribute, Block, Expr, FnArg, ItemFn,
+  Receiver, Result, ReturnType, Signature, Stmt, Token, TraitItemMethod, Type, Visibility,
 };
 
 use super::spec::*;
@@ -15,18 +15,10 @@ pub fn extract_specs_and_expand(
   first_attr_args: TokenStream,
   item: TokenStream,
 ) -> TokenStream {
-  match try_parse(first_spec_type, first_attr_args, item) {
-    Ok((mut item_fn, specs)) => {
-      // Remove all remaining spec attributes
-      item_fn
-        .attrs
-        .retain(|attr| SpecType::try_from(attr).is_err());
-
-      // Build the spec function and insert it into the original function
-      generate_fn_with_spec(item_fn, specs).to_token_stream()
-    }
-    Err(err) => err.to_compile_error(),
-  }
+  try_parse(first_spec_type, first_attr_args, item).map_or_else(
+    |err| err.to_compile_error(),
+    |f| generate_fn_with_spec(f).to_token_stream(),
+  )
 }
 
 /// Flags
@@ -51,37 +43,58 @@ pub fn rewrite_flag(
   }
 }
 
+#[derive(Debug)]
+struct FnSpecs {
+  attrs: Vec<Attribute>,
+  sig: Signature,
+  vis: Option<Visibility>,
+  block: Option<Box<Block>>,
+  specs: Vec<Spec>,
+}
+
 /// Parse the decorated function and all specs
 fn try_parse(
   first_spec_type: SpecType,
   first_attr_args: TokenStream,
   item: TokenStream,
-) -> Result<(ItemFn, Vec<Spec>)> {
-  let item_fn: ItemFn = parse_quote!(#item);
-  let first_args: Expr = parse_quote!(#first_attr_args);
+) -> Result<FnSpecs> {
+  let first_args: Expr = parse2(first_attr_args)?;
+
+  // Parse function OR abstract trait method.
+  let (attrs, sig, block, vis) = parse2::<ItemFn>(item.clone())
+    .map(|i| (i.attrs, i.sig, Some(i.block), Some(i.vis)))
+    .or_else(|_| parse2::<TraitItemMethod>(item).map(|i| (i.attrs, i.sig, None, None)))?;
+
+  let (specs, attrs): (Vec<_>, Vec<_>) = attrs
+    .into_iter()
+    .map(|a| (SpecType::try_from(&a), a))
+    .partition(|(s, _)| s.is_ok());
 
   let specs: Vec<_> = iter::once(Ok(Spec {
     typ: first_spec_type,
     expr: first_args,
   }))
-  .chain(
-    item_fn
-      .attrs
-      .iter()
-      // filter non-spec attributes
-      .filter_map(|attr| SpecType::try_from(attr).map(|typ| (typ, attr)).ok())
-      .map(|(typ, attr)| attr.parse_args().map(|expr| Spec { typ, expr })),
-  )
+  .chain(specs.into_iter().map(|(t, a)| {
+    a.parse_args().map(|expr| Spec {
+      typ: t.unwrap(),
+      expr,
+    })
+  }))
   // collect and return early if there's an error
   .collect::<Result<Vec<_>>>()?;
 
-  Ok((item_fn, specs))
+  Ok(FnSpecs {
+    attrs: attrs.into_iter().map(|(_, a)| a).collect(),
+    sig,
+    block,
+    specs,
+    vis,
+  })
 }
 
-fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
-  // Take the arguments of the actual function to create the arguments of the
-  // closure.
-  let fn_arg_tys: Vec<_> = item_fn.sig.inputs.iter().cloned().collect();
+fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
+  // Take the arguments of the actual function to create the closure's arguments.
+  let fn_arg_tys: Vec<_> = fn_specs.sig.inputs.iter().cloned().collect();
 
   // Replace the [&]self param with a _self: [&]Self
   let fn_arg_tys: Punctuated<FnArg, Token![,]> = (match &fn_arg_tys[..] {
@@ -103,7 +116,7 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
   .into_iter()
   .collect();
 
-  let fn_return_ty: Type = match &item_fn.sig.output {
+  let fn_return_ty: Type = match &fn_specs.sig.output {
     ReturnType::Type(_, ty) => *ty.clone(),
     ReturnType::Default => parse_quote! { () },
   };
@@ -116,7 +129,7 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
       _ => quote! {},
     };
 
-    let expr: TokenStream = replace_ident(spec.expr.to_token_stream(), "self", "_self");
+    let expr = replace_ident(spec.expr.to_token_stream(), "self", "_self");
 
     let (return_type, body): (Type, TokenStream) = match spec.typ {
       SpecType::Measure => (parse_quote!(()), parse_quote! { #expr; }),
@@ -132,10 +145,25 @@ fn generate_fn_with_spec(mut item_fn: ItemFn, specs: Vec<Spec>) -> ItemFn {
     }
   };
 
-  let spec_closures = specs.into_iter().map(make_spec_fn);
-  #[allow(clippy::reversed_empty_ranges)]
-  item_fn.block.stmts.splice(0..0, spec_closures);
-  item_fn
+  let spec_closures = fn_specs.specs.into_iter().map(make_spec_fn);
+  let block = Box::new(Block {
+    brace_token: Brace::default(),
+    stmts: spec_closures
+      .chain(fn_specs.block.map_or_else(
+        || {
+          parse_quote! { unimplemented!(); }
+        },
+        |b| b.stmts,
+      ))
+      .collect(),
+  });
+
+  ItemFn {
+    attrs: fn_specs.attrs,
+    sig: fn_specs.sig,
+    block,
+    vis: fn_specs.vis.unwrap_or(Visibility::Inherited),
+  }
 }
 
 /// Recursively replaces any identifiers with the given string in the entire
