@@ -69,7 +69,7 @@ impl Flag {
       IsPure => "pure",
       IsMutable => "mutable",
       IsVar => "var",
-      IsAbstract => "abstr",
+      IsAbstract => "is_abstract",
       Law => "law",
       Pre => "pre",
       Post => "post",

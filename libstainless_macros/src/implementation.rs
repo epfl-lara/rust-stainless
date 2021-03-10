@@ -149,7 +149,7 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
   if fn_specs.block.is_none() {
     attrs.extend(
       Attribute::parse_outer
-        .parse_str("#[clippy::stainless::abstr]")
+        .parse_str("#[clippy::stainless::is_abstract]")
         .unwrap(),
     )
   }
