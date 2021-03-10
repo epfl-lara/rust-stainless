@@ -8,6 +8,7 @@ use syn::{
 use super::spec::*;
 use std::convert::TryFrom;
 use std::iter;
+use syn::parse::Parser;
 
 /// Extract all the specs from a given function and insert spec functions
 pub fn extract_specs_and_expand(
@@ -110,7 +111,6 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
       };
       [&[new_self], args].concat()
     }
-
     args => args.to_vec(),
   })
   .into_iter()
@@ -128,7 +128,6 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
       SpecType::Post => quote! { , ret: #fn_return_ty },
       _ => quote! {},
     };
-
     let expr = replace_ident(spec.expr.to_token_stream(), "self", "_self");
 
     let (return_type, body): (Type, TokenStream) = match spec.typ {
@@ -145,21 +144,30 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
     }
   };
 
+  // Annotate "abstract" functions with a flag
+  let mut attrs = fn_specs.attrs;
+  if fn_specs.block.is_none() {
+    attrs.extend(
+      Attribute::parse_outer
+        .parse_str("#[clippy::stainless::abstr]")
+        .unwrap(),
+    )
+  }
+
   let spec_closures = fn_specs.specs.into_iter().map(make_spec_fn);
   let block = Box::new(Block {
     brace_token: Brace::default(),
     stmts: spec_closures
-      .chain(fn_specs.block.map_or_else(
-        || {
-          parse_quote! { unimplemented!(); }
-        },
-        |b| b.stmts,
-      ))
+      .chain(
+        fn_specs
+          .block
+          .map_or_else(|| parse_quote! { unimplemented!(); }, |b| b.stmts),
+      )
       .collect(),
   });
 
   ItemFn {
-    attrs: fn_specs.attrs,
+    attrs,
     sig: fn_specs.sig,
     block,
     vis: fn_specs.vis.unwrap_or(Visibility::Inherited),
