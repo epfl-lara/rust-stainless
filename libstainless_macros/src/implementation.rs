@@ -161,7 +161,7 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
       .chain(
         fn_specs
           .block
-          .map_or_else(|| parse_quote! { unimplemented!(); }, |b| b.stmts),
+          .map_or_else(|| parse_quote! { unimplemented!() }, |b| b.stmts),
       )
       .collect(),
   });

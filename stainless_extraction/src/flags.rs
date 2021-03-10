@@ -17,6 +17,7 @@ pub(super) enum Flag {
   IsPure,
   IsMutable,
   IsVar,
+  IsAbstract,
   Law,
   Pre,
   Post,
@@ -49,6 +50,7 @@ impl Flags {
         IsMutable => Some(f.IsMutable().into()),
         IsVar => Some(f.IsVar().into()),
         Law => Some(f.Law().into()),
+        IsAbstract => Some(f.IsAbstract().into()),
 
         // Or pattern instead of wildcard '_' to keep the compiler checking that
         // all variants are covered.
@@ -67,6 +69,7 @@ impl Flag {
       IsPure => "pure",
       IsMutable => "mutable",
       IsVar => "var",
+      IsAbstract => "abstr",
       Law => "law",
       Pre => "pre",
       Post => "post",

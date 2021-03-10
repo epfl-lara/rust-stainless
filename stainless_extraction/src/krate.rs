@@ -349,7 +349,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     };
 
     let (params, return_tpe, body_expr): (Params<'l>, st::Type<'l>, st::Expr<'l>) = self
-      .enter_body(hir_id, txtcx.clone(), class_def, |bxtor| {
+      .enter_body(hir_id, txtcx, class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
 
