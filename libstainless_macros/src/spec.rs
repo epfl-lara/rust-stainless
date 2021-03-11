@@ -16,6 +16,7 @@ pub enum SpecType {
 }
 
 impl SpecType {
+  #[cfg(feature = "stainless")]
   pub fn name(&self) -> &'static str {
     match self {
       SpecType::Pre => "pre",

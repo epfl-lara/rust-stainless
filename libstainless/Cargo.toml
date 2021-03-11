@@ -15,3 +15,6 @@ doctest = false
 [dependencies]
 num-bigint = "0.2.6"
 stainless_macros = { path = "../libstainless_macros" }
+
+[features]
+stainless = ["stainless_macros/stainless"]
