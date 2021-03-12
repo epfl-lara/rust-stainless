@@ -1,4 +1,4 @@
-#![cfg(feature = "stainless")]
+#![cfg(stainless)]
 
 use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};

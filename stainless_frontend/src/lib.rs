@@ -18,11 +18,13 @@ use rustc_middle::ty::TyCtxt;
 use stainless_data::ast as st;
 
 pub fn run<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send>(
-  args: Vec<String>,
+  mut args: Vec<String>,
   on_extraction: E,
 ) -> Result<(), ()> {
   let mut callbacks = ExtractionCallbacks::new(on_extraction);
   let file_loader = None;
+  args.extend(vec!["--cfg".into(), "stainless".into()]);
+
   rustc_driver::install_ice_hook();
   rustc_driver::catch_fatal_errors(|| run_compiler(&args, &mut callbacks, file_loader, None))
     .map(|_| ())

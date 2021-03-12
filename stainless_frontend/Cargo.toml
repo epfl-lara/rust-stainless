@@ -21,12 +21,12 @@ doctest = false
 stainless_backend = { path = "../stainless_backend" }
 stainless_data = { path = "../stainless_data" }
 stainless_extraction = { path = "../stainless_extraction" }
-stainless = { path = "../libstainless", features = ["stainless"] }
 clap = "2.33.1"
 env_logger = "0.7.1"
 serde_json = "1.0"
 
 [dev-dependencies]
+stainless = { path = "../libstainless" }
 tempfile = "3"
 
 

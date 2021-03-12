@@ -39,7 +39,7 @@ macro_rules! define_flags {
 
 define_flags!(external, pure, mutable, var, law);
 
-#[cfg(feature = "stainless")]
+#[cfg(stainless)]
 mod entry_point {
   use super::*;
   use implementation::*;
@@ -57,7 +57,7 @@ mod entry_point {
   }
 }
 
-#[cfg(not(feature = "stainless"))]
+#[cfg(not(stainless))]
 mod entry_point {
   use super::*;
 
