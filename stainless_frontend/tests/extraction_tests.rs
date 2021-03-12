@@ -91,6 +91,10 @@ define_tests!(
   pass: let_type,
   pass: list_binary_search,
   pass: monoid,
+  pass: mut_local_fields,
+  pass: mut_local_lets,
+  pass: mut_local_params,
+  pass: mut_ref_immut_borrow,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: panic_type,
@@ -107,8 +111,7 @@ define_tests!(
   fail_extraction: double_measure,
   fail_extraction: double_measure_impl,
   fail_verification: liskov_rectangle,
-  fail_extraction: mut_lets,
-  fail_extraction: switch_ref,
-  fail_extraction: switch_int,
+  fail_extraction: mut_borrow_ref,
+  fail_extraction: mut_params,
   fail_extraction: user_deref
 );
