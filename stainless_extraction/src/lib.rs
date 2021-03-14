@@ -287,6 +287,24 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
+  pub fn immutable_var_with_name(
+    &mut self,
+    var: &st::Variable<'l>,
+    name: &str,
+  ) -> &'l st::Variable<'l> {
+    let new_id = self.fresh_id(name.into());
+    let flags = var
+      .flags
+      .iter()
+      .filter(|flag| match flag {
+        st::Flag::IsVar(_) => false,
+        _ => true,
+      })
+      .copied()
+      .collect();
+    self.factory().Variable(new_id, var.tpe, flags)
+  }
+
   /// Get a BodyExtractor for some item with a body (like a function)
   fn enter_body<T, F>(
     &mut self,
@@ -364,7 +382,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       tables,
       body,
       txtcx,
-      dcx: DefContext::new(),
+      dcx: DefContext::default(),
       current_class,
     }
   }

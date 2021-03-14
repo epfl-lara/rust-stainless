@@ -5,7 +5,7 @@ use crate::spec::SpecType;
 
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
+use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
 
 use crate::std_items::{CrateItem, LangItem, StdItem};
@@ -29,7 +29,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Binary { .. } => self.extract_binary(expr),
       ExprKind::LogicalOp { .. } => self.extract_logical_op(expr),
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
-      ExprKind::Field { .. } => self.extract_field(expr),
+      ExprKind::Field { lhs, name } => self.extract_field(lhs, name),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
 
       ExprKind::Call {
@@ -81,6 +81,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         borrow_kind: BorrowKind::Shared,
         arg,
       } => self.extract_expr_ref(arg),
+
+      ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
       _ => self.unsupported_expr(
         expr.span,
@@ -257,33 +259,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+  fn extract_field(&mut self, lhs: ExprRef<'tcx>, field: Field) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Field { lhs, name } = expr.kind {
-      let lhs = self.mirror(lhs);
-      let lhs_ty = lhs.ty;
-      let index = name.index();
-      match lhs_ty.kind {
-        TyKind::Tuple(_) => {
-          let lhs = self.extract_expr(lhs);
-          f.TupleSelect(lhs, (index as i32) + 1).into()
-        }
-        TyKind::Adt(adt_def, _) => {
-          let sort = self.base.get_or_extract_adt(adt_def.did);
-          assert_eq!(sort.constructors.len(), 1);
-          let constructor = sort.constructors[0];
-          assert!(index < constructor.fields.len());
-          let lhs = self.extract_expr(lhs);
-          f.ADTSelector(lhs, constructor.fields[index].v.id).into()
-        }
-        ref kind => unexpected(
-          expr.span,
-          format!("Unexpected kind of field selection: {:?}", kind),
-        ),
+    let lhs = self.mirror(lhs);
+    match lhs.ty.kind {
+      TyKind::Tuple(_) => {
+        let lhs = self.extract_expr(lhs);
+        f.TupleSelect(lhs, (field.index() as i32) + 1).into()
       }
-    } else {
-      unreachable!()
+      TyKind::Adt(adt_def, _) => {
+        let selector = self.extract_field_selector(adt_def.did, field);
+        let lhs = self.extract_expr(lhs);
+        f.ADTSelector(lhs, selector).into()
+      }
+      ref kind => unexpected(
+        lhs.span,
+        format!("Unexpected kind of field selection: {:?}", kind),
+      ),
     }
+  }
+
+  fn extract_field_selector(&mut self, adt_def_id: DefId, field: Field) -> StainlessSymId<'l> {
+    let sort = self.base.get_or_extract_adt(adt_def_id);
+    assert_eq!(sort.constructors.len(), 1);
+    let constructor = sort.constructors[0];
+    assert!(field.index() < constructor.fields.len());
+    constructor.fields[field.index()].v.id
   }
 
   fn extract_call_like(
@@ -555,19 +556,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       box kind @ PatKind::Binding { .. } => {
         assert!(binder.is_none());
         match self.try_pattern_to_var(&kind, true) {
-          Ok(binder) => {
-            let binder = f.ValDef(binder);
-            match kind {
-              PatKind::Binding {
-                subpattern: Some(subpattern),
-                ..
-              } => self.extract_pattern(subpattern, Some(binder)),
-              PatKind::Binding {
-                subpattern: None, ..
-              } => f.WildcardPattern(Some(binder)).into(),
-              _ => unreachable!(),
-            }
-          }
+          Ok(binder) => match kind {
+            PatKind::Binding {
+              subpattern: Some(subpattern),
+              ..
+            } => self.extract_pattern(subpattern, Some(binder)),
+            PatKind::Binding {
+              subpattern: None, ..
+            } => f.WildcardPattern(Some(binder)).into(),
+            _ => unreachable!(),
+          },
           Err(reason) => self.unsupported_pattern(
             pattern.span,
             format!("Unsupported pattern binding: {}", reason),
@@ -650,7 +648,42 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     subpatterns
   }
 
-  #[allow(clippy::unnecessary_unwrap)]
+  fn extract_assignment(&mut self, lhs: ExprRef<'tcx>, rhs: ExprRef<'tcx>) -> st::Expr<'l> {
+    let value = self.extract_expr_ref(rhs);
+    let lhs = self.mirror(lhs);
+    let lhs = self.strip_scope(lhs);
+    match lhs.kind {
+      ExprKind::VarRef { id } => self.factory().Assignment(self.fetch_var(id), value).into(),
+
+      ExprKind::Field { lhs, name } => {
+        let lhs = self.mirror(lhs);
+        match lhs.ty.kind {
+          TyKind::Adt(adt_def, _) => {
+            let adt = self.extract_expr(lhs);
+            let selector = self.extract_field_selector(adt_def.did, name);
+            self.factory().FieldAssignment(adt, selector, value).into()
+          }
+          ref t => self.unsupported_expr(
+            lhs.span,
+            format!("Cannot extract assignment to type {:?}", t),
+          ),
+        }
+      }
+
+      e => self.unsupported_expr(
+        lhs.span,
+        format!("Cannot extract assignment to kind {:?}", e),
+      ),
+    }
+  }
+
+  fn strip_scope(&mut self, expr: Expr<'tcx>) -> Expr<'tcx> {
+    match expr.kind {
+      ExprKind::Scope { value, .. } => self.mirror(value),
+      _ => expr,
+    }
+  }
+
   fn extract_block_(
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
@@ -704,35 +737,45 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         StmtKind::Let {
           pattern,
-          initializer,
+          initializer: None,
+          ..
+        } => bail("Cannot extract let without initializer", pattern.span),
+
+        StmtKind::Let {
+          pattern,
+          initializer: Some(init),
           ..
         } => {
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
-          let var_result = self.try_pattern_to_var(&pattern.kind, false);
-
           if has_abnormal_source {
             // TODO: Support for loops
             bail(
               "Cannot extract let that resulted from desugaring",
               pattern.span,
             )
-          } else if let Err(reason) = var_result {
-            // TODO: Desugar complex patterns
-            bail(
-              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
-              pattern.span,
-            )
-          } else if let Some(init) = initializer {
-            let vd = f.ValDef(var_result.unwrap());
-            let init = self.extract_expr_ref(init);
-            let exprs = acc_exprs.clone();
-            acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
-            let last_expr = f.Let(vd, init, body_expr).into();
-            finish(exprs, last_expr)
           } else {
-            bail("Cannot extract let without initializer", pattern.span)
+            match self.try_pattern_to_var(&pattern.kind, false) {
+              // TODO: Desugar complex patterns
+              Err(reason) => bail(
+                &format!("Cannot extract complex pattern in let: {}", reason),
+                pattern.span,
+              ),
+              Ok(vd) => {
+                // recurse the extract all the following statements
+                let exprs = acc_exprs.clone();
+                acc_exprs.clear();
+                let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
+                // wrap that body expression into the Let
+                let init = self.extract_expr_ref(init);
+                let last_expr = if vd.is_mutable() {
+                  f.LetVar(vd, init, body_expr).into()
+                } else {
+                  f.Let(vd, init, body_expr).into()
+                };
+                finish(exprs, last_expr)
+              }
+            }
           }
         }
 
@@ -793,29 +836,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &self,
     pat_kind: &PatKind<'tcx>,
     allow_subpattern: bool,
-  ) -> Result<&'l st::Variable<'l>> {
+  ) -> Result<&'l st::ValDef<'l>> {
     match pat_kind {
-      PatKind::Binding {
-        mutability: Mutability::Mut,
-        ..
-      } => Err("Mutable bindings are not supported"),
-
       PatKind::Binding {
         subpattern: Some(_),
         ..
       } if !allow_subpattern => Err("Subpatterns are not supported here"),
 
       PatKind::Binding {
-        mutability: Mutability::Not,
-        mode,
+        mutability,
+        mode: BindingMode::ByValue,
         var: hir_id,
         ..
-      } => match mode {
-        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
-          Ok(self.fetch_var(*hir_id))
+      }
+      | PatKind::Binding {
+        mutability,
+        mode: BindingMode::ByRef(BorrowKind::Shared),
+        var: hir_id,
+        ..
+      } => {
+        let var = self.fetch_var(*hir_id);
+        if *mutability == Mutability::Not || var.is_mutable() {
+          Ok(self.factory().ValDef(var))
+        } else {
+          Err("Binding mode not allowed")
         }
-        _ => Err("Binding mode not allowed"),
-      },
+      }
 
       // This encodes a user-written type ascription: let a: u32 = ...
       // Rustc needs these for borrow-checking but stainless doesn't, therefore

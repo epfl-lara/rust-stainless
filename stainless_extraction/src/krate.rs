@@ -347,9 +347,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Extract the body
         let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
         let body_expr = bxtor.extract_expr(body_expr);
+        let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
         (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
+
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Wrap it all up in a Stainless function

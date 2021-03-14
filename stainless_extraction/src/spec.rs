@@ -115,7 +115,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       }
       // Pick up any additional local bindings
       // (A spec neither has flags on the params, nor additional evidence params)
-      bxtor.populate_def_context(&mut HashMap::new(), &vec![]);
+      bxtor.populate_def_context(&mut HashMap::new(), &[]);
 
       // Extract the spec function's body
       let spec_expr = bxtor.hcx.mirror(&bxtor.body.value);
