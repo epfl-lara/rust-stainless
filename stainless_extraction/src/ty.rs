@@ -9,7 +9,6 @@ use rustc_span::{Span, DUMMY_SP};
 
 use std::collections::BTreeMap;
 
-use crate::std_items::{CrateItem, StdItem};
 use stainless_data::ast as st;
 
 /// Extraction of types

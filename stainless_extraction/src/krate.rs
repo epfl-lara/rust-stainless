@@ -2,7 +2,7 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, AssocItemKind, Defaultness, ItemKind};
+use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{AssocKind, List};
 use rustc_span::DUMMY_SP;
@@ -13,32 +13,33 @@ use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 use crate::fns::FnItem;
 use std::iter;
 
-/// Top-level extraction
+fn pretty_path(path: &hir::Path<'_>) -> String {
+  pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
+}
 
+// TODO: Ignore certain boilerplate/compiler-generated items
+fn should_ignore(item: &hir::Item<'_>) -> bool {
+  match item.kind {
+    ItemKind::ExternCrate(_) => {
+      let name = item.ident.name.to_string();
+      name == "std" || name == "stainless"
+    }
+    ItemKind::Use(ref path, _) => {
+      let path_str = pretty_path(path);
+      path_str.contains("std::prelude")
+        || path_str.starts_with("std::marker::PhantomData")
+        || path_str.starts_with("stainless")
+    }
+    // TODO: Quick fix to filter our synthetic functions
+    // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
+    _ => false,
+  }
+}
+
+/// Top-level extraction
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Entrypoint into Extractor
   pub fn process_crate(&mut self, _crate_name: String) {
-    fn pretty_path(path: &hir::Path<'_>) -> String {
-      pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
-    }
-
-    // TODO: Ignore certain boilerplate/compiler-generated items
-    fn should_ignore<'tcx>(item: &'tcx hir::Item<'tcx>) -> bool {
-      match item.kind {
-        ItemKind::ExternCrate(_) => {
-          let name = item.ident.name.to_string();
-          name == "std" || name == "stainless"
-        }
-        ItemKind::Use(ref path, _) => {
-          let path_str = pretty_path(path);
-          path_str.contains("std::prelude") || path_str.starts_with("stainless")
-        }
-        // TODO: Quick fix to filter our synthetic functions
-        // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
-        _ => false,
-      }
-    }
-
     struct ItemVisitor<'xtor, 'l, 'tcx> {
       xtor: &'xtor mut BaseExtractor<'l, 'tcx>,
       functions: Vec<FnItem<'l>>,
@@ -50,7 +51,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
         match &item.kind {
-          // Ignore use and external crates, see #should_ignore.
+          // Special known use statements
+          ItemKind::Use(
+            hir::Path {
+              res: def::Res::Def(def::DefKind::Struct, def_id),
+              ..
+            },
+            _,
+          ) => {
+            // Extract the 'use PhantomData' statement as the PhantomData ADT definition.
+            if let Some(StdItem::CrateItem(CrateItem::PhantomData)) =
+              self.xtor.std_items.def_to_item_opt(*def_id)
+            {
+              self.xtor.get_or_extract_adt(*def_id);
+            }
+          }
+
+          // Ignore some known use statements and external crates.
           _ if should_ignore(item) => {}
 
           // Store top-level functions

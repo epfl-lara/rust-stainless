@@ -8,7 +8,7 @@ use std::convert::TryFrom;
 use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
 
-use crate::std_items::{CrateItem, LangItem, StdItem};
+use crate::std_items::LangItem;
 use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,

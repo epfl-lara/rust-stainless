@@ -98,6 +98,7 @@ define_tests!(
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: panic_type,
+  pass: phantom_data,
   pass: spec_on_trait_impl,
   pass: trait_bounds,
   pass: struct_update,
