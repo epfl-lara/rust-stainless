@@ -46,7 +46,7 @@ use stainless_data::ast as st;
 use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
-use std_items::StdItems;
+use std_items::{CrateItem, StdItem, StdItems};
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
