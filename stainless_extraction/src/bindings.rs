@@ -20,7 +20,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .pat
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
-      let var = self.extract_binding(param.pat.hir_id, flags);
+      let var = self.get_or_extract_binding(param.pat.hir_id, flags);
       self
         .dcx
         .add_param(self.factory().ValDef(var), &mut self.base);
@@ -37,7 +37,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Extract a binding based on the binding node's HIR id.
   /// Updates `dcx` if the binding hadn't been extracted before.
-  fn extract_binding(&mut self, hir_id: HirId, flags_opt: Option<Flags>) -> &'l st::Variable<'l> {
+  fn get_or_extract_binding(
+    &mut self,
+    hir_id: HirId,
+    flags_opt: Option<Flags>,
+  ) -> &'l st::Variable<'l> {
     self.dcx.get_var(hir_id).unwrap_or_else(|| {
       let xtor = &mut self.base;
 
@@ -209,7 +213,7 @@ impl<'bxtor, 'a, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'bxtor, 'a, 'l, '
     match pattern.kind {
       hir::PatKind::Binding(_, hir_id, ref _ident, ref optional_subpattern) => {
         // Extend DefContext with a new variable
-        self.bxtor.extract_binding(hir_id, None);
+        self.bxtor.get_or_extract_binding(hir_id, None);
 
         // Visit potential sub-patterns
         rustc_ast::walk_list!(self, visit_pat, optional_subpattern);

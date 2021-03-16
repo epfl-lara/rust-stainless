@@ -273,11 +273,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Add a class to the extraction along with references from all its methods
   /// to the class definition.
-  fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
+  fn add_class<I>(&mut self, cd: &'l st::ClassDef<'l>, methods: I)
+  where
+    I: IntoIterator<Item = StainlessSymId<'l>>,
+  {
     self.with_extraction_mut(|xt| {
       assert!(xt.classes.insert(cd.id, cd).is_none());
       xt.method_to_class
-        .extend(methods.into_iter().map(|method_id| (method_id, cd)))
+        .extend(methods.into_iter().map(|method_id| (method_id, cd)));
     })
   }
 

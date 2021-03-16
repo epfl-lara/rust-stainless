@@ -99,27 +99,26 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      // Box type
-      //
-      // We erase the indirection the box provides and replace it by
+      // Box type – We erase the indirection the box provides and replace it by
       // the contained type.
       TyKind::Adt(adt_def, substitutions) if adt_def.is_box() => {
         self.extract_ty(substitutions.type_at(0), txtcx, span)
       }
 
-      // All other ADTs
-      TyKind::Adt(adt_def, substitutions) => {
-        if let Some(StdItem::CrateItem(CrateItem::SetType)) =
-          self.std_items.def_to_item_opt(adt_def.did)
-        {
+      // "Real" ADTs
+      TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
+        // Stainless set type
+        Some(StdItem::CrateItem(CrateItem::SetType)) => {
           let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
-          return f.SetType(arg_ty).into();
+          f.SetType(arg_ty).into()
         }
-
-        let sort_id = self.extract_adt_id(adt_def.did);
-        let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
-        f.ADTType(sort_id, arg_tps).into()
-      }
+        // Normal user-defined ADTs
+        _ => {
+          let sort_id = self.get_or_register_def(adt_def.did);
+          let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+          f.ADTType(sort_id, arg_tps).into()
+        }
+      },
 
       // Immutable references
       TyKind::Ref(_, ty, Mutability::Not) => self.extract_ty(ty, txtcx, span),
@@ -154,7 +153,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Get the extracted generics for a def_id, usually a function or a class.
   /// Generics are cached after the first computation.
-  pub(super) fn get_generics(&mut self, def_id: DefId) -> Generics<'l> {
+  pub(super) fn get_or_extract_generics(&mut self, def_id: DefId) -> Generics<'l> {
     let id = self.get_or_register_def(def_id);
 
     // We currently have to clone the generics because they otherwise mutably
