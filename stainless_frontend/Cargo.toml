@@ -29,5 +29,4 @@ serde_json = "1.0"
 stainless = { path = "../libstainless" }
 tempfile = "3"
 
-[features]
-default = []
+

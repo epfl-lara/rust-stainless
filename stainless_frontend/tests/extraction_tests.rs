@@ -106,6 +106,7 @@ define_tests!(
   pass: tuples,
   pass: type_class,
   pass: type_class_multi_lookup,
+  pass: type_class_specs,
   pass: type_class_without_evidence,
   pass: use_std,
   fail_verification: box_as_ref,
