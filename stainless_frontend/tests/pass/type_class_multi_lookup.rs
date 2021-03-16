@@ -1,4 +1,5 @@
 extern crate stainless;
+use stainless::*;
 
 trait Clone {
   fn clone(&self) -> Self;
@@ -9,6 +10,7 @@ pub enum Option<T> {
   None,
 }
 impl<T: Clone> Clone for Option<T> {
+  #[measure(self)]
   fn clone(&self) -> Self {
     match self {
       Option::Some(v) => Option::Some(v.clone()),
