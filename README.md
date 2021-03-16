@@ -64,7 +64,7 @@ If Stainless gets new features or a fix, it is sometimes necessary to regenerate
 stay compatible with the latest version of the Stainless backend. This is done from the `rust-interop` branch 
 on [Stainless](https://github.com/epfl-lara/stainless/tree/rust-interop).
 
-1. Checkout `epfl-lara/rust-interop`.
+1. Checkout the `rust-interop` branch.
 2. Rebase or change what is needed.
 3. Run `sbt` and then `runMain stainless.utils.RustInteropGeneratorTool generated.rs`.
 4. Move the newly `generated.rs` file to `stainless_data/src/ast/generated.rs`.
