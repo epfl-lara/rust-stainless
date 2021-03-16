@@ -63,7 +63,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             if let Some(StdItem::CrateItem(CrateItem::PhantomData)) =
               self.xtor.std_items.def_to_item_opt(*def_id)
             {
-              self.xtor.get_or_extract_adt(*def_id);
+              let adt = self.xtor.extract_adt(*def_id);
+              self.xtor.add_adt(adt);
             }
           }
 
