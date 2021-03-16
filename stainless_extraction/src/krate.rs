@@ -85,32 +85,28 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           // Store functions of impl blocks and their specs
           ItemKind::Impl { items, .. } => {
-            let fns =
-              self.extract_items(items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)));
-
             // if the impl implements a trait, then we need to extract it as a class/object.
-            self.xtor.tcx.impl_trait_ref(def_id).map(|trait_ref| {
-              self.xtor.extract_class(
-                def_id,
-                Some(trait_ref),
-                fns.iter().map(|fi| fi.fd_id),
-                item.span,
-              )
-            });
-            self.functions.extend(fns);
+            let class_def: Option<&'l st::ClassDef<'l>> = self
+              .xtor
+              .tcx
+              .impl_trait_ref(def_id)
+              .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
+
+            self.extract_class_item(
+              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              class_def,
+            )
           }
 
           // Extract the trait as an abstract class. Laws and other concrete
           // functions can be extracted like any normal function. Abstract
           // functions are marked and will be treated accordingly.
           ItemKind::Trait(_, _, _, _, items) => {
-            let fns =
-              self.extract_items(items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)));
-            self
-              .xtor
-              .extract_class(def_id, None, fns.iter().map(|fi| fi.fd_id), item.span);
-            // Add the functions to the visitor for further extraction
-            self.functions.extend(fns);
+            let cd = self.xtor.extract_class(def_id, None, item.span);
+            self.extract_class_item(
+              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              Some(cd),
+            )
           }
 
           _ => {
@@ -145,11 +141,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
 
     impl<'l> ItemVisitor<'_, 'l, '_> {
-      fn extract_items<I>(&mut self, items: I) -> Vec<FnItem<'l>>
+      fn extract_class_item<I>(&mut self, items: I, class_def: Option<&'l st::ClassDef<'l>>)
       where
         I: Iterator<Item = (HirId, AssocItemKind, Defaultness)>,
       {
-        items
+        let fns = items
           .filter_map(|(hir_id, kind, defaultness)| match kind {
             AssocItemKind::Fn { .. } => {
               let fn_id = self.xtor.tcx.hir().local_def_id(hir_id).to_def_id();
@@ -158,7 +154,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             // ignore consts and type aliases in impl blocks
             _ => None,
           })
-          .collect::<Vec<_>>()
+          .collect::<Vec<_>>();
+
+        // Add the class with references to its methods to the extraction
+        if let Some(cd) = class_def {
+          self.xtor.add_class(cd, fns.iter().map(|fi| fi.fd_id))
+        }
+        // Add the functions to the visitor for further extraction
+        self.functions.extend(fns);
       }
     }
 
@@ -178,12 +181,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Extract abstract functions
     for fun in abstract_fns {
-      self.extract_abstract_fn(fun.def_id);
+      self.get_or_extract_abstract_fn(fun.def_id);
     }
 
     // Extract concrete local functions (this includes laws)
     for fn_item in fns {
-      self.extract_local_fn(&fn_item);
+      self.get_or_extract_local_fn(&fn_item);
     }
 
     // Extract external items as stubs
@@ -200,7 +203,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .iter()
       // And extract them as external functions
       .for_each(|&def_id| {
-        self.extract_extern_fn(def_id);
+        self.get_or_extract_extern_fn(def_id);
       })
   }
 
@@ -246,6 +249,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
+  fn get_fn(&mut self, def_id: DefId) -> Option<&'l st::FunDef<'l>> {
+    self.with_extraction(|xt| {
+      xt.mapping
+        .did_to_stid
+        .get(&def_id)
+        .and_then(|stid| xt.functions.get(stid).copied())
+    })
+  }
+
+  pub fn get_or_extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+    self.get_fn(def_id).unwrap_or_else(|| {
+      let fd = self.extract_extern_fn(def_id);
+      self.add_function(fd);
+      fd
+    })
+  }
+
   /// Extract an external function
   pub(super) fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
     assert!(
@@ -257,14 +277,22 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let f = self.factory();
     let empty_body = f.NoTree(rtp).into();
-    self.add_function(f.FunDef(
+    f.FunDef(
       id,
       tparams,
       params,
       rtp,
       empty_body,
       vec![f.Extern().into()],
-    ))
+    )
+  }
+
+  pub fn get_or_extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+    self.get_fn(def_id).unwrap_or_else(|| {
+      let fd = self.extract_abstract_fn(def_id);
+      self.add_function(fd);
+      fd
+    })
   }
 
   pub fn extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
@@ -273,19 +301,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let f = self.factory();
     let empty_body = f.NoTree(rtp).into();
-    self.add_function(
-      f.FunDef(
-        id,
-        self.filter_class_tparams(tparams, class_def),
-        params,
-        rtp,
-        empty_body,
-        class_def
-          .iter()
-          .map(|cd| f.IsMethodOf(cd.id).into())
-          .chain(iter::once(f.IsAbstract().into()))
-          .collect(),
-      ),
+    f.FunDef(
+      id,
+      self.filter_class_tparams(tparams, class_def),
+      params,
+      rtp,
+      empty_body,
+      class_def
+        .iter()
+        .map(|cd| f.IsMethodOf(cd.id).into())
+        .chain(iter::once(f.IsAbstract().into()))
+        .collect(),
     )
   }
 
@@ -319,6 +345,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     let fun_id = self.get_or_extract_fn_ref(def_id);
     (fun_id, tparams, params, return_tpe)
+  }
+
+  pub fn get_or_extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
+    self.get_fn(fn_item.def_id).unwrap_or_else(|| {
+      let fd = self.extract_local_fn(fn_item);
+      self.add_function(fd);
+      fd
+    })
   }
 
   /// Extract a local function
@@ -372,14 +406,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.report_unused_flags(hir_id, &flags_by_symbol);
 
     // Wrap it all up in a Stainless function
-    self.add_function(f.FunDef(
+    f.FunDef(
       fn_item.fd_id,
       self.filter_class_tparams(tparams, class_def),
       params,
       return_tpe,
       body_expr,
       flags,
-    ))
+    )
   }
 
   /// Filter out the tparams of the class and the class (as tparam) itself
@@ -399,7 +433,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Extract an ADT (regardless of whether it is local or external) or return it from the map of
   /// already extracted ADTs.
-  /// Caution: if you only need the ADT's id, you should call [extract_adt_id] because there are
+  /// Caution: if you only need the ADT's id, you should call [get_or_register_def] because there are
   /// cases where the ID is already in the cache but not the entire ADTSort. That may lead to
   /// infinite recursion.
   pub(super) fn get_or_extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
@@ -407,57 +441,63 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .get_id_from_def(def_id)
       .and_then(|id| self.with_extraction(|xt| xt.adts.get(id).copied()))
       .unwrap_or_else(|| {
-        let f = self.factory();
-        let adt_id = self.get_or_register_def(def_id);
-        let adt_def = self.tcx.adt_def(def_id);
+        let adt = self.extract_adt(def_id);
+        self.add_adt(adt);
+        adt
+      })
+  }
 
-        // Extract flags for local def ids.
-        let (flags, mut flags_by_symbol, hir_id_opt) = def_id
-          .as_local()
-          .map(|local_def_id| {
-            let hir_id = self.tcx.hir().as_local_hir_id(local_def_id);
-            let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
-            (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
-          })
-          // TODO: Extract external (non-local) flags. Tracked here:
-          //   https://github.com/epfl-lara/rust-stainless/issues/36
-          //   Currently, we just return empty flags for non-local ADTs.
-          .unwrap_or_default();
+  pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
+    let f = self.factory();
+    let adt_id = self.get_or_register_def(def_id);
+    let adt_def = self.tcx.adt_def(def_id);
 
-        // Extract generics
-        let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
+    // Extract flags for local def ids.
+    let (flags, mut flags_by_symbol, hir_id_opt) = def_id
+      .as_local()
+      .map(|local_def_id| {
+        let hir_id = self.tcx.hir().as_local_hir_id(local_def_id);
+        let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
+        (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
+      })
+      // TODO: Extract external (non-local) flags. Tracked here:
+      //   https://github.com/epfl-lara/rust-stainless/issues/36
+      //   Currently, we just return empty flags for non-local ADTs.
+      .unwrap_or_default();
 
-        // Extract constructors
-        let constructors = adt_def
-          .variants
+    // Extract generics
+    let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
+
+    // Extract constructors
+    let constructors = adt_def
+      .variants
+      .iter()
+      .map(|variant| {
+        let cons_id = self.get_or_register_def(variant.def_id);
+        let fields = variant
+          .fields
           .iter()
-          .map(|variant| {
-            let cons_id = self.get_or_register_def(variant.def_id);
-            let fields = variant
-              .fields
-              .iter()
-              .map(|field| {
-                let field_id = self.get_or_register_def(field.did);
-                let substs = List::identity_for_item(self.tcx, def_id);
-                let field_ty = field.ty(self.tcx, substs);
-                let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
+          .map(|field| {
+            let field_id = self.get_or_register_def(field.did);
+            let substs = List::identity_for_item(self.tcx, def_id);
+            let field_ty = field.ty(self.tcx, substs);
+            let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
 
-                let flags = flags_by_symbol.remove(&field.ident.name);
-                let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
+            let flags = flags_by_symbol.remove(&field.ident.name);
+            let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
 
-                let field = f.Variable(field_id, field_ty, flags);
-                &*f.ValDef(field)
-              })
-              .collect();
-            &*f.ADTConstructor(cons_id, adt_id, fields)
+            let field = f.Variable(field_id, field_ty, flags);
+            &*f.ValDef(field)
           })
           .collect();
-
-        if let Some(hir_id) = hir_id_opt {
-          self.report_unused_flags(hir_id, &flags_by_symbol)
-        }
-
-        self.add_adt(f.ADTSort(adt_id, tparams, constructors, flags))
+        &*f.ADTConstructor(cons_id, adt_id, fields)
       })
+      .collect();
+
+    if let Some(hir_id) = hir_id_opt {
+      self.report_unused_flags(hir_id, &flags_by_symbol)
+    }
+
+    f.ADTSort(adt_id, tparams, constructors, flags)
   }
 }
