@@ -84,6 +84,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
+      ExprKind::Return { value } => self.extract_return(value),
+
       _ => self.unsupported_expr(
         expr.span,
         format!("Cannot extract expr kind {:?}", expr.kind),
@@ -430,6 +432,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .FunctionInvocation(fd_id, arg_tps_without_parents, args)
         .into(),
     }
+  }
+
+  fn extract_return(&mut self, value: Option<ExprRef<'tcx>>) -> st::Expr<'l> {
+    let expr = value
+      .map(|v| self.extract_expr_ref(v))
+      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+    self.factory().Return(expr).into()
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
