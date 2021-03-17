@@ -1,6 +1,11 @@
 extern crate stainless;
 use stainless::*;
 
+pub enum Option<T> {
+  None,
+  Some(T),
+}
+
 #[pre(x >= 0 && x < 10)]
 #[post(ret >= 0)]
 pub fn fact(x: i32) -> i32 {
@@ -39,4 +44,20 @@ pub fn return_pattern_match(arg: u32) -> i32 {
   };
   assert!(s >= 100000);
   s
+}
+
+pub fn does_not_consume(option: &Option<i32>, v: i32) -> bool {
+  match option {
+    Option::None => {}
+    Option::Some(x) => return *x == v,
+  };
+  false
+}
+
+pub fn flatten<T>(opt: Option<Option<T>>) -> Option<T> {
+  match opt {
+    Option::Some(maybe) => return maybe,
+    _ => {}
+  }
+  return Option::None;
 }
