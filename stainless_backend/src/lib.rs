@@ -57,6 +57,7 @@ impl Backend {
       .arg("--batched")
       .arg("--vc-cache=false")
       .arg("--type-checker=false")
+      .arg("-Dparallel=0")
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
       .arg(format!("--print-types={}", config.print_types))
