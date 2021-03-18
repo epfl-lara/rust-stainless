@@ -105,9 +105,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         self.extract_ty(substitutions.type_at(0), txtcx, span)
       }
 
-      // String type
-      TyKind::Adt(adt_def, _) if self.is_string(adt_def) => f.StringType().into(),
-
       // Immutably borrowed string slice, erased to a plain String
       TyKind::Ref(_, ty, Mutability::Not) if ty.kind == TyKind::Str => f.StringType().into(),
 
@@ -118,6 +115,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
           f.SetType(arg_ty).into()
         }
+        // String type
+        Some(StdItem::CrateItem(CrateItem::StringType)) => f.StringType().into(),
+
         // Normal user-defined ADTs
         _ => {
           let sort_id = self.get_or_register_def(adt_def.did);
@@ -364,11 +364,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn is_bigint(&self, adt_def: &'tcx AdtDef) -> bool {
     // TODO: Add a check for BigInt that avoids generating the string?
     self.tcx.def_path_str(adt_def.did) == "num_bigint::BigInt"
-  }
-
-  pub(super) fn is_string(&self, adt_def: &'tcx AdtDef) -> bool {
-    // TODO: Add a check for String that avoids generating the string?
-    self.tcx.def_path_str(adt_def.did) == "std::string::String"
   }
 }
 

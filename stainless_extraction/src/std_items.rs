@@ -33,8 +33,11 @@ pub enum CrateItem {
   SubsetOfFn,
   SetEmptyFn,
   SetSingletonFn,
-  BoxNew,
+  BoxNewFn,
   PhantomData,
+  ToStringFn,
+  StringType,
+  PartialEqFn,
 }
 
 use CrateItem::*;
@@ -52,8 +55,11 @@ impl CrateItem {
       SubsetOfFn => "stainless::Set::<T>::is_subset_of",
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
-      BoxNew => "std::boxed::Box::<T>::new",
+      BoxNewFn => "std::boxed::Box::<T>::new",
       PhantomData => "std::marker::PhantomData",
+      ToStringFn => "std::string::ToString::to_string",
+      StringType => "std::string::String",
+      PartialEqFn => "std::cmp::PartialEq::eq",
     }
   }
 
@@ -62,8 +68,8 @@ impl CrateItem {
   /// layers under `std`.
   pub fn crate_name(&self) -> &'static str {
     match self {
-      BoxNew => "alloc",
-      PhantomData => "core",
+      BoxNewFn | ToStringFn | StringType => "alloc",
+      PhantomData | PartialEqFn => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }

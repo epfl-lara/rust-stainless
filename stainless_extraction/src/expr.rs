@@ -308,7 +308,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           Some(self.extract_panic(args, span, true))
         }
 
-        // Set things
         StdItem::CrateItem(CrateItem::SetEmptyFn)
         | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
           Some(self.extract_set_creation(args, substs_ref, span))
@@ -324,9 +323,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
 
         // Box::new, erase it and return the argument directly.
-        StdItem::CrateItem(CrateItem::BoxNew) => {
+        StdItem::CrateItem(CrateItem::BoxNewFn) => {
           Some(self.extract_expr_ref(args.first().cloned().unwrap()))
         }
+        StdItem::CrateItem(CrateItem::ToStringFn) => {
+          self.extract_str_to_string(args.first().cloned().unwrap())
+        }
+        StdItem::CrateItem(CrateItem::PartialEqFn) => self.extract_partial_eq(args),
 
         _ => None,
       })
@@ -383,16 +386,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       trait_bounds,
       ..
     } = self.base.get_or_extract_generics(def_id);
-
-    // Special case for &str::to_string, erase it and return the argument directly.
-    if let Some(expr) = self.extract_str_to_string(fd_id, args) {
-      return expr;
-    }
-
-    // Special case for PartialEq::eq on strings.
-    if let Some(expr) = self.extract_str_eq(fd_id, args) {
-      return expr;
-    }
 
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
@@ -451,50 +444,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.factory().Return(expr).into()
   }
 
-  fn extract_str_to_string(
-    &mut self,
-    fd_id: &st::SymbolIdentifier,
-    args: &[ExprRef<'tcx>],
-  ) -> Option<st::Expr<'l>> {
-    if args.len() != 1 || fd_id.symbol_path != ["std", "string", "ToString", "to_string"] {
-      return None;
-    }
-
-    let arg = args.first().cloned().unwrap();
+  fn extract_str_to_string(&mut self, arg: ExprRef<'tcx>) -> Option<st::Expr<'l>> {
     let expr = self.mirror(arg);
-    let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+    self.is_str_type(&expr).then(|| self.extract_expr(expr))
+  }
 
-    if let st::Type::StringType(_) = ty {
-      Some(self.extract_expr(expr))
-    } else {
-      None
+  /// Extracts a call to `PartialEq::eq`. Currently, this only works for strings
+  /// and otherwise returns None.
+  fn extract_partial_eq(&mut self, args: &[ExprRef<'tcx>]) -> Option<st::Expr<'l>> {
+    match args {
+      [lhs, rhs] => {
+        let lexpr = self.mirror(lhs.clone());
+        let rexpr = self.mirror(rhs.clone());
+        (self.is_str_type(&lexpr) && self.is_str_type(&rexpr)).then(|| {
+          self
+            .factory()
+            .Equals(self.extract_expr(lexpr), self.extract_expr(rexpr))
+            .into()
+        })
+      }
+      _ => unreachable!(),
     }
   }
 
-  fn extract_str_eq(
-    &mut self,
-    fd_id: &st::SymbolIdentifier,
-    args: &[ExprRef<'tcx>],
-  ) -> Option<st::Expr<'l>> {
-    if args.len() != 2 || fd_id.symbol_path != ["std", "cmp", "PartialEq", "eq"] {
-      return None;
-    }
-
-    for arg in args {
-      let expr = self.mirror(arg.clone());
-      let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
-      dbg!(&ty);
-      if !matches!(ty, st::Type::StringType(_)) {
-        dbg!("not string");
-        return None;
-      }
-    }
-
-    let f = self.factory();
-    match self.extract_expr_refs(args.to_vec())[..] {
-      [lhs, rhs] => Some(f.Equals(lhs, rhs).into()),
-      _ => unreachable!(),
-    }
+  fn is_str_type(&mut self, expr: &Expr<'tcx>) -> bool {
+    let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+    matches!(ty, st::Type::StringType(_))
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
