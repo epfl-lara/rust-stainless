@@ -61,26 +61,3 @@ pub fn flatten<T>(opt: Option<Option<T>>) -> Option<T> {
   }
   return Option::None;
 }
-
-#[allow(unused_variables)]
-fn foo(x: Option<i32>) -> i32 {
-  match x {
-    Option::Some(i) if return 0 => i,
-    Option::Some(_) => 42,
-    Option::None => -42,
-  }
-}
-
-fn bar() -> i32 {
-  if 12 == 12 && return 0 {
-    return 1;
-  } else {
-    return 2;
-  }
-}
-
-pub fn main() {
-  assert!(foo(Option::Some(123)) == 0);
-  assert!(foo(Option::None) == -42);
-  assert!(bar() == 0)
-}

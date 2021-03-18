@@ -24,19 +24,38 @@ macro_rules! select_check {
   (fail, verification, $test_path:ident) => {
     emit_check!(true, ErrorInVerification, $test_path)
   };
+  (crash, verification, $test_path:ident) => {
+    emit_check!(true, CrashInVerification, $test_path)
+  };
+}
+
+macro_rules! test_folder {
+  (crash) => {
+    "fail"
+  };
+  ($outcome:ident) => {
+    stringify!($outcome)
+  };
+}
+
+macro_rules! relative_path {
+  ($outcome:ident, $name:ident) => {
+    concat!(
+      "tests/",
+      test_folder!($outcome),
+      "/",
+      stringify!($name),
+      ".rs"
+    )
+  };
 }
 
 macro_rules! define_test {
-  ($pass_or_fail:ident, $stage:ident, $test_name:ident, $name:ident) => {
+  ($outcome:ident, $stage:ident, $test_name:ident, $name:ident) => {
     #[test]
     fn $test_name() {
-      let relative_path = format!(
-        "tests/{}/{}.rs",
-        stringify!($pass_or_fail),
-        stringify!($name)
-      );
-      let test_path = manifest_relative_path(relative_path);
-      select_check!($pass_or_fail, $stage, test_path);
+      let test_path = manifest_relative_path(relative_path!($outcome, $name));
+      select_check!($outcome, $stage, test_path);
     }
   };
 }
@@ -54,6 +73,9 @@ macro_rules! select_test {
   };
   (fail_verification, $name:ident) => {
     define_test!(fail, verification, $name, $name);
+  };
+  (crash_verification, $name:ident) => {
+    define_test!(crash, verification, $name, $name);
   };
 }
 
@@ -116,5 +138,7 @@ define_tests!(
   fail_verification: liskov_rectangle,
   fail_extraction: mut_borrow_ref,
   fail_extraction: mut_params,
+  crash_verification: return_in_cond,
+  crash_verification: return_in_guard,
   fail_extraction: user_deref
 );
