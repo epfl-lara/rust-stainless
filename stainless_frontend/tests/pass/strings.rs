@@ -15,7 +15,8 @@ fn return_static_str() -> &'static str {
 
 pub fn test_eq() {
   assert!(return_string() == return_string());
-  assert!(return_string() != return_static_str());
+  // != would be extracted as `PartialEq::ne` which is not supported.
+  assert!(!(return_string() == return_static_str()));
 
   take_string(return_string());
   take_string(return_static_str().to_string());
