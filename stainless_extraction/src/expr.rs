@@ -47,8 +47,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ),
 
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
-      ExprKind::Block { body: ast_block } => {
-        let block = self.mirror(ast_block);
+      ExprKind::Block { body } => {
+        let block = self.mirror(body);
         match block.safety_mode {
           BlockSafety::Safe => self.extract_block(block),
           _ => self.unsupported_expr(expr.span, "Cannot extract unsafe block"),
@@ -83,6 +83,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       } => self.extract_expr_ref(arg),
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
+
+      ExprKind::Return { value } => self.extract_return(value),
 
       _ => self.unsupported_expr(
         expr.span,
@@ -430,6 +432,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .FunctionInvocation(fd_id, arg_tps_without_parents, args)
         .into(),
     }
+  }
+
+  fn extract_return(&mut self, value: Option<ExprRef<'tcx>>) -> st::Expr<'l> {
+    let expr = value
+      .map(|v| self.extract_expr_ref(v))
+      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+    self.factory().Return(expr).into()
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
@@ -790,17 +799,40 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_block(&mut self, block: Block<'tcx>) -> st::Expr<'l> {
-    let Block {
+  fn extract_block(
+    &mut self,
+    Block {
       mut stmts,
       expr: final_expr,
       ..
-    } = block;
+    }: Block<'tcx>,
+  ) -> st::Expr<'l> {
     let final_expr = final_expr
       .map(|e| self.extract_expr_ref(e))
+      // If there's no final expression, we need to check whether the last
+      // statement is a return. If yes, we take the return as final expression.
+      .or_else(|| {
+        stmts
+          .last()
+          .cloned()
+          .and_then(|s| match self.mirror(s).kind {
+            StmtKind::Expr { expr, .. } => Some(expr),
+            _ => None,
+          })
+          .and_then(|expr| {
+            let expr = self.mirror(expr);
+            match self.strip_scope(expr).kind {
+              ExprKind::Return { value } => {
+                stmts.pop();
+                Some(self.extract_return(value))
+              }
+              _ => None,
+            }
+          })
+      })
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
-    stmts.reverse();
 
+    stmts.reverse();
     let mut spec_ids = HashMap::new();
     let body_expr = self.extract_block_(&mut stmts, &mut vec![], &mut spec_ids, final_expr);
     self.extract_specs(&spec_ids, body_expr)
