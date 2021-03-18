@@ -1,4 +1,5 @@
 extern crate stainless;
+use stainless::*;
 
 fn take_string(_s: String) {}
 
@@ -22,4 +23,15 @@ pub fn test_eq() {
   take_string(return_static_str().to_string());
   take_static_str(return_static_str());
   take_str(return_static_str());
+}
+
+#[allow(unused_variables)]
+#[pre(s.len() > 0)]
+fn need_non_empty(s: &str) {
+  assert!(true)
+}
+pub fn provide_non_empty(s: &str) {
+  if s.len() > 10 {
+    need_non_empty(s);
+  }
 }
