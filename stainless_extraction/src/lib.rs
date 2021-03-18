@@ -1,5 +1,6 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
+#![feature(bool_to_option)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -45,7 +46,7 @@ use stainless_data::ast as st;
 use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
-use std_items::StdItems;
+use std_items::{CrateItem, StdItem, StdItems};
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
@@ -245,9 +246,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  fn add_adt(&mut self, id: StainlessSymId<'l>, adt: &'l st::ADTSort<'l>) {
+  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) {
     self.with_extraction_mut(|xt| {
-      assert!(xt.adts.insert(id, adt).is_none());
+      assert!(xt.adts.insert(adt.id, adt).is_none());
     })
   }
 
@@ -272,12 +273,33 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Add a class to the extraction along with references from all its methods
   /// to the class definition.
-  fn add_class(&mut self, cd: &'l st::ClassDef<'l>, methods: Vec<StainlessSymId<'l>>) {
+  fn add_class<I>(&mut self, cd: &'l st::ClassDef<'l>, methods: I)
+  where
+    I: IntoIterator<Item = StainlessSymId<'l>>,
+  {
     self.with_extraction_mut(|xt| {
       assert!(xt.classes.insert(cd.id, cd).is_none());
       xt.method_to_class
-        .extend(methods.into_iter().map(|method_id| (method_id, cd)))
+        .extend(methods.into_iter().map(|method_id| (method_id, cd)));
     })
+  }
+
+  pub fn immutable_var_with_name(
+    &mut self,
+    var: &st::Variable<'l>,
+    name: &str,
+  ) -> &'l st::Variable<'l> {
+    let new_id = self.fresh_id(name.into());
+    let flags = var
+      .flags
+      .iter()
+      .filter(|flag| match flag {
+        st::Flag::IsVar(_) => false,
+        _ => true,
+      })
+      .copied()
+      .collect();
+    self.factory().Variable(new_id, var.tpe, flags)
   }
 
   /// Get a BodyExtractor for some item with a body (like a function)
@@ -357,7 +379,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       tables,
       body,
       txtcx,
-      dcx: DefContext::new(),
+      dcx: DefContext::default(),
       current_class,
     }
   }
@@ -378,15 +400,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .dcx
       .get_var(hir_id)
       .unwrap_or_else(|| unexpected(span, "unregistered variable"))
-  }
-
-  fn body_params(&self) -> Params<'l> {
-    self
-      .body
-      .params
-      .iter()
-      .map(|param| &*self.factory().ValDef(self.fetch_var(param.pat.hir_id)))
-      .collect()
   }
 
   fn return_tpe(&mut self) -> st::Type<'l> {
@@ -421,7 +434,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // The receiver can't be an  abstract class nor the current class.
           .filter(|cd| {
             !cd.flags.contains(&f.IsAbstract().into())
-              && self.current_class.map(|tc| tc.id != cd.id).unwrap_or(true)
+              && self.current_class.map_or(true, |tc| tc.id != cd.id)
           })
           .find_map(|cd| {
             let class_key = method_call_rcv_key(cd);
@@ -507,29 +520,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|cd| f.This(f.class_def_to_type(cd)).into())
   }
 
-  /// Tries to extract a call to an evidence argument of the current class.
+  /// Tries to extract an evidence argument of the current function or the current class.
   /// Returns None if no evidence argument matches the key.
   fn extract_evidence_arg_call(&self, key: &TypeClassKey<'l>) -> Option<st::Expr<'l>> {
     let f = self.factory();
-    self.current_class.and_then(|cd| {
-      cd.fields.iter().find_map(|&vd| match vd.v.tpe {
-        st::Type::ClassType(st::ClassType { id, tps }) => {
-          let k = TypeClassKey {
-            id: *id,
-            recv_tps: tps.clone(),
-          };
 
-          if k == *key {
-            return Some(
-              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
-                .into(),
-            );
-          }
-          None
-        }
+    // First try the current functions arguments
+    self
+      .dcx
+      .params()
+      .iter()
+      .find_map(|&vd| match vd.v.tpe {
+        st::Type::ClassType(class_type) if key == class_type => Some(vd.v.into()),
         _ => None,
       })
-    })
+      // then search for an evidence argument in the current class
+      .or_else(|| {
+        self.current_class.and_then(|cd| {
+          cd.fields.iter().find_map(|&vd| match vd.v.tpe {
+            st::Type::ClassType(class_type) if key == class_type => Some(
+              f.ClassSelector(f.This(f.class_def_to_type(cd)).into(), vd.v.id)
+                .into(),
+            ),
+            _ => None,
+          })
+        })
+      })
   }
 }
 

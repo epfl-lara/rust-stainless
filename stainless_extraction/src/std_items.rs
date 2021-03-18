@@ -1,20 +1,30 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use rustc_hir::def_id::{CrateId, CrateNum, DefId, DefIndex};
-use rustc_hir::lang_items::*;
+use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
+use rustc_hir::lang_items::LangItem as RustLangItem;
 use rustc_middle::ty::TyCtxt;
-use rustc_span::symbol::Symbol;
+
+use enum_iterator::IntoEnumIterator;
 
 /// A standard item, either a rust LangItem, or one of the stainless library
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum StdItem {
+  LangItem(LangItem),
+  CrateItem(CrateItem),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
+pub enum LangItem {
   FnTrait,
   FnMutTrait,
   FnOnceTrait,
   SizedTrait,
   BeginPanicFn,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
+pub enum CrateItem {
   BeginPanicFmtFn,
-  // Set things,
   SetType,
   SetAddFn,
   SetDifferenceFn,
@@ -23,128 +33,101 @@ pub(super) enum StdItem {
   SubsetOfFn,
   SetEmptyFn,
   SetSingletonFn,
+  BoxNew,
+  PhantomData,
 }
 
-const RUST_LANG_ITEMS: &[StdItem] = &[FnTrait, FnMutTrait, FnOnceTrait, SizedTrait, BeginPanicFn];
+use CrateItem::*;
 
-const STAINLESS_ITEMS: &[StdItem] = &[
-  SetType,
-  SetAddFn,
-  SetDifferenceFn,
-  SetIntersectionFn,
-  SetUnionFn,
-  SubsetOfFn,
-  SetEmptyFn,
-  SetSingletonFn,
-];
-
-use StdItem::*;
-
-const NUM_STD_ITEMS: usize = 14;
-
-impl StdItem {
-  fn index(self) -> usize {
+impl CrateItem {
+  /// The path of a crate item, as returned by `tcx.def_path_str`.
+  pub fn path(&self) -> &'static str {
     match self {
-      FnTrait => 0,
-      FnMutTrait => 1,
-      FnOnceTrait => 2,
-      SizedTrait => 3,
-      BeginPanicFn => 4,
-      BeginPanicFmtFn => 5,
-      SetType => 6,
-      SetAddFn => 7,
-      SetDifferenceFn => 8,
-      SetIntersectionFn => 9,
-      SetUnionFn => 10,
-      SubsetOfFn => 11,
-      SetEmptyFn => 12,
-      SetSingletonFn => NUM_STD_ITEMS - 1,
+      BeginPanicFmtFn => "std::rt::begin_panic_fmt",
+      SetType => "stainless::Set",
+      SetAddFn => "stainless::Set::<T>::add",
+      SetDifferenceFn => "stainless::Set::<T>::difference",
+      SetIntersectionFn => "stainless::Set::<T>::intersection",
+      SetUnionFn => "stainless::Set::<T>::union",
+      SubsetOfFn => "stainless::Set::<T>::is_subset_of",
+      SetEmptyFn => "stainless::Set::<T>::empty",
+      SetSingletonFn => "stainless::Set::<T>::singleton",
+      BoxNew => "std::boxed::Box::<T>::new",
+      PhantomData => "std::marker::PhantomData",
     }
   }
 
-  pub fn name(self) -> &'static str {
+  /// An item can (unfortunately) be in a different crate than the first part
+  /// of its [path()] suggests. This is due to the aliasing of `alloc` and other
+  /// layers under `std`.
+  pub fn crate_name(&self) -> &'static str {
     match self {
-      FnTrait => "Fn",
-      FnMutTrait => "FnMut",
-      FnOnceTrait => "FnOnce",
-      SizedTrait => "Sized",
-      BeginPanicFn => "begin_panic",
-      BeginPanicFmtFn => "begin_panic_fmt",
-      SetType => "Set",
-      SetAddFn => "add",
-      SetDifferenceFn => "difference",
-      SetIntersectionFn => "intersection",
-      SetUnionFn => "union",
-      SubsetOfFn => "is_subset_of",
-      SetEmptyFn => "empty",
-      SetSingletonFn => "singleton",
-    }
-  }
-
-  pub fn lang_item(self) -> Option<LangItem> {
-    match self {
-      FnTrait => Some(FnTraitLangItem),
-      FnMutTrait => Some(FnMutTraitLangItem),
-      FnOnceTrait => Some(FnOnceTraitLangItem),
-      SizedTrait => Some(SizedTraitLangItem),
-      BeginPanicFn => Some(BeginPanicFnLangItem),
-      _ => None,
+      BoxNew => "alloc",
+      PhantomData => "core",
+      _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }
 }
 
-impl From<LangItem> for StdItem {
-  fn from(item: LangItem) -> StdItem {
-    match item {
-      FnTraitLangItem => FnTrait,
-      FnMutTraitLangItem => FnMutTrait,
-      FnOnceTraitLangItem => FnOnceTrait,
-      SizedTraitLangItem => SizedTrait,
-      BeginPanicFnLangItem => BeginPanicFn,
-      _ => unimplemented!(),
+lazy_static! {
+  static ref CRATE_ITEMS_BY_CRATE: HashMap<&'static str, Vec<CrateItem>> = {
+    let mut map = HashMap::new();
+    for c in CrateItem::into_enum_iter() {
+      map.entry(c.crate_name()).or_insert_with(Vec::new).push(c)
+    }
+    map
+  };
+}
+
+impl LangItem {
+  fn rust_lang_item(self) -> RustLangItem {
+    match self {
+      LangItem::FnTrait => RustLangItem::FnTraitLangItem,
+      LangItem::FnMutTrait => RustLangItem::FnMutTraitLangItem,
+      LangItem::FnOnceTrait => RustLangItem::FnOnceTraitLangItem,
+      LangItem::SizedTrait => RustLangItem::SizedTraitLangItem,
+      LangItem::BeginPanicFn => RustLangItem::BeginPanicFnLangItem,
     }
   }
 }
 
 #[derive(Debug)]
 pub(super) struct StdItems {
-  item_to_def: [DefId; NUM_STD_ITEMS],
   def_to_item: HashMap<DefId, StdItem>,
 }
 
 impl StdItems {
   pub(super) fn collect(tcx: TyCtxt) -> Self {
-    let dummy_def_id = Self::make_def_id(CrateNum::Index(CrateId::from_usize(0)), 0);
-    let item_to_def = [dummy_def_id; NUM_STD_ITEMS];
-    let def_to_item: HashMap<DefId, StdItem> = HashMap::new();
-
     let mut this = Self {
-      item_to_def,
-      def_to_item,
+      def_to_item: HashMap::new(),
     };
 
-    // Register rust lang items
-    this.register_items_from_lang_items(tcx, RUST_LANG_ITEMS);
-
-    // Register additional items from the rust standard library
-    let std_crate_num = this.item_to_def(BeginPanicFn).krate;
-    this.register_items_from_crate(tcx, &[BeginPanicFmtFn], std_crate_num);
-
-    // Register items from stainless crate
-    let stainless_sym = Symbol::intern("stainless");
-    let stainless_crate_num = match tcx
+    let crate_names: HashSet<_> = CRATE_ITEMS_BY_CRATE.keys().collect();
+    let crate_nums: HashMap<_, CrateNum> = tcx
       .crates()
       .iter()
-      .find(|&&cnum| tcx.crate_name(cnum) == stainless_sym)
-      .copied()
-    {
-      Some(crate_num) => crate_num,
-      None => tcx.sess.fatal(
-        "Couldn't find stainless library. Make sure it is included using 'extern crate stainless;'",
-      ),
-    };
-    this.register_items_from_crate(tcx, STAINLESS_ITEMS, stainless_crate_num);
+      .filter_map(|&cnum| {
+        let name = tcx.crate_name(cnum).to_string();
+        crate_names.contains(&&name.as_str()).then(|| (name, cnum))
+      })
+      .collect();
 
+    if !crate_nums.contains_key("stainless") {
+      tcx.sess.fatal(
+        "Couldn't find stainless library. Make sure it is included using 'extern crate stainless;'",
+      )
+    }
+
+    // Register rust lang items
+    for item in LangItem::into_enum_iter() {
+      let def_id = tcx.require_lang_item(item.rust_lang_item(), None);
+      this.def_to_item.insert(def_id, StdItem::LangItem(item));
+    }
+
+    // Register additional items from the rust standard library
+    for (&crate_name, items) in CRATE_ITEMS_BY_CRATE.iter() {
+      this.register_items_from_crate(tcx, items, *crate_nums.get(crate_name).unwrap())
+    }
     this
   }
 
@@ -155,45 +138,21 @@ impl StdItems {
     }
   }
 
-  fn register_items_from_lang_items(&mut self, tcx: TyCtxt, items: &[StdItem]) {
-    for item in items {
-      let def_id = tcx.require_lang_item(item.lang_item().unwrap(), None);
-      self.item_to_def[item.index()] = def_id;
-      self.def_to_item.insert(def_id, *item);
-    }
-  }
-
   // HACK(gsps): A horrible way to do this, but rustc -- as far as I can tell -- does not expose
   // any API for finding a specific item in, or enumerating all items of a crate.
-  fn register_items_from_crate(&mut self, tcx: TyCtxt, items: &[StdItem], cnum: CrateNum) {
-    let mut items: HashMap<Symbol, StdItem> = items
-      .iter()
-      .map(|item| (Symbol::intern(item.name()), *item))
-      .collect();
+  fn register_items_from_crate(&mut self, tcx: TyCtxt, items: &[CrateItem], cnum: CrateNum) {
+    let mut items: HashMap<&str, _> = items.iter().map(|item| (item.path(), *item)).collect();
 
     for index in 0.. {
+      // We found DefIds for all items, we're done.
       if items.is_empty() {
-        break; // We found DefIds for all items, we're done.
+        break;
       }
       let def_id = Self::make_def_id(cnum, index);
-      if let Some(ref name_sym) = tcx
-        .def_path(def_id)
-        .data
-        .last()
-        .map(|data| data.data.as_symbol())
-      {
-        if let Some(item) = items.remove(name_sym) {
-          self.item_to_def[item.index()] = def_id;
-          self.def_to_item.insert(def_id, item);
-        }
+      if let Some(item) = items.remove(tcx.def_path_str(def_id).as_str()) {
+        self.def_to_item.insert(def_id, StdItem::CrateItem(item));
       }
     }
-  }
-
-  #[inline]
-  pub(super) fn item_to_def<I: Into<StdItem>>(&self, item: I) -> DefId {
-    let item = item.into();
-    self.item_to_def[item.index()]
   }
 
   #[inline]
@@ -201,8 +160,19 @@ impl StdItems {
     self.def_to_item.get(&def_id).copied()
   }
 
+  pub(super) fn is_sized_trait(&self, def_id: DefId) -> bool {
+    self
+      .def_to_item_opt(def_id)
+      .map_or(false, |sti| sti == StdItem::LangItem(LangItem::SizedTrait))
+  }
+
   #[inline]
-  pub(super) fn is_one_of(&self, def_id: DefId, items: &[StdItem]) -> bool {
-    items.iter().any(|&item| self.item_to_def(item) == def_id)
+  pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
+    match self.def_to_item_opt(def_id) {
+      Some(StdItem::LangItem(LangItem::FnTrait))
+      | Some(StdItem::LangItem(LangItem::FnMutTrait))
+      | Some(StdItem::LangItem(LangItem::FnOnceTrait)) => true,
+      _ => false,
+    }
   }
 }

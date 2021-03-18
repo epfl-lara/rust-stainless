@@ -23,7 +23,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       txtcx,
       trait_bounds,
-    } = self.get_generics(def_id);
+    } = self.get_or_extract_generics(def_id);
 
     // If this is an 'impl for trait', we extract a concrete class
     if let Some(ty::TraitRef {
@@ -36,14 +36,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let tps = self.extract_tys(substs.types(), &txtcx, span);
       let parent = vec![&*f.ClassType(trait_id, tps)];
 
-      let fields = trait_bounds
-        .into_iter()
-        .enumerate()
-        .map(|(index, ct)| {
-          &*f.ValDef(f.Variable(self.fresh_id(format!("ev{}", index)), ct.into(), vec![]))
-        })
-        .collect::<Vec<_>>();
-
+      let fields = self.evidence_params(trait_bounds);
       let flags = if tparams.is_empty() && fields.is_empty() {
         vec![f.IsCaseObject().into()]
       } else {
@@ -64,5 +57,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         vec![f.IsAbstract().into()],
       )
     }
+  }
+
+  pub fn evidence_params<I>(&mut self, trait_bounds: I) -> Vec<&'l st::ValDef<'l>>
+  where
+    I: IntoIterator<Item = &'l st::ClassType<'l>>,
+  {
+    let f = self.factory();
+    trait_bounds
+      .into_iter()
+      .enumerate()
+      .map(|(index, ct)| {
+        &*f.ValDef(f.Variable(
+          self.fresh_id(format!("ev{}", index)),
+          ct.into(),
+          vec![f.evidence_flag()],
+        ))
+      })
+      .collect()
   }
 }

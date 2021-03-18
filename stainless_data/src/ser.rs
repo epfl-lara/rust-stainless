@@ -109,17 +109,20 @@ pub trait Serializer: Sized {
 
   // Particulars of the stainless serializer
 
-  // TODO: Support values >= 255 (see inox serializer)
+  /// Writes the marker with the same algorithm as in the Inox serializer.
+  /// See [here](https://github.com/epfl-lara/inox/blob/master/src/main/scala/inox/utils/Serialization.scala#L181-L190).
   fn write_marker(&mut self, marker: MarkerId) -> SerializationResult {
-    let id: u32 = marker.0;
-    assert!(id < 255);
-    self.write_u8(id as u8)?;
-    Ok(())
+    let mut id: u32 = marker.0;
+    while id >= 255 {
+      self.write_u8(255 as u8)?;
+      id -= 255
+    }
+    self.write_u8(id as u8)
   }
 
   // A way of writing lengths biased towards small values
   fn write_length(&mut self, len: usize) -> SerializationResult {
-    assert!(len <= (std::i32::MAX as usize));
+    assert!(len <= i32::MAX as usize);
     if len < 255 {
       self.write_u8(len as u8)?;
     } else {

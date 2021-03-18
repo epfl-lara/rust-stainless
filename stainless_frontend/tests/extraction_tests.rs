@@ -24,19 +24,38 @@ macro_rules! select_check {
   (fail, verification, $test_path:ident) => {
     emit_check!(true, ErrorInVerification, $test_path)
   };
+  (crash, verification, $test_path:ident) => {
+    emit_check!(true, CrashInVerification, $test_path)
+  };
+}
+
+macro_rules! test_folder {
+  (crash) => {
+    "fail"
+  };
+  ($outcome:ident) => {
+    stringify!($outcome)
+  };
+}
+
+macro_rules! relative_path {
+  ($outcome:ident, $name:ident) => {
+    concat!(
+      "tests/",
+      test_folder!($outcome),
+      "/",
+      stringify!($name),
+      ".rs"
+    )
+  };
 }
 
 macro_rules! define_test {
-  ($pass_or_fail:ident, $stage:ident, $test_name:ident, $name:ident) => {
+  ($outcome:ident, $stage:ident, $test_name:ident, $name:ident) => {
     #[test]
     fn $test_name() {
-      let relative_path = format!(
-        "tests/{}/{}.rs",
-        stringify!($pass_or_fail),
-        stringify!($name)
-      );
-      let test_path = manifest_relative_path(relative_path);
-      select_check!($pass_or_fail, $stage, test_path);
+      let test_path = manifest_relative_path(relative_path!($outcome, $name));
+      select_check!($outcome, $stage, test_path);
     }
   };
 }
@@ -54,6 +73,9 @@ macro_rules! select_test {
   };
   (fail_verification, $name:ident) => {
     define_test!(fail, verification, $name, $name);
+  };
+  (crash_verification, $name:ident) => {
+    define_test!(crash, verification, $name, $name);
   };
 }
 
@@ -91,15 +113,23 @@ define_tests!(
   pass: let_type,
   pass: list_binary_search,
   pass: monoid,
+  pass: mut_local_fields,
+  pass: mut_local_lets,
+  pass: mut_local_params,
+  pass: mut_ref_immut_borrow,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: panic_type,
+  pass: phantom_data,
+  pass: return_stmt,
   pass: spec_on_trait_impl,
+  pass: trait_bounds,
   pass: struct_update,
   pass: tuple_match,
   pass: tuples,
   pass: type_class,
   pass: type_class_multi_lookup,
+  pass: type_class_specs,
   pass: type_class_without_evidence,
   pass: use_std,
   pass: strings,
@@ -107,8 +137,9 @@ define_tests!(
   fail_extraction: double_measure,
   fail_extraction: double_measure_impl,
   fail_verification: liskov_rectangle,
-  fail_extraction: mut_lets,
-  fail_extraction: switch_ref,
-  fail_extraction: switch_int,
+  fail_extraction: mut_borrow_ref,
+  fail_extraction: mut_params,
+  crash_verification: return_in_cond,
+  crash_verification: return_in_guard,
   fail_extraction: user_deref
 );

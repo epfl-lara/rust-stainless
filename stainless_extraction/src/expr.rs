@@ -1,15 +1,14 @@
 use super::literal::Literal;
-use super::std_items::StdItem;
-use super::std_items::StdItem::*;
 use super::*;
 
 use crate::spec::SpecType;
 
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BinOp, BorrowKind, Mutability, UnOp};
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
+use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
+use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind, TyS};
 
+use crate::std_items::LangItem;
 use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_hair::hair::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, ExprRef, FieldPat, FruInfo, Guard,
@@ -30,12 +29,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Binary { .. } => self.extract_binary(expr),
       ExprKind::LogicalOp { .. } => self.extract_logical_op(expr),
       ExprKind::Tuple { .. } => self.extract_tuple(expr),
-      ExprKind::Field { .. } => self.extract_field(expr),
+      ExprKind::Field { lhs, name } => self.extract_field(lhs, name),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
-      ExprKind::Call { ty, ref args, .. } => self.extract_call_like(ty, args, expr.span),
+
+      ExprKind::Call {
+        ty: TyS {
+          kind: TyKind::FnDef(def_id, substs_ref),
+          ..
+        },
+        ref args,
+        ..
+      } => self.extract_call_like(*def_id, substs_ref, args, expr.span),
+
+      ExprKind::Call { .. } => self.unsupported_expr(
+        expr.span,
+        "Cannot extract call without statically known target",
+      ),
+
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
-      ExprKind::Block { body: ast_block } => {
-        let block = self.mirror(ast_block);
+      ExprKind::Block { body } => {
+        let block = self.mirror(body);
         match block.safety_mode {
           BlockSafety::Safe => self.extract_block(block),
           _ => self.unsupported_expr(expr.span, "Cannot extract unsafe block"),
@@ -68,6 +81,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         borrow_kind: BorrowKind::Shared,
         arg,
       } => self.extract_expr_ref(arg),
+
+      ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
+
+      ExprKind::Return { value } => self.extract_return(value),
 
       _ => self.unsupported_expr(
         expr.span,
@@ -244,74 +261,87 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_field(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
+  fn extract_field(&mut self, lhs: ExprRef<'tcx>, field: Field) -> st::Expr<'l> {
     let f = self.factory();
-    if let ExprKind::Field { lhs, name } = expr.kind {
-      let lhs = self.mirror(lhs);
-      let lhs_ty = lhs.ty;
-      let index = name.index();
-      match lhs_ty.kind {
-        TyKind::Tuple(_) => {
-          let lhs = self.extract_expr(lhs);
-          f.TupleSelect(lhs, (index as i32) + 1).into()
-        }
-        TyKind::Adt(adt_def, _) => {
-          let sort = self.base.extract_adt(adt_def.did);
-          assert_eq!(sort.constructors.len(), 1);
-          let constructor = sort.constructors[0];
-          assert!(index < constructor.fields.len());
-          let lhs = self.extract_expr(lhs);
-          f.ADTSelector(lhs, constructor.fields[index].v.id).into()
-        }
-        ref kind => unexpected(
-          expr.span,
-          format!("Unexpected kind of field selection: {:?}", kind),
-        ),
+    let lhs = self.mirror(lhs);
+    match lhs.ty.kind {
+      TyKind::Tuple(_) => {
+        let lhs = self.extract_expr(lhs);
+        f.TupleSelect(lhs, (field.index() as i32) + 1).into()
       }
-    } else {
-      unreachable!()
+      TyKind::Adt(adt_def, _) => {
+        let selector = self.extract_field_selector(adt_def.did, field);
+        let lhs = self.extract_expr(lhs);
+        f.ADTSelector(lhs, selector).into()
+      }
+      ref kind => unexpected(
+        lhs.span,
+        format!("Unexpected kind of field selection: {:?}", kind),
+      ),
     }
+  }
+
+  fn extract_field_selector(&mut self, adt_def_id: DefId, field: Field) -> StainlessSymId<'l> {
+    let sort = self.base.get_or_extract_adt(adt_def_id);
+    assert_eq!(sort.constructors.len(), 1);
+    let constructor = sort.constructors[0];
+    assert!(field.index() < constructor.fields.len());
+    constructor.fields[field.index()].v.id
   }
 
   fn extract_call_like(
     &mut self,
-    ty: Ty<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    def_id: DefId,
+    substs_ref: SubstsRef<'tcx>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    if let TyKind::FnDef(def_id, substs_ref) = ty.kind {
-      // If the call is a std item, extract it specially
-      match self.base.std_items.def_to_item_opt(def_id) {
-        Some(BeginPanicFn) => self.extract_panic(args, span, false),
-        Some(BeginPanicFmtFn) => self.extract_panic(args, span, true),
-
-        Some(SetEmptyFn) | Some(SetSingletonFn) => {
-          self.extract_set_creation(args, substs_ref, span)
+    // If the call is a std item, extract it specially
+    self
+      .base
+      .std_items
+      .def_to_item_opt(def_id)
+      .and_then(|sti| match sti {
+        // Panics
+        StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
+        StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
+          Some(self.extract_panic(args, span, true))
         }
-        Some(std_item)
-          if std_item == SetAddFn
-            || std_item == SetDifferenceFn
-            || std_item == SetIntersectionFn
-            || std_item == SetUnionFn
-            || std_item == SubsetOfFn =>
+
+        // Set things
+        StdItem::CrateItem(CrateItem::SetEmptyFn)
+        | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
+          Some(self.extract_set_creation(args, substs_ref, span))
+        }
+        StdItem::CrateItem(item)
+          if item == CrateItem::SetAddFn
+            || item == CrateItem::SetDifferenceFn
+            || item == CrateItem::SetIntersectionFn
+            || item == CrateItem::SetUnionFn
+            || item == CrateItem::SubsetOfFn =>
         {
-          self.extract_set_op(std_item, args, span)
+          Some(self.extract_set_op(item, args, span))
         }
 
-        // Otherwise, extract a normal call
-        _ => self.extract_call(def_id, substs_ref, args, span),
-      }
-    } else {
-      self.unsupported_expr(span, "Cannot extract call without statically known target")
-    }
+        // Box::new, erase it and return the argument directly.
+        StdItem::CrateItem(CrateItem::BoxNew) => {
+          Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+        }
+
+        _ => None,
+      })
+      // Otherwise, extract a normal call
+      .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
   }
 
   fn extract_set_op(
     &mut self,
-    std_item: StdItem,
-    args: &Vec<ExprRef<'tcx>>,
+    std_item: CrateItem,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
+    use CrateItem::*;
+
     if let [set, arg, ..] = &self.extract_expr_refs(args.to_vec())[0..2] {
       return match std_item {
         SetAddFn => self.factory().SetAdd(*set, *arg).into(),
@@ -330,7 +360,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_set_creation(
     &mut self,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
@@ -343,18 +373,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     def_id: DefId,
     substs_ref: SubstsRef<'tcx>,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
-    let fd_id = self.base.extract_fn_ref(def_id);
+    let fd_id = self.base.get_or_extract_fn_ref(def_id);
     let class_def = self.base.get_class_of_method(fd_id);
-
-    // Special case for Box::new, erase it and return the argument directly.
-    // TODO: turn Box::new to a StdItem and use that. Tracked here:
-    //  https://github.com/epfl-lara/rust-stainless/issues/34
-    if let Some(expr) = self.extract_box_new(fd_id, args) {
-      return expr;
-    }
+    let Generics {
+      tparams,
+      trait_bounds,
+      ..
+    } = self.base.get_or_extract_generics(def_id);
 
     // Special case for &str::to_string, erase it and return the argument directly.
     if let Some(expr) = self.extract_str_to_string(fd_id, args) {
@@ -375,8 +403,25 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       span,
     );
+    let mut args = self.extract_expr_refs(args.to_vec());
 
-    let args = self.extract_expr_refs(args.to_vec());
+    // If the function has trait bounds but is not on a class, we must find the
+    // corresponding evidence arguments.
+    if class_def.is_none() && !trait_bounds.is_empty() {
+      let type_substs = tparams
+        .iter()
+        .map(|st::TypeParameterDef { tp }| (*tp).into())
+        .zip(arg_tps_without_parents.as_slice().iter().copied())
+        .collect();
+
+      self
+        .base
+        .evidence_params(trait_bounds)
+        .iter()
+        .map(|vd| self.find_evidence_arg(vd, &type_substs))
+        .collect::<Option<Vec<_>>>()
+        .map(|evidence_args| args.extend(evidence_args));
+    }
 
     // If this function is a method, then we may need to extract it as a method call.
     // To do so, we need a type class instance as receiver.
@@ -391,6 +436,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .factory()
         .MethodInvocation(recv, fd_id, arg_tps_without_parents, args)
         .into(),
+
       None => self
         .factory()
         .FunctionInvocation(fd_id, arg_tps_without_parents, args)
@@ -398,22 +444,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_box_new(
-    &mut self,
-    fd_id: &st::SymbolIdentifier,
-    args: &Vec<ExprRef<'tcx>>,
-  ) -> Option<st::Expr<'l>> {
-    if fd_id.symbol_path != ["std", "boxed", "Box", "T", "new"] {
-      return None;
-    }
-
-    Some(self.extract_expr_ref(args.first().cloned().unwrap()))
+  fn extract_return(&mut self, value: Option<ExprRef<'tcx>>) -> st::Expr<'l> {
+    let expr = value
+      .map(|v| self.extract_expr_ref(v))
+      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+    self.factory().Return(expr).into()
   }
 
   fn extract_str_to_string(
     &mut self,
     fd_id: &st::SymbolIdentifier,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
   ) -> Option<st::Expr<'l>> {
     if args.len() != 1 || fd_id.symbol_path != ["std", "string", "ToString", "to_string"] {
       return None;
@@ -433,7 +474,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_str_eq(
     &mut self,
     fd_id: &st::SymbolIdentifier,
-    args: &Vec<ExprRef<'tcx>>,
+    args: &[ExprRef<'tcx>],
   ) -> Option<st::Expr<'l>> {
     if args.len() != 2 || fd_id.symbol_path != ["std", "cmp", "PartialEq", "eq"] {
       return None;
@@ -468,7 +509,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
-  fn extract_panic(&mut self, args: &Vec<ExprRef<'tcx>>, span: Span, is_fmt: bool) -> st::Expr<'l> {
+  fn extract_panic(&mut self, args: &[ExprRef<'tcx>], span: Span, is_fmt: bool) -> st::Expr<'l> {
     match &self.extract_expr_refs(args.to_vec())[..] {
       // TODO: Implement panic! with formatted message
       _ if is_fmt => self.unsupported_expr(span, "Cannot extract panic with formatted message"),
@@ -486,89 +527,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  /*
-  // Expressions for which `e.clone()` can be translated simply as `e`.
-  // This is sound, in particular, for types for which we don't extract any
-  // mutating operations.
-  fn can_treat_clone_as_identity(&mut self, expr: &'tcx hir::Expr<'tcx>) -> bool {
-    let expr_ty = self.tables.node_type(expr.hir_id);
-    match expr_ty.kind {
-      TyKind::Adt(adt_def, _) => self.base.is_bigint(adt_def),
-      _ => false,
-    }
-  }
-
-  fn extract_conversion_into(
-    &mut self,
-    outer: &'tcx hir::Expr<'tcx>,
-    inner: &'tcx hir::Expr<'tcx>,
-  ) -> st::Expr<'l> {
-    let from_ty = self.tables.node_type(inner.hir_id);
-    let to_ty = self.tables.node_type(outer.hir_id);
-    match (&from_ty.kind, &to_ty.kind) {
-      (TyKind::Int(_), TyKind::Adt(adt_def, _)) if self.base.is_bigint(adt_def) => self
-        .try_extract_bigint_lit(inner)
-        .unwrap_or_else(|reason| self.unsupported_expr(inner, reason)),
-      _ => self.unsupported_expr(
-        outer,
-        format!("Cannot extract conversion from {} to {}", from_ty, to_ty),
-      ),
-    }
-  }
-
-  fn try_extract_bigint_lit(&mut self, expr: &'tcx hir::Expr<'tcx>) -> Result<'l> {
-    use ast::LitKind;
-    let f = self.factory();
-    if let ExprKind::Lit(ref lit) = expr.kind {
-      match lit.node {
-        LitKind::Int(value, _) => {
-          let node_ty = self.tables.node_type(expr.hir_id);
-          match node_ty.kind {
-            ty::Int(_) => Ok(f.IntegerLiteral((value as i128).into()).into()),
-            _ => Err("Cannot extract BigInt from non-signed-int literal"),
-          }
-        }
-        _ => Err("Cannot extract BigInt from non-integral literal kind"),
-      }
-    } else {
-      Err("Can only extract BigInt from integer literals")
-    }
-  }
-
-  fn try_extract_bigint_expr(&mut self, expr: Expr<'tcx>) -> Result<'l> {
-    self.try_extract_bigint_lit(expr).or_else(|_| {
-      let expr_ty = self.tables.node_type(expr.hir_id);
-      if self.base.is_bigint_type(expr_ty) {
-        Ok(self.extract_expr(expr))
-      } else {
-        Err("Not a BigInt-convertible expr")
-      }
-    })
-  }
-
-  fn extract_method_call(&mut self, expr: &'tcx hir::Expr<'tcx>) -> st::Expr<'l> {
-    if let ExprKind::MethodCall(_path_seg, _, args) = expr.kind {
-      let def_path = self
-        .tables
-        .type_dependent_def(expr.hir_id)
-        .map(|(_, def_id)| def_id)
-        .map(|def_id| self.tcx().def_path_str(def_id))
-        .unwrap_or_else(|| "<unknown>".into());
-      let arg = &args[0];
-      // TODO: Fast check using `path_seg.ident.name == Symbol::intern("into")`?
-      match def_path.as_str() {
-        "std::convert::Into::into" => self.extract_conversion_into(expr, arg),
-        "std::clone::Clone::clone" if self.can_treat_clone_as_identity(expr) => {
-          self.extract_expr(arg)
-        }
-        _ => self.unsupported_expr(expr, "Cannot extract general method calls"),
-      }
-    } else {
-      unreachable!()
-    }
-  }
-  */
-
   fn extract_adt_construction(&mut self, expr: Expr<'tcx>) -> st::Expr<'l> {
     let f = self.factory();
     if let ExprKind::Adt {
@@ -580,7 +538,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     } = expr.kind
     {
-      let sort = self.base.extract_adt(adt_def.did);
+      let sort = self.base.get_or_extract_adt(adt_def.did);
       let constructor = sort.constructors[variant_index.index()];
       let arg_tps = self.extract_arg_types(substs.types(), expr.span);
 
@@ -663,19 +621,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       box kind @ PatKind::Binding { .. } => {
         assert!(binder.is_none());
         match self.try_pattern_to_var(&kind, true) {
-          Ok(binder) => {
-            let binder = f.ValDef(binder);
-            match kind {
-              PatKind::Binding {
-                subpattern: Some(subpattern),
-                ..
-              } => self.extract_pattern(subpattern, Some(binder)),
-              PatKind::Binding {
-                subpattern: None, ..
-              } => f.WildcardPattern(Some(binder)).into(),
-              _ => unreachable!(),
-            }
-          }
+          Ok(binder) => match kind {
+            PatKind::Binding {
+              subpattern: Some(subpattern),
+              ..
+            } => self.extract_pattern(subpattern, Some(binder)),
+            PatKind::Binding {
+              subpattern: None, ..
+            } => f.WildcardPattern(Some(binder)).into(),
+            _ => unreachable!(),
+          },
           Err(reason) => self.unsupported_pattern(
             pattern.span,
             format!("Unsupported pattern binding: {}", reason),
@@ -691,7 +646,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         subpatterns,
         substs,
       } => {
-        let sort = self.base.extract_adt(adt_def.did);
+        let sort = self.base.get_or_extract_adt(adt_def.did);
         let constructor = sort.constructors[variant_index.index()];
         let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
         let subpatterns = self.extract_subpatterns(subpatterns, constructor.fields.len());
@@ -703,7 +658,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // `Foo` is a variant name from an ADT with a single variant.
       box PatKind::Leaf { subpatterns } => match pattern.ty.kind {
         TyKind::Adt(adt_def, substs) => {
-          let sort = self.base.extract_adt(adt_def.did);
+          let sort = self.base.get_or_extract_adt(adt_def.did);
           assert_eq!(sort.constructors.len(), 1);
           let constructor = sort.constructors[0];
           let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
@@ -758,7 +713,42 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     subpatterns
   }
 
-  #[allow(clippy::unnecessary_unwrap)]
+  fn extract_assignment(&mut self, lhs: ExprRef<'tcx>, rhs: ExprRef<'tcx>) -> st::Expr<'l> {
+    let value = self.extract_expr_ref(rhs);
+    let lhs = self.mirror(lhs);
+    let lhs = self.strip_scope(lhs);
+    match lhs.kind {
+      ExprKind::VarRef { id } => self.factory().Assignment(self.fetch_var(id), value).into(),
+
+      ExprKind::Field { lhs, name } => {
+        let lhs = self.mirror(lhs);
+        match lhs.ty.kind {
+          TyKind::Adt(adt_def, _) => {
+            let adt = self.extract_expr(lhs);
+            let selector = self.extract_field_selector(adt_def.did, name);
+            self.factory().FieldAssignment(adt, selector, value).into()
+          }
+          ref t => self.unsupported_expr(
+            lhs.span,
+            format!("Cannot extract assignment to type {:?}", t),
+          ),
+        }
+      }
+
+      e => self.unsupported_expr(
+        lhs.span,
+        format!("Cannot extract assignment to kind {:?}", e),
+      ),
+    }
+  }
+
+  fn strip_scope(&mut self, expr: Expr<'tcx>) -> Expr<'tcx> {
+    match expr.kind {
+      ExprKind::Scope { value, .. } => self.mirror(value),
+      _ => expr,
+    }
+  }
+
   fn extract_block_(
     &mut self,
     stmts: &mut Vec<StmtRef<'tcx>>,
@@ -812,35 +802,45 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         StmtKind::Let {
           pattern,
-          initializer,
+          initializer: None,
+          ..
+        } => bail("Cannot extract let without initializer", pattern.span),
+
+        StmtKind::Let {
+          pattern,
+          initializer: Some(init),
           ..
         } => {
           // FIXME: Detect desugared `let`s
           let has_abnormal_source = false;
-          let var_result = self.try_pattern_to_var(&pattern.kind, false);
-
           if has_abnormal_source {
             // TODO: Support for loops
             bail(
               "Cannot extract let that resulted from desugaring",
               pattern.span,
             )
-          } else if let Err(reason) = var_result {
-            // TODO: Desugar complex patterns
-            bail(
-              format!("Cannot extract complex pattern in let: {}", reason).as_str(),
-              pattern.span,
-            )
-          } else if let Some(init) = initializer {
-            let vd = f.ValDef(var_result.unwrap());
-            let init = self.extract_expr_ref(init);
-            let exprs = acc_exprs.clone();
-            acc_exprs.clear();
-            let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
-            let last_expr = f.Let(vd, init, body_expr).into();
-            finish(exprs, last_expr)
           } else {
-            bail("Cannot extract let without initializer", pattern.span)
+            match self.try_pattern_to_var(&pattern.kind, false) {
+              // TODO: Desugar complex patterns
+              Err(reason) => bail(
+                &format!("Cannot extract complex pattern in let: {}", reason),
+                pattern.span,
+              ),
+              Ok(vd) => {
+                // recurse the extract all the following statements
+                let exprs = acc_exprs.clone();
+                acc_exprs.clear();
+                let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
+                // wrap that body expression into the Let
+                let init = self.extract_expr_ref(init);
+                let last_expr = if vd.is_mutable() {
+                  f.LetVar(vd, init, body_expr).into()
+                } else {
+                  f.Let(vd, init, body_expr).into()
+                };
+                finish(exprs, last_expr)
+              }
+            }
           }
         }
 
@@ -855,17 +855,40 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_block(&mut self, block: Block<'tcx>) -> st::Expr<'l> {
-    let Block {
+  fn extract_block(
+    &mut self,
+    Block {
       mut stmts,
       expr: final_expr,
       ..
-    } = block;
+    }: Block<'tcx>,
+  ) -> st::Expr<'l> {
     let final_expr = final_expr
       .map(|e| self.extract_expr_ref(e))
+      // If there's no final expression, we need to check whether the last
+      // statement is a return. If yes, we take the return as final expression.
+      .or_else(|| {
+        stmts
+          .last()
+          .cloned()
+          .and_then(|s| match self.mirror(s).kind {
+            StmtKind::Expr { expr, .. } => Some(expr),
+            _ => None,
+          })
+          .and_then(|expr| {
+            let expr = self.mirror(expr);
+            match self.strip_scope(expr).kind {
+              ExprKind::Return { value } => {
+                stmts.pop();
+                Some(self.extract_return(value))
+              }
+              _ => None,
+            }
+          })
+      })
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
-    stmts.reverse();
 
+    stmts.reverse();
     let mut spec_ids = HashMap::new();
     let body_expr = self.extract_block_(&mut stmts, &mut vec![], &mut spec_ids, final_expr);
     self.extract_specs(&spec_ids, body_expr)
@@ -901,29 +924,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &self,
     pat_kind: &PatKind<'tcx>,
     allow_subpattern: bool,
-  ) -> Result<&'l st::Variable<'l>> {
+  ) -> Result<&'l st::ValDef<'l>> {
     match pat_kind {
-      PatKind::Binding {
-        mutability: Mutability::Mut,
-        ..
-      } => Err("Mutable bindings are not supported"),
-
       PatKind::Binding {
         subpattern: Some(_),
         ..
       } if !allow_subpattern => Err("Subpatterns are not supported here"),
 
       PatKind::Binding {
-        mutability: Mutability::Not,
-        mode,
+        mutability,
+        mode: BindingMode::ByValue,
         var: hir_id,
         ..
-      } => match mode {
-        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared) => {
-          Ok(self.fetch_var(*hir_id))
+      }
+      | PatKind::Binding {
+        mutability,
+        mode: BindingMode::ByRef(BorrowKind::Shared),
+        var: hir_id,
+        ..
+      } => {
+        let var = self.fetch_var(*hir_id);
+        if *mutability == Mutability::Not || var.is_mutable() {
+          Ok(self.factory().ValDef(var))
+        } else {
+          Err("Binding mode not allowed")
         }
-        _ => Err("Binding mode not allowed"),
-      },
+      }
 
       // This encodes a user-written type ascription: let a: u32 = ...
       // Rustc needs these for borrow-checking but stainless doesn't, therefore

@@ -149,6 +149,21 @@ impl<'l, 'a> From<&'l ValDef<'a>> for &'l Variable<'a> {
   }
 }
 
+impl Variable<'_> {
+  pub fn is_mutable(&self) -> bool {
+    self.flags.iter().any(|f| match f {
+      Flag::IsVar(_) => true,
+      _ => false,
+    })
+  }
+}
+
+impl ValDef<'_> {
+  pub fn is_mutable(&self) -> bool {
+    self.v.is_mutable()
+  }
+}
+
 // Additional helpers that mirror those in Inox
 
 pub fn Int32Literal(value: Int) -> BVLiteral {
@@ -227,5 +242,9 @@ impl Factory {
         .map(|TypeParameterDef { tp }| (*tp).into())
         .collect(),
     )
+  }
+
+  pub fn evidence_flag(&self) -> Flag<'_> {
+    self.Annotation("evidence".into(), vec![]).into()
   }
 }

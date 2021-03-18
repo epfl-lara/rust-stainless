@@ -1,11 +1,9 @@
-use super::std_items::StdItem::*;
 use super::*;
 
 use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Generics as RustGenerics, PredicateKind, TraitRef,
-  Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, Predicate, PredicateKind, TraitRef, Ty, TyKind,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -101,9 +99,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      // Box type
-      //
-      // We erase the indirection the box provides and replace it by
+      // Box type – We erase the indirection the box provides and replace it by
       // the contained type.
       TyKind::Adt(adt_def, substitutions) if adt_def.is_box() => {
         self.extract_ty(substitutions.type_at(0), txtcx, span)
@@ -115,20 +111,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       // Immutably borrowed string slice, erased to a plain String
       TyKind::Ref(_, ty, Mutability::Not) if ty.kind == TyKind::Str => f.StringType().into(),
 
-      // All other ADTs
-      TyKind::Adt(adt_def, substitutions) => {
-        // If the ADT is a std_item, we need to extract it separately
-        if let Some(std_item) = self.std_items.def_to_item_opt(adt_def.did) {
-          if std_item == SetType {
-            let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
-            return f.SetType(arg_ty).into();
-          }
+      // "Real" ADTs
+      TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
+        // Stainless set type
+        Some(StdItem::CrateItem(CrateItem::SetType)) => {
+          let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
+          f.SetType(arg_ty).into()
         }
-
-        let sort_id = self.extract_adt_id(adt_def.did);
-        let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
-        f.ADTType(sort_id, arg_tps).into()
-      }
+        // Normal user-defined ADTs
+        _ => {
+          let sort_id = self.get_or_register_def(adt_def.did);
+          let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+          f.ADTType(sort_id, arg_tps).into()
+        }
+      },
 
       // Immutable references
       TyKind::Ref(_, ty, Mutability::Not) => self.extract_ty(ty, txtcx, span),
@@ -163,11 +159,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// Get the extracted generics for a def_id, usually a function or a class.
   /// Generics are cached after the first computation.
-  pub(super) fn get_generics(&mut self, def_id: DefId) -> Generics<'l> {
+  pub(super) fn get_or_extract_generics(&mut self, def_id: DefId) -> Generics<'l> {
     let id = self.get_or_register_def(def_id);
 
-    // FIXME: There was no easy solution to convince the borrow checker to
-    //   return a reference to the generics instead of cloning them.
+    // We currently have to clone the generics because they otherwise mutably
+    // borrow the entire `self`. Maybe there is a better way of doing this?
     self
       .with_extraction(|xt| xt.generics.get(id).cloned())
       .unwrap_or_else(|| {
@@ -181,7 +177,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let tcx = self.tcx;
     let span = tcx.span_of_impl(def_id).unwrap_or(DUMMY_SP);
     let generics = tcx.generics_of(def_id);
-    let predicates = tcx.predicates_of(def_id);
+    let predicates = tcx.predicates_defined_on(def_id);
 
     // Closures are strange. We just sanity check against the compiler internal type parameters
     // and don't try to extract anything else.
@@ -198,10 +194,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       };
     }
 
-    // Certain unextracted traits we don't complain about at all.
-    let should_silently_ignore_trait =
-      |trait_did: DefId| self.std_items.is_one_of(trait_did, &[SizedTrait]);
-
     // Discovering HOF parameters.
     // We extract `F: Fn*(S) -> T` trait predicates by replacing `F` by `S => T`.
     // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
@@ -209,12 +201,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
 
-    for (predicate, span) in predicates.predicates {
+    for (predicate, span) in self.all_predicates_of(def_id).iter() {
       match predicate.kind() {
         PredicateKind::Trait(ref data, _) => {
           let trait_ref = data.skip_binder().trait_ref;
           let trait_did = trait_ref.def_id;
-          if should_silently_ignore_trait(trait_did) {
+          // Certain unextracted traits we don't complain about at all.
+          if self.std_items.is_sized_trait(trait_did) {
             continue;
           }
 
@@ -222,7 +215,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let param_def = generics.type_param(&param_ty, tcx);
 
             // Extract as a closure, supersedes trait bound
-            if self.is_fn_like_trait(trait_did) {
+            if self.std_items.is_fn_like_trait(trait_did) {
               let params_ty = trait_ref.substs[1].expect_ty();
               let param_tys = params_ty.tuple_fields().collect();
               assert!(tparam_to_fun_params
@@ -243,7 +236,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
           if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
             let param_def = generics.type_param(&param_ty, tcx);
-            if self.is_fn_like_trait(trait_did) {
+            if self.std_items.is_fn_like_trait(trait_did) {
               let return_ty = data.skip_binder().ty;
               assert!(tparam_to_fun_return
                 .insert(param_def.index, (return_ty, *span))
@@ -310,8 +303,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Convert trait refs in the trait bounds to types
     let trait_bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
       .iter()
-      // Filter out the Self-trait-bound that rustc puts on traits
-      .filter(|&(tr, _)| tr.def_id != def_id)
       .map(|&(ty::TraitRef { def_id, substs }, span)| {
         let trait_id = self.get_or_register_def(def_id);
         let tps = self.extract_tys(substs.types(), &txtcx, span);
@@ -334,13 +325,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
-  /// Various helpers
-
-  pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    self
-      .std_items
-      .is_one_of(def_id, &[FnTrait, FnMutTrait, FnOnceTrait])
+  fn all_predicates_of(&self, def_id: DefId) -> Vec<&(Predicate<'tcx>, Span)> {
+    let predicates = self.tcx.predicates_defined_on(def_id);
+    let mut all_predicates = vec![predicates];
+    while let Some(parent_id) = all_predicates.last().and_then(|g| g.parent) {
+      all_predicates.push(self.tcx.predicates_defined_on(parent_id));
+    }
+    all_predicates
+      .iter()
+      .rev()
+      .flat_map(|pred| pred.predicates)
+      .collect()
   }
+
+  // Various helpers
 
   pub(super) fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
     match ty.kind {
@@ -378,13 +376,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 pub fn all_generic_params_of(tcx: TyCtxt<'_>, def_id: DefId) -> Vec<&GenericParamDef> {
   let generics = tcx.generics_of(def_id);
-  let mut all_generics: Vec<&RustGenerics> = vec![generics];
-  while let Some(parent_id) = all_generics.last().unwrap().parent {
+  let mut all_generics = vec![generics];
+  while let Some(parent_id) = all_generics.last().and_then(|g| g.parent) {
     all_generics.push(tcx.generics_of(parent_id));
   }
   all_generics
     .iter()
     .rev()
-    .flat_map(|generics| generics.params.iter().map(|param| param))
+    .flat_map(|generics| generics.params.iter())
     .collect()
 }
