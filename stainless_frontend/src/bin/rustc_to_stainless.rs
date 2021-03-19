@@ -1,10 +1,12 @@
 #![feature(rustc_private)]
+extern crate rustc_errors;
 extern crate rustc_middle;
 extern crate rustc_session;
 
 use std::env;
 use std::path::PathBuf;
 
+use rustc_errors::ErrorReported;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::ErrorOutputType;
 use rustc_session::early_error;
@@ -13,7 +15,7 @@ use stainless_backend::messages::*;
 use stainless_backend::{verify_program, Config};
 use stainless_data::ast as st;
 
-fn main() -> Result<(), ()> {
+fn main() -> Result<(), ErrorReported> {
   let args = std::env::args_os()
     .enumerate()
     .map(|(i, arg)| {
