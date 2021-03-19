@@ -308,7 +308,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           Some(self.extract_panic(args, span, true))
         }
 
-        // Set things
         StdItem::CrateItem(CrateItem::SetEmptyFn)
         | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
           Some(self.extract_set_creation(args, substs_ref, span))
@@ -324,9 +323,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
 
         // Box::new, erase it and return the argument directly.
-        StdItem::CrateItem(CrateItem::BoxNew) => {
+        StdItem::CrateItem(CrateItem::BoxNewFn) => {
           Some(self.extract_expr_ref(args.first().cloned().unwrap()))
         }
+        StdItem::CrateItem(CrateItem::ToStringFn) => {
+          self.extract_str_to_string(args.first().cloned().unwrap())
+        }
+        StdItem::CrateItem(CrateItem::PartialEqFn) => self.extract_partial_eq(args),
 
         _ => None,
       })
@@ -439,6 +442,34 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .map(|v| self.extract_expr_ref(v))
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
     self.factory().Return(expr).into()
+  }
+
+  fn extract_str_to_string(&mut self, arg: ExprRef<'tcx>) -> Option<st::Expr<'l>> {
+    let expr = self.mirror(arg);
+    self.is_str_type(&expr).then(|| self.extract_expr(expr))
+  }
+
+  /// Extracts a call to `PartialEq::eq`. Currently, this only works for strings
+  /// and otherwise returns None.
+  fn extract_partial_eq(&mut self, args: &[ExprRef<'tcx>]) -> Option<st::Expr<'l>> {
+    match args {
+      [lhs, rhs] => {
+        let lexpr = self.mirror(lhs.clone());
+        let rexpr = self.mirror(rhs.clone());
+        (self.is_str_type(&lexpr) && self.is_str_type(&rexpr)).then(|| {
+          self
+            .factory()
+            .Equals(self.extract_expr(lexpr), self.extract_expr(rexpr))
+            .into()
+        })
+      }
+      _ => unreachable!(),
+    }
+  }
+
+  fn is_str_type(&mut self, expr: &Expr<'tcx>) -> bool {
+    let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+    matches!(ty, st::Type::StringType(_))
   }
 
   fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>

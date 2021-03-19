@@ -105,6 +105,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         self.extract_ty(substitutions.type_at(0), txtcx, span)
       }
 
+      // Immutably borrowed string slice, erased to a plain String
+      TyKind::Ref(_, ty, Mutability::Not) if ty.kind == TyKind::Str => f.StringType().into(),
+
       // "Real" ADTs
       TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
         // Stainless set type
@@ -112,6 +115,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
           f.SetType(arg_ty).into()
         }
+        // String type
+        Some(StdItem::CrateItem(CrateItem::StringType)) => f.StringType().into(),
+
         // Normal user-defined ADTs
         _ => {
           let sort_id = self.get_or_register_def(adt_def.did);

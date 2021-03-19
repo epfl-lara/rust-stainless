@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use rustc_hir::def::DefKind;
 use rustc_hir::def_id::{CrateNum, DefId, DefIndex};
 use rustc_hir::lang_items::LangItem as RustLangItem;
 use rustc_middle::ty::TyCtxt;
@@ -33,8 +34,11 @@ pub enum CrateItem {
   SubsetOfFn,
   SetEmptyFn,
   SetSingletonFn,
-  BoxNew,
+  BoxNewFn,
   PhantomData,
+  ToStringFn,
+  StringType,
+  PartialEqFn,
 }
 
 use CrateItem::*;
@@ -52,8 +56,11 @@ impl CrateItem {
       SubsetOfFn => "stainless::Set::<T>::is_subset_of",
       SetEmptyFn => "stainless::Set::<T>::empty",
       SetSingletonFn => "stainless::Set::<T>::singleton",
-      BoxNew => "std::boxed::Box::<T>::new",
+      BoxNewFn => "std::boxed::Box::<T>::new",
       PhantomData => "std::marker::PhantomData",
+      ToStringFn => "std::string::ToString::to_string",
+      StringType => "std::string::String",
+      PartialEqFn => "std::cmp::PartialEq::eq",
     }
   }
 
@@ -62,9 +69,17 @@ impl CrateItem {
   /// layers under `std`.
   pub fn crate_name(&self) -> &'static str {
     match self {
-      BoxNew => "alloc",
-      PhantomData => "core",
+      BoxNewFn | ToStringFn | StringType => "alloc",
+      PhantomData | PartialEqFn => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
+    }
+  }
+
+  pub fn def_kind(&self) -> DefKind {
+    match self {
+      BeginPanicFmtFn => DefKind::Fn,
+      SetType | StringType | PhantomData => DefKind::Struct,
+      _ => DefKind::AssocFn,
     }
   }
 }
@@ -149,8 +164,17 @@ impl StdItems {
         break;
       }
       let def_id = Self::make_def_id(cnum, index);
-      if let Some(item) = items.remove(tcx.def_path_str(def_id).as_str()) {
-        self.def_to_item.insert(def_id, StdItem::CrateItem(item));
+      let path = tcx.def_path_str(def_id);
+
+      // FIXME: we have to query the map twice, because for some def_ids the
+      //   `tcx.def_kind` may panic. Once update to nightly > 2021, one can use
+      //   `tcx.opt_def_kind` to eliminate the problem.
+      if let Some(item) = items.get(path.as_str()) {
+        if tcx.def_kind(def_id) == item.def_kind() {
+          if let Some(item) = items.remove(path.as_str()) {
+            self.def_to_item.insert(def_id, StdItem::CrateItem(item));
+          }
+        }
       }
     }
   }
