@@ -21,6 +21,7 @@ pub enum LangItem {
   FnOnceTrait,
   SizedTrait,
   BeginPanicFn,
+  PanicFn,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
@@ -102,6 +103,7 @@ impl LangItem {
       LangItem::FnOnceTrait => RustLangItem::FnOnce,
       LangItem::SizedTrait => RustLangItem::Sized,
       LangItem::BeginPanicFn => RustLangItem::BeginPanic,
+      LangItem::PanicFn => RustLangItem::Panic,
     }
   }
 }

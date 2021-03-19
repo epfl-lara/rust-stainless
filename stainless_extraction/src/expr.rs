@@ -43,6 +43,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       },
 
       ExprKind::Adt { .. } => self.extract_adt_construction(expr),
+
       ExprKind::Block { body: block } => match block.safety_mode {
         BlockSafety::Safe => self.extract_block(block),
         _ => self.unsupported_expr(expr.span, "Cannot extract unsafe block"),
@@ -281,7 +282,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .def_to_item_opt(def_id)
       .and_then(|sti| match sti {
         // Panics
-        StdItem::LangItem(LangItem::BeginPanicFn) => Some(self.extract_panic(args, span, false)),
+        StdItem::LangItem(LangItem::BeginPanicFn) | StdItem::LangItem(LangItem::PanicFn) => {
+          Some(self.extract_panic(args, span, false))
+        }
         StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
           Some(self.extract_panic(args, span, true))
         }
