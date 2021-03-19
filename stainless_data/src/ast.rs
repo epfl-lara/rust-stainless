@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![allow(clippy::upper_case_acronyms)]
 
 #[macro_use]
 mod macros;
@@ -151,10 +152,7 @@ impl<'l, 'a> From<&'l ValDef<'a>> for &'l Variable<'a> {
 
 impl Variable<'_> {
   pub fn is_mutable(&self) -> bool {
-    self.flags.iter().any(|f| match f {
-      Flag::IsVar(_) => true,
-      _ => false,
-    })
+    self.flags.iter().any(|f| matches!(f, Flag::IsVar(_)))
   }
 }
 

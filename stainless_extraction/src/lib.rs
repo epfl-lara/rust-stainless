@@ -291,10 +291,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let flags = var
       .flags
       .iter()
-      .filter(|flag| match flag {
-        st::Flag::IsVar(_) => false,
-        _ => true,
-      })
+      .filter(|flag| !matches!(flag, st::Flag::IsVar(_)))
       .copied()
       .collect();
     self.factory().Variable(new_id, var.tpe, flags)

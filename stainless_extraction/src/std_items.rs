@@ -194,11 +194,11 @@ impl StdItems {
 
   #[inline]
   pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    match self.def_to_item_opt(def_id) {
+    matches!(
+      self.def_to_item_opt(def_id),
       Some(StdItem::LangItem(LangItem::FnTrait))
-      | Some(StdItem::LangItem(LangItem::FnMutTrait))
-      | Some(StdItem::LangItem(LangItem::FnOnceTrait)) => true,
-      _ => false,
-    }
+        | Some(StdItem::LangItem(LangItem::FnMutTrait))
+        | Some(StdItem::LangItem(LangItem::FnOnceTrait))
+    )
   }
 }

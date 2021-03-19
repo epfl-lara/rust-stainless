@@ -340,18 +340,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   // Various helpers
 
+  #[inline]
   pub(super) fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
-    match ty.kind() {
-      TyKind::Int(_) | TyKind::Uint(_) => true,
-      _ => false,
-    }
+    matches!(ty.kind(), TyKind::Int(_) | TyKind::Uint(_))
   }
 
+  #[inline]
   pub(super) fn is_signed_bv_type(&self, ty: Ty<'tcx>) -> bool {
-    match ty.kind() {
-      TyKind::Int(_) => true,
-      _ => false,
-    }
+    matches!(ty.kind(), TyKind::Int(_))
   }
 
   pub(super) fn is_bigint_type(&self, ty: Ty<'tcx>) -> bool {

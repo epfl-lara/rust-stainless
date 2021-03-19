@@ -114,7 +114,7 @@ pub trait Serializer: Sized {
   fn write_marker(&mut self, marker: MarkerId) -> SerializationResult {
     let mut id: u32 = marker.0;
     while id >= 255 {
-      self.write_u8(255 as u8)?;
+      self.write_u8(255)?;
       id -= 255
     }
     self.write_u8(id as u8)

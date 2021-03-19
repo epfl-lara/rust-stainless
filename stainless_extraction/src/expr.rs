@@ -387,13 +387,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .zip(arg_tps_without_parents.as_slice().iter().copied())
         .collect();
 
-      self
+      if let Some(evidence_args) = self
         .base
         .evidence_params(trait_bounds)
         .iter()
         .map(|vd| self.find_evidence_arg(vd, &type_substs))
         .collect::<Option<Vec<_>>>()
-        .map(|evidence_args| args.extend(evidence_args));
+      {
+        args.extend(evidence_args)
+      }
     }
 
     // If this function is a method, then we may need to extract it as a method call.
@@ -452,10 +454,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     I: IntoIterator<Item = Ty<'tcx>>,
   {
     // Remove closure type parameters (they were already replaced by FunctionTypes)
-    let arg_tys = types.into_iter().filter(|ty| match ty.kind() {
-      TyKind::Closure(..) => false,
-      _ => true,
-    });
+    let arg_tys = types
+      .into_iter()
+      .filter(|ty| !matches!(ty.kind(), TyKind::Closure(..)));
     self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
@@ -501,7 +502,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let args = if let Some(FruInfo { base, .. }) = base {
         // we take the explicit fields
         let fields_by_index = fields
-          .into_iter()
+          .iter()
           .map(|f| (f.name.index(), self.extract_expr(f.expr)))
           .collect::<HashMap<_, _>>();
         let adt = self.extract_expr(base);
@@ -554,7 +555,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     arms: &[Arm<'a, 'tcx>],
   ) -> st::Expr<'l> {
     let scrutinee = self.extract_expr(scrutinee);
-    let cases = arms.into_iter().map(|arm| self.extract_arm(arm)).collect();
+    let cases = arms.iter().map(|arm| self.extract_arm(arm)).collect();
     self.factory().MatchExpr(scrutinee, cases).into()
   }
 

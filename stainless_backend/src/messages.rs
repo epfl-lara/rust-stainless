@@ -54,10 +54,10 @@ pub enum VerificationStatus {
 
 impl VerificationStatus {
   pub fn is_valid(&self) -> bool {
-    match self {
-      VerificationStatus::Valid {} | VerificationStatus::ValidFromCache {} => true,
-      _ => false,
-    }
+    matches!(
+      self,
+      VerificationStatus::Valid {} | VerificationStatus::ValidFromCache {}
+    )
   }
 }
 
