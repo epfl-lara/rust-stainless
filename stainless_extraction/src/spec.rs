@@ -7,6 +7,7 @@ use crate::flags::{extract_flag, Flag};
 use crate::ty::{all_generic_params_of, TyExtractionCtxt};
 
 use rustc_ast::ast::Attribute;
+use rustc_middle::ty::WithOptConstParam;
 
 use stainless_data::ast as st;
 
@@ -118,7 +119,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       bxtor.populate_def_context(&mut HashMap::new(), &[]);
 
       // Extract the spec function's body
-      let spec_expr = bxtor.hcx.mirror(&bxtor.body.value);
+      let spec_expr = thir::build_thir(
+        bxtor.tcx(),
+        WithOptConstParam::unknown(def_id.expect_local()),
+        bxtor.arena,
+        &bxtor.body.value,
+      );
       bxtor.extract_expr(spec_expr)
     });
 

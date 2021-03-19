@@ -97,11 +97,11 @@ lazy_static! {
 impl LangItem {
   fn rust_lang_item(self) -> RustLangItem {
     match self {
-      LangItem::FnTrait => RustLangItem::FnTraitLangItem,
-      LangItem::FnMutTrait => RustLangItem::FnMutTraitLangItem,
-      LangItem::FnOnceTrait => RustLangItem::FnOnceTraitLangItem,
-      LangItem::SizedTrait => RustLangItem::SizedTraitLangItem,
-      LangItem::BeginPanicFn => RustLangItem::BeginPanicFnLangItem,
+      LangItem::FnTrait => RustLangItem::Fn,
+      LangItem::FnMutTrait => RustLangItem::FnMut,
+      LangItem::FnOnceTrait => RustLangItem::FnOnce,
+      LangItem::SizedTrait => RustLangItem::Sized,
+      LangItem::BeginPanicFn => RustLangItem::BeginPanic,
     }
   }
 }

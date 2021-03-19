@@ -96,11 +96,14 @@ pub(super) fn extract_flag(
   attr: &Attribute,
 ) -> Result<(Flag, Option<TokenStream>), Option<String>> {
   match &attr.kind {
-    AttrKind::Normal(ast::AttrItem {
-      path: ast::Path { ref segments, .. },
-      args,
-      ..
-    }) if segments.len() == 3 && segments[1].ident.to_string() == "stainless" => {
+    AttrKind::Normal(
+      ast::AttrItem {
+        path: ast::Path { ref segments, .. },
+        args,
+        ..
+      },
+      _,
+    ) if segments.len() == 3 && segments[1].ident.to_string() == "stainless" => {
       let name = segments[2].ident.to_string();
 
       Flag::from_name(name.as_str())

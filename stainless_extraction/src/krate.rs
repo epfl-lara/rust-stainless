@@ -4,7 +4,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind};
 use rustc_hir_pretty as pretty;
-use rustc_middle::ty::{AssocKind, List};
+use rustc_middle::ty::{self as ty, AssocKind, List};
 use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
@@ -47,7 +47,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
-        let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id).to_def_id();
+        let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id()).to_def_id();
         let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
         match &item.kind {
@@ -84,7 +84,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           }
 
           // Store functions of impl blocks and their specs
-          ItemKind::Impl { items, .. } => {
+          ItemKind::Impl(hir::Impl { items, .. }) => {
             // if the impl implements a trait, then we need to extract it as a class/object.
             let class_def: Option<&'l st::ClassDef<'l>> = self
               .xtor
@@ -93,7 +93,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
 
             self.extract_class_item(
-              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
               class_def,
             )
           }
@@ -104,7 +104,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           ItemKind::Trait(_, _, _, _, items) => {
             let cd = self.xtor.extract_class(def_id, None, item.span);
             self.extract_class_item(
-              items.iter().map(|i| (i.id.hir_id, i.kind, i.defaultness)),
+              items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
               Some(cd),
             )
           }
@@ -137,6 +137,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             .xtor
             .unsupported(impl_item.span, "Impl item other than function"),
         }
+      }
+
+      fn visit_foreign_item(&mut self, f: &'tcx hir::ForeignItem<'tcx>) {
+        self.xtor.unsupported(f.span, "Foreign item")
       }
     }
 
@@ -329,7 +333,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Extract the function signature
     let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
     let poly_fn_sig = self.tcx.fn_sig(def_id);
-    let fn_sig = self.tcx.liberate_late_bound_regions(def_id, &poly_fn_sig);
+    let fn_sig = self.tcx.liberate_late_bound_regions(def_id, poly_fn_sig);
     let params: Params<'l> = fn_sig
       .inputs()
       .iter()
@@ -361,7 +365,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let tcx = self.tcx;
 
     assert!(fn_item.def_id.is_local());
-    let hir_id = tcx.hir().as_local_hir_id(fn_item.def_id.expect_local());
+    let hir_id = tcx
+      .hir()
+      .local_def_id_to_hir_id(fn_item.def_id.expect_local());
     let class_def = self.get_class_of_method(fn_item.fd_id);
 
     // Extract flags
@@ -396,7 +402,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
 
         // Extract the body
-        let body_expr = bxtor.hcx.mirror(&bxtor.body.value);
+        let body_expr = thir::build_thir(
+          bxtor.tcx(),
+          ty::WithOptConstParam::unknown(fn_item.def_id.expect_local()),
+          bxtor.arena,
+          &bxtor.body.value,
+        );
         let body_expr = bxtor.extract_expr(body_expr);
         let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
@@ -456,7 +467,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (flags, mut flags_by_symbol, hir_id_opt) = def_id
       .as_local()
       .map(|local_def_id| {
-        let hir_id = self.tcx.hir().as_local_hir_id(local_def_id);
+        let hir_id = self.tcx.hir().local_def_id_to_hir_id(local_def_id);
         let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
         (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
       })
