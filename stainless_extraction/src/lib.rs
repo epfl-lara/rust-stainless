@@ -31,11 +31,11 @@ mod utils;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId};
 use rustc_middle::span_bug;
-use rustc_middle::ty::{TyCtxt, TypeckResults};
+use rustc_middle::ty::{TyCtxt, TypeckResults, WithOptConstParam};
 use rustc_mir_build::thir;
 use rustc_span::{MultiSpan, Span};
 
@@ -404,6 +404,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self
       .base
       .extract_ty(sig.output(), &self.txtcx, decl.output.span())
+  }
+
+  fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
+    let body_expr = thir::build_thir(
+      self.tcx(),
+      WithOptConstParam::unknown(ldi),
+      self.arena,
+      &self.body.value,
+    );
+    self.extract_expr(body_expr)
   }
 
   /// Extracts the receiver object/instance of a method call for a type class.

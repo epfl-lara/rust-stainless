@@ -4,7 +4,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind};
 use rustc_hir_pretty as pretty;
-use rustc_middle::ty::{self as ty, AssocKind, List};
+use rustc_middle::ty::{AssocKind, List};
 use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
@@ -401,14 +401,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
 
-        // Extract the body
-        let body_expr = thir::build_thir(
-          bxtor.tcx(),
-          ty::WithOptConstParam::unknown(fn_item.def_id.expect_local()),
-          bxtor.arena,
-          &bxtor.body.value,
-        );
-        let body_expr = bxtor.extract_expr(body_expr);
+        let body_expr = bxtor.extract_body_expr(fn_item.def_id.expect_local());
         let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
         (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
