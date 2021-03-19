@@ -855,28 +855,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.extract_specs(&spec_ids, body_expr)
   }
 
-  // Various helpers
-
-  /// Detect whether the given match corresponds to an if expression by its
-  /// shape.
-  fn looks_like_if(&mut self, scrutinee: &Expr<'a, 'tcx>, arms: &[Arm<'a, 'tcx>]) -> bool {
-    // Ifs are encoded as ExprKind::Match with two arms, one for the then_expr,
-    // one for the else_expr. The then_expr's pattern is a constant 'true' pattern, while
-    // the else_expr's is a wildcard pattern. The else_expr may contain itself an ExprKind::Match
-    // for a possible 'else if {}' (recurse on 'if {}').
-    arms.len() == 2
-      && scrutinee.ty.is_bool()
-      && match (&arms[0].pattern.kind, &arms[1].pattern.kind) {
-        (box PatKind::Constant { value: konst }, box PatKind::Wild) => {
-          match Literal::from_const(*konst, self.tcx()) {
-            Some(Literal::Bool(b)) => b,
-            _ => false,
-          }
-        }
-        _ => false,
-      }
-  }
-
   fn try_pattern_to_var(
     &self,
     pat_kind: &PatKind<'tcx>,
