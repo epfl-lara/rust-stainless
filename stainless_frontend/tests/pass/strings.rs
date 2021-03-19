@@ -28,7 +28,7 @@ pub fn test_eq() {
 #[allow(unused_variables)]
 #[pre(s.len() > 0)]
 fn need_non_empty(s: &str) {
-  assert!(true)
+  assert!(s.len() != 0);
 }
 pub fn provide_non_empty(s: &str) {
   if s.len() > 10 {
