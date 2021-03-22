@@ -9,13 +9,12 @@ extern crate rustc_ast;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_hir_pretty;
-extern crate rustc_infer;
 extern crate rustc_interface;
 extern crate rustc_middle;
-extern crate rustc_session;
+extern crate rustc_mir_build;
 extern crate rustc_span;
 extern crate rustc_target;
-extern crate rustc_ty;
+extern crate rustc_ty_utils;
 
 mod bindings;
 mod classes;
@@ -32,13 +31,12 @@ mod utils;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use rustc_hair::hair;
-use rustc_hir::def_id::DefId;
+use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId};
-use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 use rustc_middle::span_bug;
-use rustc_middle::ty::{TyCtxt, TypeckTables};
+use rustc_middle::ty::{TyCtxt, TypeckResults, WithOptConstParam};
+use rustc_mir_build::thir;
 use rustc_span::{MultiSpan, Span};
 
 use stainless_data::ast as st;
@@ -293,10 +291,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let flags = var
       .flags
       .iter()
-      .filter(|flag| match flag {
-        st::Flag::IsVar(_) => false,
-        _ => true,
-      })
+      .filter(|flag| !matches!(flag, st::Flag::IsVar(_)))
       .copied()
       .collect();
     self.factory().Variable(new_id, var.tpe, flags)
@@ -313,14 +308,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   where
     F: FnOnce(&mut BodyExtractor<'_, 'l, 'tcx>) -> T,
   {
-    self.tcx.infer_ctxt().enter(|infcx| {
-      // Note that upon its creation, BodyExtractor moves out our Extraction
-      let mut bxtor = BodyExtractor::new(self, &infcx, hir_id, txtcx, current_class);
-      let result = f(&mut bxtor);
-      // We reclaim the Extraction after the BodyExtractor's work is done
-      self.extraction = bxtor.base.extraction;
-      result
-    })
+    let arena = thir::Arena::default();
+    // Note that upon its creation, BodyExtractor moves out our Extraction
+    let mut bxtor = BodyExtractor::new(self, &arena, hir_id, txtcx, current_class);
+    let result = f(&mut bxtor);
+    // We reclaim the Extraction after the BodyExtractor's work is done
+    self.extraction = bxtor.base.extraction;
+    result
   }
 
   /// Error reporting helpers
@@ -336,9 +330,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
 /// BodyExtractor is used to extract, for example, function bodies
 struct BodyExtractor<'a, 'l, 'tcx: 'l> {
+  arena: &'a thir::Arena<'a, 'tcx>,
   base: BaseExtractor<'l, 'tcx>,
-  hcx: hair::cx::Cx<'a, 'tcx>,
-  tables: &'a TypeckTables<'tcx>,
+  tables: &'a TypeckResults<'tcx>,
   body: &'tcx hir::Body<'tcx>,
   txtcx: TyExtractionCtxt<'l>,
   dcx: DefContext<'l>,
@@ -348,7 +342,7 @@ struct BodyExtractor<'a, 'l, 'tcx: 'l> {
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn new(
     base: &mut BaseExtractor<'l, 'tcx>,
-    infcx: &'a InferCtxt<'a, 'tcx>,
+    arena: &'a thir::Arena<'a, 'tcx>,
     hir_id: HirId,
     txtcx: TyExtractionCtxt<'l>,
     current_class: Option<&'l st::ClassDef<'l>>,
@@ -361,21 +355,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       extraction.expect("Waiting for another BodyExtractor to finish"),
     );
 
-    // Set up HAIR context
-    let hcx = hair::cx::Cx::new(infcx, hir_id);
-
     // Set up typing tables and signature
-    let def_id = tcx.hir().local_def_id(hir_id);
-    assert!(tcx.has_typeck_tables(def_id));
-    let tables = tcx.typeck_tables_of(def_id);
+    let local_def_id = tcx.hir().local_def_id(hir_id);
+    assert!(tcx.has_typeck_results(local_def_id));
+    let tables = tcx.typeck(local_def_id);
 
     // Fetch the body and the corresponding DefContext containing all bindings
     let body_id = tcx.hir().body_owned_by(hir_id);
     let body = tcx.hir().body(body_id);
 
     BodyExtractor {
+      arena,
       base,
-      hcx,
       tables,
       body,
       txtcx,
@@ -386,7 +377,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   #[inline]
   fn tcx(&self) -> TyCtxt<'tcx> {
-    self.hcx.tcx()
+    self.base.tcx
   }
 
   #[inline]
@@ -403,13 +394,26 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn return_tpe(&mut self) -> st::Type<'l> {
-    let hir_id = self.hcx.root_lint_level;
+    let hir_id = self
+      .tcx()
+      .hir()
+      .local_def_id_to_hir_id(self.tables.hir_owner);
     let sigs = self.tables.liberated_fn_sigs();
     let sig = sigs.get(hir_id).unwrap();
     let decl = self.tcx().hir().fn_decl_by_hir_id(hir_id).unwrap();
     self
       .base
       .extract_ty(sig.output(), &self.txtcx, decl.output.span())
+  }
+
+  fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
+    let body_expr = thir::build_thir(
+      self.tcx(),
+      WithOptConstParam::unknown(ldi),
+      self.arena,
+      &self.body.value,
+    );
+    self.extract_expr(body_expr)
   }
 
   /// Extracts the receiver object/instance of a method call for a type class.

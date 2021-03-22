@@ -21,6 +21,7 @@ pub enum LangItem {
   FnOnceTrait,
   SizedTrait,
   BeginPanicFn,
+  PanicFn,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, IntoEnumIterator)]
@@ -97,11 +98,12 @@ lazy_static! {
 impl LangItem {
   fn rust_lang_item(self) -> RustLangItem {
     match self {
-      LangItem::FnTrait => RustLangItem::FnTraitLangItem,
-      LangItem::FnMutTrait => RustLangItem::FnMutTraitLangItem,
-      LangItem::FnOnceTrait => RustLangItem::FnOnceTraitLangItem,
-      LangItem::SizedTrait => RustLangItem::SizedTraitLangItem,
-      LangItem::BeginPanicFn => RustLangItem::BeginPanicFnLangItem,
+      LangItem::FnTrait => RustLangItem::Fn,
+      LangItem::FnMutTrait => RustLangItem::FnMut,
+      LangItem::FnOnceTrait => RustLangItem::FnOnce,
+      LangItem::SizedTrait => RustLangItem::Sized,
+      LangItem::BeginPanicFn => RustLangItem::BeginPanic,
+      LangItem::PanicFn => RustLangItem::Panic,
     }
   }
 }
@@ -192,11 +194,11 @@ impl StdItems {
 
   #[inline]
   pub(super) fn is_fn_like_trait(&self, def_id: DefId) -> bool {
-    match self.def_to_item_opt(def_id) {
+    matches!(
+      self.def_to_item_opt(def_id),
       Some(StdItem::LangItem(LangItem::FnTrait))
-      | Some(StdItem::LangItem(LangItem::FnMutTrait))
-      | Some(StdItem::LangItem(LangItem::FnOnceTrait)) => true,
-      _ => false,
-    }
+        | Some(StdItem::LangItem(LangItem::FnMutTrait))
+        | Some(StdItem::LangItem(LangItem::FnOnceTrait))
+    )
   }
 }

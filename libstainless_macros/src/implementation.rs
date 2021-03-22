@@ -156,6 +156,13 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
     )
   }
 
+  // Remove a warning because spec closures are never called
+  attrs.extend(
+    Attribute::parse_outer
+      .parse_str("#[allow(unused_must_use)]")
+      .unwrap(),
+  );
+
   let spec_closures = fn_specs.specs.into_iter().map(make_spec_fn);
   let block = Box::new(Block {
     brace_token: Brace::default(),

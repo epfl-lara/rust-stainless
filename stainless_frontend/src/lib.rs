@@ -1,16 +1,17 @@
 #![feature(rustc_private)]
 extern crate rustc_ast;
 extern crate rustc_driver;
+extern crate rustc_errors;
 extern crate rustc_hir;
 extern crate rustc_hir_pretty;
-extern crate rustc_infer;
 extern crate rustc_interface;
 extern crate rustc_middle;
 extern crate rustc_span;
 extern crate rustc_target;
-extern crate rustc_ty;
+extern crate rustc_ty_utils;
 
-use rustc_driver::{run_compiler, Callbacks, Compilation};
+use rustc_driver::{Callbacks, Compilation, RunCompiler};
+use rustc_errors::ErrorReported;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::{interface, Queries};
 use rustc_middle::ty::TyCtxt;
@@ -20,15 +21,12 @@ use stainless_data::ast as st;
 pub fn run<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send>(
   mut args: Vec<String>,
   on_extraction: E,
-) -> Result<(), ()> {
+) -> Result<(), ErrorReported> {
   let mut callbacks = ExtractionCallbacks::new(on_extraction);
-  let file_loader = None;
   args.extend(vec!["--cfg".into(), "stainless".into()]);
 
   rustc_driver::install_ice_hook();
-  rustc_driver::catch_fatal_errors(|| run_compiler(&args, &mut callbacks, file_loader, None))
-    .map(|_| ())
-    .map_err(|_| ())
+  rustc_driver::catch_fatal_errors(|| RunCompiler::new(&args, &mut callbacks).run()).map(|_| ())
 }
 
 struct ExtractionCallbacks<E>

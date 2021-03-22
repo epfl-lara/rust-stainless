@@ -31,7 +31,7 @@ impl Literal {
   }
 
   pub fn from_const(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
-    match konst.ty.kind {
+    match konst.ty.kind() {
       _ if konst.ty.is_unit() => Some(Literal::Unit),
 
       TyKind::Bool => {
@@ -53,15 +53,9 @@ impl Literal {
         value.map(|value| Literal::Uint { value, size })
       }
 
-      TyKind::Ref(
-        _,
-        ty::TyS {
-          kind: TyKind::Str, ..
-        },
-        _,
-      ) => match konst.val {
+      TyKind::Ref(_, ty, _) if *ty.kind() == TyKind::Str => match konst.val {
         ConstKind::Value(ConstValue::Slice { data, start, end }) => {
-          let slice = data.inspect_with_undef_and_ptr_outside_interpreter(start..end);
+          let slice = data.inspect_with_uninit_and_ptr_outside_interpreter(start..end);
           let s = ::std::str::from_utf8(slice).expect("Expected UTF8 str in ConstValue");
           Some(Literal::String(s.into()))
         }

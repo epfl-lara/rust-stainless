@@ -1,9 +1,9 @@
 use super::*;
 
-use rustc_ast::ast;
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, Predicate, PredicateKind, TraitRef, Ty, TyKind,
+  AdtDef, GenericParamDef, GenericParamDefKind, IntTy, Predicate, PredicateKind, TraitRef, Ty,
+  TyKind, UintTy,
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -56,14 +56,14 @@ fn pointer_bit_width(tcx: TyCtxt<'_>) -> u64 {
 /// Get the bit width of an integer type (signed) which is either the hardcoded
 /// `bit_width` in `ast` or the width of an isize, see [pointer_bit_width()].
 #[inline]
-pub fn int_bit_width(int_ty: ast::IntTy, tcx: TyCtxt<'_>) -> u64 {
+pub fn int_bit_width(int_ty: &IntTy, tcx: TyCtxt<'_>) -> u64 {
   int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
 /// Get the bit width of an integer type (unsigned) which is either the hardcoded
 /// `bit_width` in `ast` or the width of an usize, see [pointer_bit_width()].
 #[inline]
-pub fn uint_bit_width(int_ty: ast::UintTy, tcx: TyCtxt<'_>) -> u64 {
+pub fn uint_bit_width(int_ty: &UintTy, tcx: TyCtxt<'_>) -> u64 {
   int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
@@ -75,7 +75,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     span: Span,
   ) -> st::Type<'l> {
     let f = self.factory();
-    match ty.kind {
+    match ty.kind() {
       TyKind::Bool => f.BooleanType().into(),
 
       // Integer types
@@ -106,7 +106,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       }
 
       // Immutably borrowed string slice, erased to a plain String
-      TyKind::Ref(_, ty, Mutability::Not) if ty.kind == TyKind::Str => f.StringType().into(),
+      TyKind::Ref(_, ty, Mutability::Not) if *ty.kind() == TyKind::Str => f.StringType().into(),
 
       // "Real" ADTs
       TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
@@ -136,7 +136,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .into(),
 
       _ => {
-        self.unsupported(span, format!("Cannot extract type {:?}", ty.kind));
+        self.unsupported(span, format!("Cannot extract type {:?}", ty.kind()));
         f.Untyped().into()
       }
     }
@@ -202,16 +202,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
 
     for (predicate, span) in self.all_predicates_of(def_id).iter() {
-      match predicate.kind() {
+      match predicate.kind().skip_binder() {
         PredicateKind::Trait(ref data, _) => {
-          let trait_ref = data.skip_binder().trait_ref;
+          let trait_ref = data.trait_ref;
           let trait_did = trait_ref.def_id;
           // Certain unextracted traits we don't complain about at all.
           if self.std_items.is_sized_trait(trait_did) {
             continue;
           }
 
-          if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
+          if let TyKind::Param(param_ty) = trait_ref.self_ty().kind() {
             let param_def = generics.type_param(&param_ty, tcx);
 
             // Extract as a closure, supersedes trait bound
@@ -231,13 +231,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           }
         }
         PredicateKind::Projection(ref data) => {
-          let trait_ref = data.skip_binder().projection_ty.trait_ref(tcx);
+          let trait_ref = data.projection_ty.trait_ref(tcx);
           let trait_did = trait_ref.def_id;
 
-          if let TyKind::Param(param_ty) = trait_ref.self_ty().kind {
+          if let TyKind::Param(param_ty) = trait_ref.self_ty().kind() {
             let param_def = generics.type_param(&param_ty, tcx);
             if self.std_items.is_fn_like_trait(trait_did) {
-              let return_ty = data.skip_binder().ty;
+              let return_ty = data.ty;
               assert!(tparam_to_fun_return
                 .insert(param_def.index, (return_ty, *span))
                 .is_none());
@@ -340,22 +340,18 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   // Various helpers
 
+  #[inline]
   pub(super) fn is_bv_type(&self, ty: Ty<'tcx>) -> bool {
-    match ty.kind {
-      TyKind::Int(_) | TyKind::Uint(_) => true,
-      _ => false,
-    }
+    matches!(ty.kind(), TyKind::Int(_) | TyKind::Uint(_))
   }
 
+  #[inline]
   pub(super) fn is_signed_bv_type(&self, ty: Ty<'tcx>) -> bool {
-    match ty.kind {
-      TyKind::Int(_) => true,
-      _ => false,
-    }
+    matches!(ty.kind(), TyKind::Int(_))
   }
 
   pub(super) fn is_bigint_type(&self, ty: Ty<'tcx>) -> bool {
-    match ty.kind {
+    match ty.kind() {
       TyKind::Adt(adt_def, _) => self.is_bigint(adt_def),
       _ => false,
     }

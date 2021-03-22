@@ -53,6 +53,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           kind: PatKind::Binding(_, _, ident, _),
           hir_id,
           span,
+          ..
         }) = node
         {
           match self
