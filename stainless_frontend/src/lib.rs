@@ -10,7 +10,7 @@ extern crate rustc_span;
 extern crate rustc_target;
 extern crate rustc_ty_utils;
 
-use rustc_driver::{Callbacks, Compilation, RunCompiler};
+use rustc_driver::{Compilation, RunCompiler};
 use rustc_errors::ErrorReported;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::{interface, Queries};
@@ -19,11 +19,10 @@ use rustc_middle::ty::TyCtxt;
 use stainless_data::ast as st;
 
 pub fn run<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send>(
-  mut args: Vec<String>,
+  args: Vec<String>,
   on_extraction: E,
 ) -> Result<(), ErrorReported> {
   let mut callbacks = ExtractionCallbacks::new(on_extraction);
-  args.extend(vec!["--cfg".into(), "stainless".into()]);
 
   rustc_driver::install_ice_hook();
   rustc_driver::catch_fatal_errors(|| RunCompiler::new(&args, &mut callbacks).run()).map(|_| ())
@@ -44,9 +43,12 @@ impl<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send> ExtractionCallbacks<E> {
   }
 }
 
-impl<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send> Callbacks for ExtractionCallbacks<E> {
+impl<E: FnOnce(TyCtxt<'_>, st::Symbols<'_>) + Send> rustc_driver::Callbacks
+  for ExtractionCallbacks<E>
+{
   fn config(&mut self, config: &mut interface::Config) {
     config.opts.debugging_opts.save_analysis = true;
+    config.crate_cfg.insert(("stainless".to_string(), None));
   }
 
   fn after_analysis<'tcx>(
