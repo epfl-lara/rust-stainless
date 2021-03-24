@@ -1,9 +1,9 @@
 use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use syn::{
-  parse::Parser, parse2, parse_quote, punctuated::Punctuated, token::Brace, Attribute, Block, Expr,
-  FnArg, ItemFn, Receiver, Result, ReturnType, Signature, Stmt, Token, TraitItemMethod, Type,
-  Visibility,
+  parse::Parser, parse2, parse_quote, punctuated::Punctuated, token::Brace, token::Semi, Attribute,
+  Block, Expr, FnArg, ItemFn, Receiver, Result, ReturnType, Signature, Stmt, Token,
+  TraitItemMethod, Type, Visibility,
 };
 
 use super::spec::*;
@@ -46,7 +46,7 @@ pub fn rewrite_flag(
 struct FnSpecs {
   attrs: Vec<Attribute>,
   sig: Signature,
-  vis: Option<Visibility>,
+  vis: Visibility,
   block: Option<Box<Block>>,
   specs: Vec<Spec>,
 }
@@ -61,8 +61,10 @@ fn try_parse(
 
   // Parse function OR abstract trait method.
   let (attrs, sig, block, vis) = parse2::<ItemFn>(item.clone())
-    .map(|i| (i.attrs, i.sig, Some(i.block), Some(i.vis)))
-    .or_else(|_| parse2::<TraitItemMethod>(item).map(|i| (i.attrs, i.sig, None, None)))?;
+    .map(|i| (i.attrs, i.sig, Some(i.block), i.vis))
+    .or_else(|_| {
+      parse2::<TraitItemMethod>(item).map(|i| (i.attrs, i.sig, None, Visibility::Inherited))
+    })?;
 
   let (specs, attrs): (Vec<_>, Vec<_>) = attrs
     .into_iter()
@@ -142,9 +144,8 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
     }
   };
 
-  let mut attrs = fn_specs.attrs.clone();
-
   // Remove a warning because spec closures are never called
+  let mut attrs = fn_specs.attrs.clone();
   attrs.extend(
     Attribute::parse_outer
       .parse_str("#[allow(unused_must_use)]")
@@ -186,14 +187,14 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
         attrs,
         sig: fn_specs.sig.clone(),
         block,
-        vis: fn_specs.vis.unwrap_or(Visibility::Inherited),
+        vis: fn_specs.vis,
       }
       .to_token_stream(),
       TraitItemMethod {
         attrs: original_attrs,
         sig: fn_specs.sig,
         default: None,
-        semi_token: parse_quote!(;),
+        semi_token: Some(Semi::default()),
       }
       .to_token_stream(),
     ]
@@ -204,7 +205,7 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
       attrs,
       sig: fn_specs.sig,
       block,
-      vis: fn_specs.vis.unwrap_or(Visibility::Inherited),
+      vis: fn_specs.vis,
     }
     .to_token_stream()
   }
