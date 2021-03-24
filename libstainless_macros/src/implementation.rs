@@ -1,16 +1,14 @@
-#![cfg(stainless)]
-
 use proc_macro2::{Group, Ident, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use syn::{
-  parse2, parse_quote, punctuated::Punctuated, token::Brace, Attribute, Block, Expr, FnArg, ItemFn,
-  Receiver, Result, ReturnType, Signature, Stmt, Token, TraitItemMethod, Type, Visibility,
+  parse::Parser, parse2, parse_quote, punctuated::Punctuated, token::Brace, token::Semi, Attribute,
+  Block, Expr, FnArg, ItemFn, Receiver, Result, ReturnType, Signature, Stmt, Token,
+  TraitItemMethod, Type, Visibility,
 };
 
 use super::spec::*;
 use std::convert::TryFrom;
 use std::iter;
-use syn::parse::Parser;
 
 /// Extract all the specs from a given function and insert spec functions
 pub fn extract_specs_and_expand(
@@ -18,10 +16,8 @@ pub fn extract_specs_and_expand(
   first_attr_args: TokenStream,
   item: TokenStream,
 ) -> TokenStream {
-  try_parse(first_spec_type, first_attr_args, item).map_or_else(
-    |err| err.to_compile_error(),
-    |f| generate_fn_with_spec(f).to_token_stream(),
-  )
+  try_parse(first_spec_type, first_attr_args, item)
+    .map_or_else(|err| err.to_compile_error(), generate_fn_with_spec)
 }
 
 /// Flags
@@ -50,7 +46,7 @@ pub fn rewrite_flag(
 struct FnSpecs {
   attrs: Vec<Attribute>,
   sig: Signature,
-  vis: Option<Visibility>,
+  vis: Visibility,
   block: Option<Box<Block>>,
   specs: Vec<Spec>,
 }
@@ -65,8 +61,10 @@ fn try_parse(
 
   // Parse function OR abstract trait method.
   let (attrs, sig, block, vis) = parse2::<ItemFn>(item.clone())
-    .map(|i| (i.attrs, i.sig, Some(i.block), Some(i.vis)))
-    .or_else(|_| parse2::<TraitItemMethod>(item).map(|i| (i.attrs, i.sig, None, None)))?;
+    .map(|i| (i.attrs, i.sig, Some(i.block), i.vis))
+    .or_else(|_| {
+      parse2::<TraitItemMethod>(item).map(|i| (i.attrs, i.sig, None, Visibility::Inherited))
+    })?;
 
   let (specs, attrs): (Vec<_>, Vec<_>) = attrs
     .into_iter()
@@ -95,7 +93,7 @@ fn try_parse(
   })
 }
 
-fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
+fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
   // Take the arguments of the actual function to create the closure's arguments.
   let fn_arg_tys: Vec<_> = fn_specs.sig.inputs.iter().cloned().collect();
 
@@ -138,6 +136,7 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
     };
 
     parse_quote! {
+      #[cfg(stainless)]
       #[allow(unused)]
       #[clippy::stainless::#spec_type]
       |#fn_arg_tys#ret_param| -> #return_type {
@@ -146,17 +145,8 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
     }
   };
 
-  // Annotate "abstract" functions with a flag
-  let mut attrs = fn_specs.attrs;
-  if fn_specs.block.is_none() {
-    attrs.extend(
-      Attribute::parse_outer
-        .parse_str("#[clippy::stainless::is_abstract]")
-        .unwrap(),
-    )
-  }
-
   // Remove a warning because spec closures are never called
+  let mut attrs = fn_specs.attrs.clone();
   attrs.extend(
     Attribute::parse_outer
       .parse_str("#[allow(unused_must_use)]")
@@ -170,16 +160,55 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> ItemFn {
       .chain(
         fn_specs
           .block
+          .clone()
           .map_or_else(|| parse_quote! { unimplemented!() }, |b| b.stmts),
       )
       .collect(),
   });
 
-  ItemFn {
-    attrs,
-    sig: fn_specs.sig,
-    block,
-    vis: fn_specs.vis.unwrap_or(Visibility::Inherited),
+  // If the function was abstract, we output two versions of it:
+  // - the original ItemFn annotated with `#[cfg(not(stainless))]` for normal build & run
+  // - the processed one with the specs and a function body annotated with `#[cfg(stainless)]`
+  if fn_specs.block.is_none() {
+    attrs.extend(
+      Attribute::parse_outer
+        .parse_str("#[clippy::stainless::is_abstract]\n#[cfg(stainless)]")
+        .unwrap(),
+    );
+
+    let mut original_attrs = fn_specs.attrs;
+    original_attrs.extend(
+      Attribute::parse_outer
+        .parse_str("#[cfg(not(stainless))]")
+        .unwrap(),
+    );
+
+    vec![
+      ItemFn {
+        attrs,
+        sig: fn_specs.sig.clone(),
+        block,
+        vis: fn_specs.vis,
+      }
+      .to_token_stream(),
+      TraitItemMethod {
+        attrs: original_attrs,
+        sig: fn_specs.sig,
+        default: None,
+        semi_token: Some(Semi::default()),
+      }
+      .to_token_stream(),
+    ]
+    .into_iter()
+    .collect()
+  } else {
+    ItemFn {
+      attrs,
+      sig: fn_specs.sig,
+      block,
+      vis: fn_specs.vis,
+    }
+    .to_token_stream()
   }
 }
 
