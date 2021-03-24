@@ -136,6 +136,7 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
     };
 
     parse_quote! {
+      #[cfg(stainless)]
       #[allow(unused)]
       #[clippy::stainless::#spec_type]
       |#fn_arg_tys#ret_param| -> #return_type {
