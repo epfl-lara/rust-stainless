@@ -40,6 +40,7 @@ pub enum CrateItem {
   ToStringFn,
   StringType,
   PartialEqFn,
+  CloneFn,
 }
 
 use CrateItem::*;
@@ -62,6 +63,7 @@ impl CrateItem {
       ToStringFn => "std::string::ToString::to_string",
       StringType => "std::string::String",
       PartialEqFn => "std::cmp::PartialEq::eq",
+      CloneFn => "std::clone::Clone::clone",
     }
   }
 
@@ -71,7 +73,7 @@ impl CrateItem {
   pub fn crate_name(&self) -> &'static str {
     match self {
       BoxNewFn | ToStringFn | StringType => "alloc",
-      PhantomData | PartialEqFn => "core",
+      PhantomData | PartialEqFn | CloneFn => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }
