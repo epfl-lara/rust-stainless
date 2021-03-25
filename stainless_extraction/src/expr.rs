@@ -310,6 +310,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           self.extract_str_to_string(args.first().unwrap())
         }
         StdItem::CrateItem(CrateItem::PartialEqFn) => self.extract_partial_eq(args),
+        StdItem::CrateItem(CrateItem::CloneFn) => self.extract_clone(args.first().unwrap()),
 
         _ => None,
       })
@@ -442,6 +443,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ),
       _ => None,
     }
+  }
+
+  /// Extracts a call to `Clone::clone` by erasure.
+  ///
+  /// FIXME: this is a quick-fix/hack to make use of `PartialEq::eq` for strings
+  ///   across clones, see [extract_partial_eq]. As soon, as strings can be mutated,
+  ///   this becomes potentially unsafe and has to be revisited.
+  ///   The way to correctly solve this use-case is by attaching a spec to the real
+  ///   `Clone::clone` that preserves equality.
+  fn extract_clone(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
+    self.is_str_type(expr).then(|| self.extract_expr(expr))
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
