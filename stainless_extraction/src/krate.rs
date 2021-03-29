@@ -381,20 +381,30 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .map(|cd| -> st::Flag<'l> { f.IsMethodOf(cd.id).into() }),
     );
 
-    // Extract the function itself
     let Generics {
       tparams,
       txtcx,
       trait_bounds,
     } = self.get_or_extract_generics(fn_item.def_id);
 
-    // If this function is not on a class *but* has trait bounds, we need to add
-    // these as evidence parameters.
-    let ev_params = if class_def.is_none() {
-      self.evidence_params(trait_bounds)
-    } else {
-      vec![]
-    };
+    // Collect the evidence arguments from the class...
+    let class_ev_args: HashSet<&st::ClassType<'l>> = class_def
+      .iter()
+      .flat_map(|c| {
+        c.fields.iter().filter_map(|f| match f.v.tpe {
+          st::Type::ClassType(ct) => Some(ct),
+          _ => None,
+        })
+      })
+      .collect();
+
+    // ... to see which trait bounds are already satisfied by the class and
+    // which still need to be added to the function.
+    let ev_params = self.evidence_params(
+      trait_bounds
+        .into_iter()
+        .filter(|&b| !class_ev_args.contains(b)),
+    );
 
     let (params, return_tpe, body_expr): (Params<'l>, st::Type<'l>, st::Expr<'l>) = self
       .enter_body(hir_id, txtcx, class_def, |bxtor| {
