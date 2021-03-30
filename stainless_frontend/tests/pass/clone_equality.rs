@@ -46,7 +46,7 @@ pub struct Person {
 }
 
 // If the person has the key of the door, it implies that they can open it.
-#[post(!(Equals::eq(&person.key, &door.key_lock)) || matches!(ret, Ok(output)))]
+#[post(!(person.key.eq( &door.key_lock)) || matches!(ret, Ok(output)))]
 pub fn main(door: Door, person: Person) -> Result<(), &'static str> {
   door.try_open(&person.key.clone())
 }
