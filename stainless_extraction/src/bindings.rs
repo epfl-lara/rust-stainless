@@ -155,7 +155,7 @@ impl<'l> DefContext<'l> {
   /// Adds a parameter to the available bindings.
   ///
   /// If the parameter is mutable, a new immutable parameter is inserted in the
-  /// paramter list. The binding with a LetVar from the new param to the
+  /// parameter list. The binding with a LetVar from the new param to the
   /// variable in the function's body needs to be created later with
   /// [BodyExtractor::wrap_body_let_vars].
   pub(super) fn add_param(

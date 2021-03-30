@@ -110,9 +110,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       }
 
       // Register all other bindings
-      for (vd, sid) in outer_fn_params.iter().zip(spec_param_ids) {
+      let (regular_params, ev_params) = outer_fn_params.split_at(spec_param_ids.len());
+      for (vd, sid) in regular_params.iter().zip(spec_param_ids) {
         bxtor.dcx.add_var(sid, vd.v);
       }
+      for e in ev_params {
+        bxtor.dcx.add_param(e, &mut bxtor.base);
+      }
+
       // Pick up any additional local bindings
       // (A spec neither has flags on the params, nor additional evidence params)
       bxtor.populate_def_context(&mut HashMap::new(), &[]);
