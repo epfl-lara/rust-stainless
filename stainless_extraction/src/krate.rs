@@ -86,16 +86,26 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           // Store functions of impl blocks and their specs
           ItemKind::Impl(hir::Impl { items, .. }) => {
             // if the impl implements a trait, then we need to extract it as a class/object.
-            let class_def: Option<&'l st::ClassDef<'l>> = self
-              .xtor
-              .tcx
-              .impl_trait_ref(def_id)
-              .map(|trait_ref| self.xtor.extract_class(def_id, Some(trait_ref), item.span));
+            match self.xtor.tcx.impl_trait_ref(def_id) {
+              Some(trait_ref)
+                if matches!(
+                  self.xtor.std_items.def_to_item_opt(trait_ref.def_id),
+                  Some(StdItem::CrateItem(CrateItem::CloneTrait))
+                ) => {}
 
-            self.extract_class_item(
-              items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
-              class_def,
-            )
+              Some(trait_ref) => {
+                let class_def = self.xtor.extract_class(def_id, Some(trait_ref), item.span);
+                self.extract_class_item(
+                  items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
+                  Some(class_def),
+                )
+              }
+
+              _ => self.extract_class_item(
+                items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
+                None,
+              ),
+            }
           }
 
           // Extract the trait as an abstract class. Laws and other concrete

@@ -44,6 +44,7 @@ pub enum CrateItem {
   StringType,
   PartialEqFn,
   CloneFn,
+  CloneTrait,
   ImpliesFn,
   MapType,
   MapEmptyFn,
@@ -78,6 +79,7 @@ impl CrateItem {
       StringType => "std::string::String",
       PartialEqFn => "std::cmp::PartialEq::eq",
       CloneFn => "std::clone::Clone::clone",
+      CloneTrait => "std::clone::Clone",
       ImpliesFn => "stainless::Implies::implies",
       MapType => "stainless::Map",
       MapEmptyFn => "stainless::Map::<K, V>::empty",
@@ -97,7 +99,7 @@ impl CrateItem {
   pub fn crate_name(&self) -> &'static str {
     match self {
       BoxNewFn | ToStringFn | StringType => "alloc",
-      PhantomData | PartialEqFn | CloneFn | OptionType => "core",
+      PhantomData | PartialEqFn | CloneFn | CloneTrait | OptionType => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }
@@ -106,6 +108,7 @@ impl CrateItem {
     match self {
       BeginPanicFmtFn => DefKind::Fn,
       SetType | MapType | StringType | PhantomData => DefKind::Struct,
+      CloneTrait => DefKind::Trait,
       OptionType => DefKind::Enum,
       _ => DefKind::AssocFn,
     }
