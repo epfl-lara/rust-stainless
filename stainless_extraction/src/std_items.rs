@@ -41,6 +41,7 @@ pub enum CrateItem {
   StringType,
   PartialEqFn,
   CloneFn,
+  ImpliesFn,
 }
 
 use CrateItem::*;
@@ -64,6 +65,7 @@ impl CrateItem {
       StringType => "std::string::String",
       PartialEqFn => "std::cmp::PartialEq::eq",
       CloneFn => "std::clone::Clone::clone",
+      ImpliesFn => "stainless::Implies::implies",
     }
   }
 

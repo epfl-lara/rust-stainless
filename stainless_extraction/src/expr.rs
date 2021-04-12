@@ -302,6 +302,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         {
           Some(self.extract_set_op(item, args, span))
         }
+        StdItem::CrateItem(CrateItem::ImpliesFn) => self.extract_implies(args),
 
         // Box::new, erase it and return the argument directly.
         StdItem::CrateItem(CrateItem::BoxNewFn) => Some(self.extract_expr(args.first().unwrap())),
@@ -351,6 +352,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let args = self.extract_exprs(args);
     let ty = self.base.extract_ty(substs.type_at(0), &self.txtcx, span);
     self.factory().FiniteSet(args, ty).into()
+  }
+
+  fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
+    match args {
+      [lhs, rhs] => Some(
+        self
+          .factory()
+          .Implies(self.extract_expr(lhs), self.extract_expr(rhs))
+          .into(),
+      ),
+      _ => None,
+    }
   }
 
   fn extract_call(
