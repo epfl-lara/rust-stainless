@@ -38,3 +38,14 @@ impl<T> Set<T> {
     unimplemented!()
   }
 }
+
+pub trait Implies {
+  fn implies(self, b: Self) -> bool;
+}
+
+impl Implies for bool {
+  #[inline(always)]
+  fn implies(self, b: bool) -> bool {
+    !self || b
+  }
+}

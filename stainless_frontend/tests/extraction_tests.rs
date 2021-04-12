@@ -108,6 +108,7 @@ define_tests!(
   pass: generic_option,
   pass: generic_result,
   pass: impl_fns,
+  pass: implies,
   pass: insertion_sort,
   pass: int_operators,
   pass: int_option,
