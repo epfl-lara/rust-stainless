@@ -12,29 +12,54 @@ impl<T> Set<T> {
   pub fn empty() -> Self {
     unimplemented!()
   }
-
-  // TODO: Only take 'self' as a reference and also take the other parameters
-  //   only by reference.
   pub fn singleton(_t: &T) -> Self {
     unimplemented!()
   }
-  pub fn add(&self, _t: &T) -> Set<T> {
+
+  pub fn add(&self, _t: &T) -> Self {
     unimplemented!()
   }
   pub fn contains(&self, _t: &T) -> bool {
     unimplemented!()
   }
 
-  pub fn union(&self, _other: &Set<T>) -> Set<T> {
+  pub fn union(&self, _other: &Set<T>) -> Self {
     unimplemented!()
   }
-  pub fn intersection(&self, _other: &Set<T>) -> Set<T> {
+  pub fn intersection(&self, _other: &Set<T>) -> Self {
     unimplemented!()
   }
-  pub fn difference(&self, _other: &Set<T>) -> Set<T> {
+  pub fn difference(&self, _other: &Set<T>) -> Self {
     unimplemented!()
   }
   pub fn is_subset_of(&self, _other: &Set<T>) -> bool {
+    unimplemented!()
+  }
+}
+
+#[derive(Copy, Clone)]
+pub struct Map<K, V> {
+  keys: PhantomData<K>,
+  vals: PhantomData<V>,
+}
+
+impl<K, V> Map<K, V> {
+  pub fn empty() -> Self {
+    unimplemented!()
+  }
+
+  /// Panics if the key is not in the map.
+  pub fn apply(&self, _key: &K) -> &V {
+    unimplemented!()
+  }
+  pub fn get(&self, _key: &K) -> Option<&V> {
+    unimplemented!()
+  }
+  pub fn contains(&self, _t: &K) -> bool {
+    unimplemented!()
+  }
+
+  pub fn updated(&self, _key: &K, _val: &V) -> Self {
     unimplemented!()
   }
 }
