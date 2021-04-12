@@ -33,6 +33,7 @@ use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
+use syn::SyntheticItem;
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
@@ -43,6 +44,7 @@ mod flags;
 mod fns;
 mod krate;
 mod std_items;
+mod syn;
 mod ty;
 mod utils;
 
@@ -98,6 +100,7 @@ struct Extraction<'l> {
   generics: HashMap<StainlessSymId<'l>, Generics<'l>>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
   classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
+  synthetic: HashMap<SyntheticItem, StainlessSymId<'l>>,
 }
 
 impl<'l> Extraction<'l> {
@@ -111,6 +114,7 @@ impl<'l> Extraction<'l> {
       generics: Default::default(),
       functions: Default::default(),
       classes: Default::default(),
+      synthetic: Default::default(),
     }
   }
 
