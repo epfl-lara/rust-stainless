@@ -115,6 +115,7 @@ define_tests!(
   pass: let_type,
   pass: list_binary_search,
   pass: monoid,
+  pass: map_ops,
   pass: mut_local_fields,
   pass: mut_local_lets,
   pass: mut_local_params,

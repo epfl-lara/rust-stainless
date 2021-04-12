@@ -62,6 +62,10 @@ impl<K, V> Map<K, V> {
   pub fn updated(&self, _key: &K, _val: &V) -> Self {
     unimplemented!()
   }
+
+  pub fn removed(&self, _key: &K) -> Self {
+    unimplemented!()
+  }
 }
 
 pub trait Implies {
