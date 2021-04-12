@@ -42,6 +42,13 @@ pub enum CrateItem {
   PartialEqFn,
   CloneFn,
   ImpliesFn,
+  MapType,
+  MapEmptyFn,
+  MapApplyFn,
+  MapGetFn,
+  MapContainsFn,
+  MapUpdatedFn,
+  MapRemovedFn,
 }
 
 use CrateItem::*;
@@ -66,6 +73,13 @@ impl CrateItem {
       PartialEqFn => "std::cmp::PartialEq::eq",
       CloneFn => "std::clone::Clone::clone",
       ImpliesFn => "stainless::Implies::implies",
+      MapType => "stainless::Map",
+      MapEmptyFn => "stainless::Map::<K, V>::empty",
+      MapApplyFn => "stainless::Map::<K, V>::apply",
+      MapGetFn => "stainless::Map::<K, V>::get",
+      MapContainsFn => "stainless::Map::<K, V>::contains",
+      MapUpdatedFn => "stainless::Map::<K, V>::updated",
+      MapRemovedFn => "stainless::Map::<K, V>::removed",
     }
   }
 
@@ -83,7 +97,7 @@ impl CrateItem {
   pub fn def_kind(&self) -> DefKind {
     match self {
       BeginPanicFmtFn => DefKind::Fn,
-      SetType | StringType | PhantomData => DefKind::Struct,
+      SetType | MapType | StringType | PhantomData => DefKind::Struct,
       _ => DefKind::AssocFn,
     }
   }
