@@ -10,7 +10,24 @@ fn is_it_123(a: i32) -> bool {
   }
 }
 
+pub enum List<T> {
+  Nil,
+  Cons(T, Box<List<T>>),
+}
+
+impl<T> List<T> {
+  #[pre(matches!(self, List::Cons(..)))]
+  fn first(&self) -> &T {
+    match self {
+      List::Cons(v, _) => &v,
+      _ => panic!("Empty list"),
+    }
+  }
+}
+
 pub fn main() {
   assert!(is_it_123(123));
   assert!(!is_it_123(1));
+
+  assert!(*List::Cons(123, Box::new(List::Nil)).first() == 123)
 }
