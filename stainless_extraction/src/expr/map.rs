@@ -33,15 +33,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_map_creation(&mut self, substs: SubstsRef<'tcx>, span: Span) -> st::Expr<'l> {
     let f = self.factory();
     let tps = self.base.extract_tys(substs.types(), &self.txtcx, span);
-    let default = f.ADT(
-      self.base.get_or_create_syn_item(MapValueAbsent),
-      tps.clone(),
-      vec![],
-    );
+
     match &tps[..] {
-      [kty, vty] => self
-        .factory()
-        .FiniteMap(vec![], default.into(), *kty, *vty)
+      [key_tpe, val_tpe] => f
+        .FiniteMap(
+          vec![],
+          self.map_value_absent(*val_tpe),
+          *key_tpe,
+          f.ADTType(
+            self.base.get_or_create_syn_item(MapValueType),
+            vec![*val_tpe],
+          )
+          .into(),
+        )
         .into(),
       _ => unreachable!(),
     }
