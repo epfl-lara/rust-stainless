@@ -2,9 +2,10 @@ use rustc_middle::mir::interpret::ConstValue;
 use rustc_middle::ty::{self, ConstKind, TyCtxt, TyKind};
 use rustc_target::abi;
 
-use crate::ty::{int_bit_width, uint_bit_width};
 use stainless_data::ast as st;
 use stainless_data::ser::types as st_types;
+
+use crate::ty::{int_bit_width, uint_bit_width};
 
 pub(super) enum Literal {
   Unit,
@@ -30,7 +31,7 @@ impl Literal {
     }
   }
 
-  pub fn from_const(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
+  pub(super) fn from_const(konst: &ty::Const<'_>, tcx: TyCtxt<'_>) -> Option<Self> {
     match konst.ty.kind() {
       _ if konst.ty.is_unit() => Some(Literal::Unit),
 

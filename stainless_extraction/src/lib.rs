@@ -42,7 +42,6 @@ mod expr;
 mod flags;
 mod fns;
 mod krate;
-mod literal;
 mod std_items;
 mod ty;
 mod utils;

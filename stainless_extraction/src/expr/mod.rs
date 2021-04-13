@@ -1,16 +1,17 @@
 use std::convert::TryFrom;
 
+use literal::Literal;
 use rustc_middle::mir::BorrowKind;
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
-use crate::literal::Literal;
 use crate::std_items::{CrateItem::*, LangItem};
 
 use super::*;
 
 mod block;
 mod field;
+mod literal;
 mod ops;
 mod pattern;
 mod set;
