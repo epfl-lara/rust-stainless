@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use rustc_middle::mir::{BorrowKind, Field};
+use rustc_middle::mir::BorrowKind;
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
@@ -10,6 +10,7 @@ use crate::std_items::{CrateItem::*, LangItem};
 use super::*;
 
 mod block;
+mod field;
 mod ops;
 mod pattern;
 mod set;
@@ -91,33 +92,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .into_iter()
       .map(|arg| self.extract_expr(arg))
       .collect()
-  }
-
-  fn extract_field(&mut self, lhs: &'a Expr<'a, 'tcx>, field: Field) -> st::Expr<'l> {
-    let f = self.factory();
-    match lhs.ty.kind() {
-      TyKind::Tuple(_) => {
-        let lhs = self.extract_expr(lhs);
-        f.TupleSelect(lhs, (field.index() as i32) + 1).into()
-      }
-      TyKind::Adt(adt_def, _) => {
-        let selector = self.extract_field_selector(adt_def.did, field);
-        let lhs = self.extract_expr(lhs);
-        f.ADTSelector(lhs, selector).into()
-      }
-      ref kind => unexpected(
-        lhs.span,
-        format!("Unexpected kind of field selection: {:?}", kind),
-      ),
-    }
-  }
-
-  fn extract_field_selector(&mut self, adt_def_id: DefId, field: Field) -> StainlessSymId<'l> {
-    let sort = self.base.get_or_extract_adt(adt_def_id);
-    assert_eq!(sort.constructors.len(), 1);
-    let constructor = sort.constructors[0];
-    assert!(field.index() < constructor.fields.len());
-    constructor.fields[field.index()].v.id
   }
 
   fn extract_call_like(
@@ -360,35 +334,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       f.ADT(constructor.id, arg_tps, args).into()
     } else {
       unreachable!()
-    }
-  }
-
-  fn extract_assignment(
-    &mut self,
-    lhs: &'a Expr<'a, 'tcx>,
-    rhs: &'a Expr<'a, 'tcx>,
-  ) -> st::Expr<'l> {
-    let value = self.extract_expr(rhs);
-    let lhs = self.strip_scopes(lhs);
-    match &lhs.kind {
-      ExprKind::VarRef { id } => self.factory().Assignment(self.fetch_var(*id), value).into(),
-
-      ExprKind::Field { lhs, name } => match lhs.ty.kind() {
-        TyKind::Adt(adt_def, _) => {
-          let adt = self.extract_expr(lhs);
-          let selector = self.extract_field_selector(adt_def.did, *name);
-          self.factory().FieldAssignment(adt, selector, value).into()
-        }
-        ref t => self.unsupported_expr(
-          lhs.span,
-          format!("Cannot extract assignment to type {:?}", t),
-        ),
-      },
-
-      e => self.unsupported_expr(
-        lhs.span,
-        format!("Cannot extract assignment to kind {:?}", e),
-      ),
     }
   }
 
