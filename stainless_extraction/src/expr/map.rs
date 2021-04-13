@@ -19,10 +19,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       (MapUpdatedFn, [map, key, val]) => {
         self.extract_map_updated(*map, *key, *val, substs_ref, span)
       }
-
-      (op @ MapGetFn, _) => {
-        unimplemented!("{:?} not yet implemented", op)
+      (MapGetOrElseFn, [map, key, or_else]) => {
+        self.extract_map_get_or_else(*map, *key, *or_else, substs_ref, span)
       }
+
       (op, _) => self.unsupported_expr(
         span,
         format!("Cannot extract {:?} with {} arguments.", op, args.len()),
@@ -56,12 +56,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    let present_tpe = f
-      .ADTType(
-        self.base.get_or_create_syn_item(MapValuePresent),
-        vec![val_tpe],
-      )
-      .into();
+    let present_tpe = self.map_value_present_type(val_tpe);
 
     f.Assert(
       f.IsInstanceOf(f.MapApply(map, key).into(), present_tpe)
@@ -130,6 +125,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     .into()
   }
 
+  fn extract_map_get_or_else(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    or_else: st::Expr<'l>,
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    let present_tpe = self.map_value_present_type(val_tpe);
+
+    f.IfExpr(
+      f.IsInstanceOf(f.MapApply(map, key).into(), present_tpe)
+        .into(),
+      f.ClassSelector(
+        f.AsInstanceOf(f.MapApply(map, key).into(), present_tpe)
+          .into(),
+        self.base.get_or_create_syn_item(MapValuePresentField),
+      )
+      .into(),
+      or_else,
+    )
+    .into()
+  }
+
   fn map_value_absent(&mut self, tpe: st::Type<'l>) -> st::Expr<'l> {
     self
       .factory()
@@ -138,6 +159,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         vec![tpe],
         vec![],
       )
+      .into()
+  }
+
+  fn map_value_present_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
+    self
+      .factory()
+      .ADTType(self.base.get_or_create_syn_item(MapValuePresent), vec![tpe])
       .into()
   }
 }

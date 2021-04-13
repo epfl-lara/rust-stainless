@@ -9,6 +9,7 @@ pub fn test(m: &Map<u32, u32>) {
   assert!(!m2.contains(&1));
   assert!(!m2.contains(&2));
   assert!(m2.contains(&3));
+  // Deref to do primitive equality of ints
   assert!(*m2.apply(&3) == *m.apply(&3))
 }
 
@@ -22,13 +23,18 @@ pub fn test1(a: &Map<u32, u32>) -> bool {
 }
 
 #[pre(!a.contains(&0))]
+#[post(ret == -123)]
+pub fn test3(a: &Map<u32, i32>) -> i32 {
+  let b = *a.get_or_else(&0, &-123);
+  // Deref to do primitive equality of ints
+  assert!(b == *Map::empty().get_or_else(&0, &-123));
+  b
+}
+
+/*
+#[pre(!a.contains(&0))]
 #[post(matches!(ret, None))]
 pub fn test2(a: &Map<u32, u32>) -> Option<&u32> {
   a.get(&0)
 }
-
-#[pre(!a.contains(&0))]
-#[post(ret)]
-pub fn test3(a: &Map<u32, u32>) -> bool {
-  a.get(&0) == Map::empty().get(&0)
-}
+*/

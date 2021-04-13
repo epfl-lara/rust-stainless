@@ -45,7 +45,7 @@ pub enum CrateItem {
   MapType,
   MapEmptyFn,
   MapApplyFn,
-  MapGetFn,
+  MapGetOrElseFn,
   MapContainsFn,
   MapUpdatedFn,
   MapRemovedFn,
@@ -76,7 +76,7 @@ impl CrateItem {
       MapType => "stainless::Map",
       MapEmptyFn => "stainless::Map::<K, V>::empty",
       MapApplyFn => "stainless::Map::<K, V>::apply",
-      MapGetFn => "stainless::Map::<K, V>::get",
+      MapGetOrElseFn => "stainless::Map::<K, V>::get_or_else",
       MapContainsFn => "stainless::Map::<K, V>::contains",
       MapUpdatedFn => "stainless::Map::<K, V>::updated",
       MapRemovedFn => "stainless::Map::<K, V>::removed",
@@ -119,7 +119,13 @@ impl CrateItem {
   pub fn is_map_related(&self) -> bool {
     matches!(
       self,
-      MapType | MapEmptyFn | MapApplyFn | MapContainsFn | MapGetFn | MapUpdatedFn | MapRemovedFn
+      MapType
+        | MapEmptyFn
+        | MapApplyFn
+        | MapContainsFn
+        | MapGetOrElseFn
+        | MapUpdatedFn
+        | MapRemovedFn
     )
   }
 }
