@@ -115,6 +115,13 @@ impl CrateItem {
         | SubsetOfFn
     )
   }
+
+  pub fn is_map_related(&self) -> bool {
+    matches!(
+      self,
+      MapType | MapEmptyFn | MapApplyFn | MapContainsFn | MapGetFn | MapUpdatedFn | MapRemovedFn
+    )
+  }
 }
 
 lazy_static! {

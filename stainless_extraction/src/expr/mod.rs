@@ -12,6 +12,7 @@ use super::*;
 mod block;
 mod field;
 mod literal;
+mod map;
 mod ops;
 mod pattern;
 mod set;
@@ -116,6 +117,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         StdItem::CrateItem(item) if item.is_set_related() => {
           Some(self.extract_set_expr(item, args, substs_ref, span))
+        }
+        StdItem::CrateItem(item) if item.is_map_related() => {
+          Some(self.extract_map_expr(item, args, substs_ref, span))
         }
 
         StdItem::CrateItem(CrateItem::ImpliesFn) => self.extract_implies(args),
