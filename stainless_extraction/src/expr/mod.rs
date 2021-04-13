@@ -1,15 +1,3 @@
-mod block;
-mod ops;
-mod set;
-mod tuple;
-
-use super::*;
-
-use crate::literal::Literal;
-use crate::spec::SpecType;
-use crate::std_items::{CrateItem::*, LangItem};
-use crate::ty::{int_bit_width, uint_bit_width};
-
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BorrowKind, Field, Mutability};
@@ -18,6 +6,17 @@ use rustc_mir_build::thir::{
   Arm, BindingMode, BlockSafety, Expr, ExprKind, FieldPat, FruInfo, Guard, Pat, PatKind, Stmt,
   StmtKind,
 };
+
+use crate::literal::Literal;
+use crate::std_items::{CrateItem::*, LangItem};
+
+use super::*;
+
+mod block;
+mod ops;
+mod set;
+mod spec;
+mod tuple;
 
 type Result<T> = std::result::Result<T, &'static str>;
 

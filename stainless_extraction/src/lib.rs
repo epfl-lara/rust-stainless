@@ -16,18 +16,6 @@ extern crate rustc_span;
 extern crate rustc_target;
 extern crate rustc_ty_utils;
 
-mod bindings;
-mod classes;
-mod expr;
-mod flags;
-mod fns;
-mod krate;
-mod literal;
-mod spec;
-mod std_items;
-mod ty;
-mod utils;
-
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -47,6 +35,17 @@ use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
+
+mod bindings;
+mod classes;
+mod expr;
+mod flags;
+mod fns;
+mod krate;
+mod literal;
+mod std_items;
+mod ty;
+mod utils;
 
 /// The entrypoint into extraction
 pub fn extract_crate<'l, 'tcx: 'l>(

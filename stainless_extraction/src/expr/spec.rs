@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::result::Result;
 
-use super::*;
-use crate::flags::{extract_flag, Flag};
-use crate::ty::{all_generic_params_of, TyExtractionCtxt};
-
 use rustc_ast::ast::Attribute;
 
 use stainless_data::ast as st;
+
+use super::*;
+use crate::flags::{extract_flag, Flag};
+use crate::ty::{all_generic_params_of, TyExtractionCtxt};
 
 /// Types of spec functions (pre-, postconditions, ...) and some helping
 /// implementations.
@@ -48,10 +48,63 @@ impl TryFrom<&[Attribute]> for SpecType {
 }
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
+  pub(super) fn extract_specs(
+    &mut self,
+    specs: &HashMap<SpecType, Vec<HirId>>,
+    body_expr: st::Expr<'l>,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+
+    // Wrap body with measure expression
+    let body_expr = specs
+      .get(&SpecType::Measure)
+      .and_then(|m_exprs| {
+        if m_exprs.len() > 1 {
+          let span = self.tcx().hir().span(m_exprs[1]);
+          self.tcx().sess.span_err(span, "Multiple measures.");
+        }
+        m_exprs.first()
+      })
+      .map(|&hid| {
+        let expr = self.extract_spec_expr(hid, None);
+        f.Decreases(expr, body_expr).into()
+      })
+      .unwrap_or(body_expr);
+
+    // Wrap body with require/pre spec
+    let body_expr = specs
+      .get(&SpecType::Pre)
+      .map(|pre_hids| {
+        let exprs = pre_hids
+          .iter()
+          .map(|&hid| self.extract_spec_expr(hid, None))
+          .collect();
+
+        f.Require(f.make_and(exprs), body_expr).into()
+      })
+      .unwrap_or(body_expr);
+
+    let return_var = &*f.Variable(self.base.fresh_id("ret".into()), self.return_tpe(), vec![]);
+    let return_vd = f.ValDef(return_var);
+
+    specs
+      .get(&SpecType::Post)
+      .map(move |post_hids| {
+        let exprs = post_hids
+          .iter()
+          .map(|&hid| self.extract_spec_expr(hid, Some(return_var)))
+          .collect();
+
+        f.Ensuring(body_expr, f.Lambda(vec![return_vd], f.make_and(exprs)))
+          .into()
+      })
+      .unwrap_or(body_expr)
+  }
+
   /// Extract the body expression from a spec closure. This also replaces the
   /// parameters of the closure with the actual parameters of the outer function
   /// and the return value.
-  pub fn extract_spec_expr(
+  fn extract_spec_expr(
     &mut self,
     hir_id: HirId,
     return_var: Option<&'l st::Variable<'l>>,
@@ -139,58 +192,5 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     } else {
       spec_expr
     }
-  }
-
-  pub fn extract_specs(
-    &mut self,
-    specs: &HashMap<SpecType, Vec<HirId>>,
-    body_expr: st::Expr<'l>,
-  ) -> st::Expr<'l> {
-    let f = self.factory();
-
-    // Wrap body with measure expression
-    let body_expr = specs
-      .get(&SpecType::Measure)
-      .and_then(|m_exprs| {
-        if m_exprs.len() > 1 {
-          let span = self.tcx().hir().span(m_exprs[1]);
-          self.tcx().sess.span_err(span, "Multiple measures.");
-        }
-        m_exprs.first()
-      })
-      .map(|&hid| {
-        let expr = self.extract_spec_expr(hid, None);
-        f.Decreases(expr, body_expr).into()
-      })
-      .unwrap_or(body_expr);
-
-    // Wrap body with require/pre spec
-    let body_expr = specs
-      .get(&SpecType::Pre)
-      .map(|pre_hids| {
-        let exprs = pre_hids
-          .iter()
-          .map(|&hid| self.extract_spec_expr(hid, None))
-          .collect();
-
-        f.Require(f.make_and(exprs), body_expr).into()
-      })
-      .unwrap_or(body_expr);
-
-    let return_var = &*f.Variable(self.base.fresh_id("ret".into()), self.return_tpe(), vec![]);
-    let return_vd = f.ValDef(return_var);
-
-    specs
-      .get(&SpecType::Post)
-      .map(move |post_hids| {
-        let exprs = post_hids
-          .iter()
-          .map(|&hid| self.extract_spec_expr(hid, Some(return_var)))
-          .collect();
-
-        f.Ensuring(body_expr, f.Lambda(vec![return_vd], f.make_and(exprs)))
-          .into()
-      })
-      .unwrap_or(body_expr)
   }
 }

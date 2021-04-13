@@ -1,7 +1,9 @@
-use super::*;
-
 use rustc_middle::mir::{BinOp, UnOp};
 use rustc_mir_build::thir::LogicalOp;
+
+use crate::ty::{int_bit_width, uint_bit_width};
+
+use super::*;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_unary(

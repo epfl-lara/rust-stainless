@@ -1,3 +1,4 @@
+use super::spec::SpecType;
 use super::*;
 
 use rustc_mir_build::thir::Block;
