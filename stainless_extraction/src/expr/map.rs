@@ -55,11 +55,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     let present_tpe = f
       .ADTType(
         self.base.get_or_create_syn_item(MapValuePresent),
-        vec![key_tpe],
+        vec![val_tpe],
       )
       .into();
 
@@ -85,9 +85,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     f.Not(
-      f.Equals(f.MapApply(map, key).into(), self.map_value_absent(key_tpe))
+      f.Equals(f.MapApply(map, key).into(), self.map_value_absent(val_tpe))
         .into(),
     )
     .into()
@@ -116,13 +116,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     f.MapUpdated(
       map,
       key,
       f.ADT(
         self.base.get_or_create_syn_item(MapValuePresent),
-        vec![key_tpe],
+        vec![val_tpe],
         vec![val],
       )
       .into(),

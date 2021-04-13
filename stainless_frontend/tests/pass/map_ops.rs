@@ -9,7 +9,7 @@ pub fn test(m: &Map<u32, u32>) {
   assert!(!m2.contains(&1));
   assert!(!m2.contains(&2));
   assert!(m2.contains(&3));
-  assert!(m2.apply(&3) == m.apply(&3))
+  assert!(*m2.apply(&3) == *m.apply(&3))
 }
 
 #[pre(!a.contains(&0))]
@@ -17,7 +17,8 @@ pub fn test(m: &Map<u32, u32>) {
 pub fn test1(a: &Map<u32, u32>) -> bool {
   let b = a.updated(&0, &1);
   let c = a.updated(&0, &1);
-  b.apply(&0) == c.apply(&0)
+  // Deref to do primitive equality of ints
+  *b.apply(&0) == *c.apply(&0)
 }
 
 #[pre(!a.contains(&0))]
