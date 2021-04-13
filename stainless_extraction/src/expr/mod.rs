@@ -1,6 +1,7 @@
 mod block;
 mod ops;
 mod set;
+mod tuple;
 
 use super::*;
 
@@ -32,7 +33,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Binary { op, lhs, rhs } => self.extract_binary(*op, lhs, rhs, expr.span),
       ExprKind::LogicalOp { op, lhs, rhs } => self.extract_logical_op(*op, lhs, rhs),
 
-      ExprKind::Tuple { .. } => self.extract_tuple(expr),
+      ExprKind::Tuple { fields } => self.extract_tuple(fields, expr.span),
       ExprKind::Field { lhs, name } => self.extract_field(lhs, *name),
       ExprKind::VarRef { id } => self.fetch_var(*id).into(),
 
@@ -93,19 +94,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .into_iter()
       .map(|arg| self.extract_expr(arg))
       .collect()
-  }
-
-  fn extract_tuple(&mut self, expr: &Expr<'a, 'tcx>) -> st::Expr<'l> {
-    let f = self.factory();
-    if let ExprKind::Tuple { fields } = expr.kind {
-      match fields.len() {
-        0 => f.UnitLiteral().into(),
-        1 => self.unsupported_expr(expr.span, "Cannot extract one-tuples"),
-        _ => f.Tuple(self.extract_exprs(fields)).into(),
-      }
-    } else {
-      unreachable!()
-    }
   }
 
   fn extract_field(&mut self, lhs: &'a Expr<'a, 'tcx>, field: Field) -> st::Expr<'l> {
