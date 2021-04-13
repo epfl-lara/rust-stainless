@@ -15,8 +15,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       (MapApplyFn, [map, key]) => self.extract_map_apply(*map, *key, substs_ref, span),
       (MapContainsFn, [map, key]) => self.extract_map_contains(*map, *key, substs_ref, span),
+      (MapRemovedFn, [map, key]) => self.extract_map_removed(*map, *key, substs_ref, span),
+      (MapUpdatedFn, [map, key, val]) => {
+        self.extract_map_updated(*map, *key, *val, substs_ref, span)
+      }
 
-      (op, _) if matches!(op, MapGetFn | MapUpdatedFn | MapRemovedFn) => {
+      (op @ MapGetFn, _) => {
         unimplemented!("{:?} not yet implemented", op)
       }
       (op, _) => self.unsupported_expr(
@@ -82,19 +86,58 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-
     f.Not(
-      f.Equals(
-        f.MapApply(map, key).into(),
-        f.ADT(
-          self.base.get_or_create_syn_item(MapValueAbsent),
-          vec![key_tpe],
-          vec![],
-        )
+      f.Equals(f.MapApply(map, key).into(), self.map_value_absent(key_tpe))
         .into(),
+    )
+    .into()
+  }
+
+  fn extract_map_removed(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    self
+      .factory()
+      .MapUpdated(map, key, self.map_value_absent(key_tpe))
+      .into()
+  }
+
+  fn extract_map_updated(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    val: st::Expr<'l>,
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    f.MapUpdated(
+      map,
+      key,
+      f.ADT(
+        self.base.get_or_create_syn_item(MapValuePresent),
+        vec![key_tpe],
+        vec![val],
       )
       .into(),
     )
     .into()
+  }
+
+  fn map_value_absent(&mut self, tpe: st::Type<'l>) -> st::Expr<'l> {
+    self
+      .factory()
+      .ADT(
+        self.base.get_or_create_syn_item(MapValueAbsent),
+        vec![tpe],
+        vec![],
+      )
+      .into()
   }
 }
