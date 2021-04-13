@@ -1,15 +1,16 @@
-use super::literal::Literal;
+mod set;
+
 use super::*;
 
+use crate::literal::Literal;
 use crate::spec::SpecType;
+use crate::std_items::{CrateItem::*, LangItem};
+use crate::ty::{int_bit_width, uint_bit_width};
 
 use std::convert::TryFrom;
 
 use rustc_middle::mir::{BinOp, BorrowKind, Field, Mutability, UnOp};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
-
-use crate::std_items::LangItem;
-use crate::ty::{int_bit_width, uint_bit_width};
 use rustc_mir_build::thir::{
   Arm, BindingMode, Block, BlockSafety, Expr, ExprKind, FieldPat, FruInfo, Guard, LogicalOp, Pat,
   PatKind, Stmt, StmtKind,
@@ -285,73 +286,25 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         StdItem::LangItem(LangItem::BeginPanicFn) | StdItem::LangItem(LangItem::PanicFn) => {
           Some(self.extract_panic(args, span, false))
         }
-        StdItem::CrateItem(CrateItem::BeginPanicFmtFn) => {
-          Some(self.extract_panic(args, span, true))
+        StdItem::CrateItem(BeginPanicFmtFn) => Some(self.extract_panic(args, span, true)),
+
+        StdItem::CrateItem(item) if item.is_set_related() => {
+          Some(self.extract_set_expr(item, args, substs_ref, span))
         }
 
-        StdItem::CrateItem(CrateItem::SetEmptyFn)
-        | StdItem::CrateItem(CrateItem::SetSingletonFn) => {
-          Some(self.extract_set_creation(args, substs_ref, span))
-        }
-        StdItem::CrateItem(item)
-          if item == CrateItem::SetAddFn
-            || item == CrateItem::SetDifferenceFn
-            || item == CrateItem::SetIntersectionFn
-            || item == CrateItem::SetUnionFn
-            || item == CrateItem::SubsetOfFn =>
-        {
-          Some(self.extract_set_op(item, args, span))
-        }
         StdItem::CrateItem(CrateItem::ImpliesFn) => self.extract_implies(args),
 
         // Box::new, erase it and return the argument directly.
-        StdItem::CrateItem(CrateItem::BoxNewFn) => Some(self.extract_expr(args.first().unwrap())),
+        StdItem::CrateItem(BoxNewFn) => Some(self.extract_expr(args.first().unwrap())),
 
-        StdItem::CrateItem(CrateItem::ToStringFn) => {
-          self.extract_str_to_string(args.first().unwrap())
-        }
-        StdItem::CrateItem(CrateItem::PartialEqFn) => self.extract_partial_eq(args),
-        StdItem::CrateItem(CrateItem::CloneFn) => self.extract_clone(args.first().unwrap()),
+        StdItem::CrateItem(ToStringFn) => self.extract_str_to_string(args.first().unwrap()),
+        StdItem::CrateItem(PartialEqFn) => self.extract_partial_eq(args),
+        StdItem::CrateItem(CloneFn) => self.extract_clone(args.first().unwrap()),
 
         _ => None,
       })
       // Otherwise, extract a normal call
       .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
-  }
-
-  fn extract_set_op(
-    &mut self,
-    std_item: CrateItem,
-    args: &'a [Expr<'a, 'tcx>],
-    span: Span,
-  ) -> st::Expr<'l> {
-    use CrateItem::*;
-
-    if let [set, arg, ..] = &self.extract_exprs(args)[0..2] {
-      return match std_item {
-        SetAddFn => self.factory().SetAdd(*set, *arg).into(),
-        SetDifferenceFn => self.factory().SetDifference(*set, *arg).into(),
-        SetIntersectionFn => self.factory().SetIntersection(*set, *arg).into(),
-        SetUnionFn => self.factory().SetUnion(*set, *arg).into(),
-        SubsetOfFn => self.factory().SubsetOf(*set, *arg).into(),
-        _ => unreachable!(),
-      };
-    }
-    self.unsupported_expr(
-      span,
-      "Cannot extract set operation with less than two arguments.",
-    )
-  }
-
-  fn extract_set_creation(
-    &mut self,
-    args: &'a [Expr<'a, 'tcx>],
-    substs: SubstsRef<'tcx>,
-    span: Span,
-  ) -> st::Expr<'l> {
-    let args = self.extract_exprs(args);
-    let ty = self.base.extract_ty(substs.type_at(0), &self.txtcx, span);
-    self.factory().FiniteSet(args, ty).into()
   }
 
   fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
