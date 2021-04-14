@@ -31,10 +31,8 @@ pub fn test3(a: &Map<u32, i32>) -> i32 {
   b
 }
 
-/*
 #[pre(!a.contains(&0))]
 #[post(matches!(ret, None))]
 pub fn test2(a: &Map<u32, u32>) -> Option<&u32> {
   a.get(&0)
 }
-*/

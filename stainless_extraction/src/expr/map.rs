@@ -14,6 +14,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       (MapApplyFn, [map, key]) => self.extract_map_apply(*map, *key, substs_ref, span),
       (MapContainsFn, [map, key]) => self.extract_map_contains(*map, *key, substs_ref, span),
       (MapRemovedFn, [map, key]) => self.extract_map_removed(*map, *key, substs_ref, span),
+      (MapGetFn, [map, key]) => self.factory().MapApply(*map, *key).into(),
       (MapUpdatedFn, [map, key, val]) => {
         self.extract_map_updated(*map, *key, *val, substs_ref, span)
       }

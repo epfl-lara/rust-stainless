@@ -52,6 +52,9 @@ impl<K, V> Map<K, V> {
   pub fn get_or_else(&self, _key: &K, _else: &V) -> &V {
     unimplemented!()
   }
+  pub fn get(&self, _key: &K) -> Option<&V> {
+    unimplemented!()
+  }
   pub fn contains(&self, _t: &K) -> bool {
     unimplemented!()
   }

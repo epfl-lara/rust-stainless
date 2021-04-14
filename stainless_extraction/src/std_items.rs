@@ -47,6 +47,7 @@ pub enum CrateItem {
   MapType,
   MapEmptyFn,
   MapApplyFn,
+  MapGetFn,
   MapGetOrElseFn,
   MapContainsFn,
   MapUpdatedFn,
@@ -80,6 +81,7 @@ impl CrateItem {
       MapType => "stainless::Map",
       MapEmptyFn => "stainless::Map::<K, V>::empty",
       MapApplyFn => "stainless::Map::<K, V>::apply",
+      MapGetFn => "stainless::Map::<K, V>::get",
       MapGetOrElseFn => "stainless::Map::<K, V>::get_or_else",
       MapContainsFn => "stainless::Map::<K, V>::contains",
       MapUpdatedFn => "stainless::Map::<K, V>::updated",
@@ -129,6 +131,7 @@ impl CrateItem {
         | MapEmptyFn
         | MapApplyFn
         | MapContainsFn
+        | MapGetFn
         | MapGetOrElseFn
         | MapUpdatedFn
         | MapRemovedFn
