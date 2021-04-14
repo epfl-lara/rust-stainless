@@ -24,17 +24,17 @@ impl<T> List<T> {
       List::Cons(_, tail) => 1 + tail.size(),
     }
   }
+}
 
+impl List<i32> {
   #[measure(self)]
-  pub fn contents(&self) -> Set<T> {
+  pub fn contents(&self) -> Set<i32> {
     match self {
       List::Nil => Set::empty(),
       List::Cons(head, tail) => tail.contents().union(&Set::singleton(head)),
     }
   }
-}
 
-impl List<i32> {
   #[measure(self)]
   pub fn is_sorted(&self) -> bool {
     match self {

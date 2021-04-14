@@ -1,74 +1,104 @@
 pub use num_bigint::BigInt;
 pub use stainless_macros::*;
 
-use std::marker::PhantomData;
+use std::hash::Hash;
 
-#[derive(Copy, Clone, PartialEq)]
+use im::{HashMap, HashSet};
+
 pub struct Set<T> {
-  phantom: PhantomData<T>,
+  set: HashSet<T>,
 }
 
-impl<T> Set<T> {
+impl<T> Set<T>
+where
+  T: Eq + Hash + Clone,
+{
   pub fn empty() -> Self {
-    unimplemented!()
+    Self {
+      set: HashSet::new(),
+    }
   }
-  pub fn singleton(_t: &T) -> Self {
-    unimplemented!()
-  }
-
-  pub fn add(&self, _t: &T) -> Self {
-    unimplemented!()
-  }
-
-  pub fn contains(&self, _t: &T) -> bool {
-    unimplemented!()
+  pub fn singleton(t: &T) -> Self {
+    Self {
+      set: HashSet::unit(t.clone()),
+    }
   }
 
-  pub fn union(&self, _other: &Set<T>) -> Self {
-    unimplemented!()
+  pub fn add(&self, t: &T) -> Self {
+    Self {
+      set: self.set.update(t.clone()),
+    }
   }
-  pub fn intersection(&self, _other: &Set<T>) -> Self {
-    unimplemented!()
+
+  pub fn contains(&self, t: &T) -> bool {
+    self.set.contains(t)
   }
-  pub fn difference(&self, _other: &Set<T>) -> Self {
-    unimplemented!()
+
+  pub fn union(&self, other: &Set<T>) -> Self {
+    Self {
+      set: self.set.clone().union(other.set.clone()),
+    }
   }
-  pub fn is_subset_of(&self, _other: &Set<T>) -> bool {
-    unimplemented!()
+
+  pub fn intersection(&self, other: &Set<T>) -> Self {
+    Self {
+      set: self.set.clone().intersection(other.set.clone()),
+    }
+  }
+
+  pub fn difference(&self, other: &Set<T>) -> Self {
+    Self {
+      set: self.set.clone().difference(other.set.clone()),
+    }
+  }
+
+  pub fn is_subset_of(&self, other: &Set<T>) -> bool {
+    self.set.is_subset(other.set.clone())
   }
 }
 
-#[derive(Copy, Clone)]
 pub struct Map<K, V> {
-  keys: PhantomData<K>,
-  vals: PhantomData<V>,
+  map: HashMap<K, V>,
 }
 
-impl<K, V> Map<K, V> {
+impl<K, V> Map<K, V>
+where
+  K: Eq + Hash + Clone,
+  V: Clone,
+{
   pub fn empty() -> Self {
-    unimplemented!()
+    Self {
+      map: HashMap::new(),
+    }
+  }
+
+  pub fn get(&self, key: &K) -> Option<&V> {
+    self.map.get(key)
+  }
+
+  pub fn get_or_else<'a>(&'a self, key: &K, elze: &'a V) -> &'a V {
+    self.get(key).unwrap_or(elze)
   }
 
   /// Panics if the key is not in the map.
-  pub fn apply(&self, _key: &K) -> &V {
-    unimplemented!()
-  }
-  pub fn get_or_else(&self, _key: &K, _else: &V) -> &V {
-    unimplemented!()
-  }
-  pub fn get(&self, _key: &K) -> Option<&V> {
-    unimplemented!()
-  }
-  pub fn contains(&self, _t: &K) -> bool {
-    unimplemented!()
+  pub fn apply(&self, key: &K) -> &V {
+    self.get(key).unwrap()
   }
 
-  pub fn updated(&self, _key: &K, _val: &V) -> Self {
-    unimplemented!()
+  pub fn contains(&self, key: &K) -> bool {
+    self.map.contains_key(key)
   }
 
-  pub fn removed(&self, _key: &K) -> Self {
-    unimplemented!()
+  pub fn updated(&self, key: &K, val: &V) -> Self {
+    Self {
+      map: self.map.update(key.clone(), val.clone()),
+    }
+  }
+
+  pub fn removed(&self, key: &K) -> Self {
+    Self {
+      map: self.map.without(key),
+    }
   }
 }
 
@@ -77,6 +107,7 @@ pub trait Implies {
 }
 
 impl Implies for bool {
+  /// Simple helper to provide the implies expression on booleans.
   #[inline(always)]
   fn implies(self, b: bool) -> bool {
     !self || b
