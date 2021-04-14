@@ -110,11 +110,25 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       // "Real" ADTs
       TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
-        // Stainless set type
+        // Stainless types
         Some(StdItem::CrateItem(CrateItem::SetType)) => {
           let arg_ty = self.extract_ty(substitutions.type_at(0), txtcx, span);
           f.SetType(arg_ty).into()
         }
+        Some(StdItem::CrateItem(CrateItem::MapType)) => {
+          let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+          match &arg_tps[..] {
+            [key_tpe, val_tpe] => f.MapType(*key_tpe, self.std_option_type(*val_tpe)).into(),
+            _ => {
+              self.unsupported(
+                span,
+                format!("Cannot extract map type with arguments {:?}", arg_tps),
+              );
+              f.Untyped().into()
+            }
+          }
+        }
+
         // String type
         Some(StdItem::CrateItem(CrateItem::StringType)) => f.StringType().into(),
 
