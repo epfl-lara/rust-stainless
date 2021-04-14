@@ -61,8 +61,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       Some("Map undefined at this index".into()),
       self
         .base
-        .std_option_some_value(f.AsInstanceOf(f.MapApply(map, key).into(), some_tpe).into())
-        .into(),
+        .std_option_some_value(f.AsInstanceOf(f.MapApply(map, key).into(), some_tpe).into()),
     )
     .into()
   }
