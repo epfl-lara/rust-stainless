@@ -43,6 +43,7 @@ mod flags;
 mod fns;
 mod krate;
 mod std_items;
+mod synth;
 mod ty;
 mod utils;
 

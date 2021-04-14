@@ -118,7 +118,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         Some(StdItem::CrateItem(CrateItem::MapType)) => {
           let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
           match &arg_tps[..] {
-            [key_tpe, val_tpe] => f.MapType(*key_tpe, self.std_option_type(*val_tpe)).into(),
+            [key_tpe, val_tpe] => f
+              .MapType(*key_tpe, self.synth().std_option_type(*val_tpe))
+              .into(),
             _ => {
               self.unsupported(
                 span,

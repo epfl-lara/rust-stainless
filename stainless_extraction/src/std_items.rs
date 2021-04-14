@@ -240,6 +240,12 @@ impl StdItems {
     self.def_to_item.get(&def_id).copied()
   }
 
+  #[inline]
+  pub(super) fn item_to_def(&self, item: StdItem) -> DefId {
+    // By construction, we know that all items are in the map.
+    self.item_to_def.get(&item).copied().unwrap()
+  }
+
   pub(super) fn is_sized_trait(&self, def_id: DefId) -> bool {
     self
       .def_to_item_opt(def_id)
@@ -254,59 +260,5 @@ impl StdItems {
         | Some(StdItem::LangItem(LangItem::FnMutTrait))
         | Some(StdItem::LangItem(LangItem::FnOnceTrait))
     )
-  }
-}
-
-/// Synthetisation of std::option::Option trees in Stainless AST.
-impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
-  pub(super) fn std_option_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
-    self
-      .factory()
-      .ADTType(self.option_adt().id, vec![tpe])
-      .into()
-  }
-
-  pub(super) fn std_option_none(&mut self, tpe: st::Type<'l>) -> st::Expr<'l> {
-    self.factory().ADT(self.none_id(), vec![tpe], vec![]).into()
-  }
-
-  pub(super) fn std_option_some(&mut self, val: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
-    self
-      .factory()
-      .ADT(self.some_id(), vec![tpe], vec![val])
-      .into()
-  }
-
-  pub(super) fn std_option_some_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
-    self.factory().ADTType(self.some_id(), vec![tpe]).into()
-  }
-
-  pub(super) fn std_option_some_value(&mut self, some: st::Expr<'l>) -> st::Expr<'l> {
-    self
-      .factory()
-      .ClassSelector(some, self.some_value_id())
-      .into()
-  }
-
-  fn option_adt(&mut self) -> &'l st::ADTSort<'l> {
-    let def_id = self
-      .std_items
-      .item_to_def
-      .get(&StdItem::CrateItem(OptionType))
-      .copied()
-      .unwrap();
-    self.get_or_extract_adt(def_id)
-  }
-
-  fn none_id(&mut self) -> StainlessSymId<'l> {
-    self.option_adt().constructors[0].id
-  }
-
-  fn some_id(&mut self) -> StainlessSymId<'l> {
-    self.option_adt().constructors[1].id
-  }
-
-  fn some_value_id(&mut self) -> StainlessSymId<'l> {
-    self.option_adt().constructors[1].fields[0].v.id
   }
 }
