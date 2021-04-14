@@ -55,7 +55,6 @@ pub enum CrateItem {
   OptionType,
 }
 
-use stainless_data::ast::{ADTSort, SymbolIdentifier};
 use CrateItem::*;
 
 impl CrateItem {
@@ -289,7 +288,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .into()
   }
 
-  fn option_adt(&mut self) -> &'l ADTSort<'l> {
+  fn option_adt(&mut self) -> &'l st::ADTSort<'l> {
     let def_id = self
       .std_items
       .item_to_def
@@ -299,15 +298,15 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.get_or_extract_adt(def_id)
   }
 
-  fn none_id(&mut self) -> &'l SymbolIdentifier<'l> {
+  fn none_id(&mut self) -> StainlessSymId<'l> {
     self.option_adt().constructors[0].id
   }
 
-  fn some_id(&mut self) -> &'l SymbolIdentifier<'l> {
+  fn some_id(&mut self) -> StainlessSymId<'l> {
     self.option_adt().constructors[1].id
   }
 
-  fn some_value_id(&mut self) -> &'l SymbolIdentifier<'l> {
+  fn some_value_id(&mut self) -> StainlessSymId<'l> {
     self.option_adt().constructors[1].fields[0].v.id
   }
 }
