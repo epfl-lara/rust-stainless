@@ -87,6 +87,20 @@ impl CrateItem {
       _ => DefKind::AssocFn,
     }
   }
+
+  pub fn is_set_related(&self) -> bool {
+    matches!(
+      self,
+      SetType
+        | SetEmptyFn
+        | SetSingletonFn
+        | SetAddFn
+        | SetDifferenceFn
+        | SetIntersectionFn
+        | SetUnionFn
+        | SubsetOfFn
+    )
+  }
 }
 
 lazy_static! {
