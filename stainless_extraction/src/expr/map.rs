@@ -1,7 +1,5 @@
 use super::*;
 
-use crate::syn::SyntheticItem::*;
-
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_map_expr(
     &mut self,
@@ -38,13 +36,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       [key_tpe, val_tpe] => f
         .FiniteMap(
           vec![],
-          self.map_value_absent(*val_tpe),
+          self.base.std_option_none(*val_tpe),
           *key_tpe,
-          f.ADTType(
-            self.base.get_or_create_syn_item(MapValueType),
-            vec![*val_tpe],
-          )
-          .into(),
+          self.base.std_option_type(*val_tpe),
         )
         .into(),
       _ => unreachable!(),
@@ -60,18 +54,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    let present_tpe = self.map_value_present_type(val_tpe);
-
+    let some_tpe = self.base.std_option_some_type(val_tpe);
     f.Assert(
-      f.IsInstanceOf(f.MapApply(map, key).into(), present_tpe)
-        .into(),
+      f.IsInstanceOf(f.MapApply(map, key).into(), some_tpe).into(),
       Some("Map undefined at this index".into()),
-      f.ClassSelector(
-        f.AsInstanceOf(f.MapApply(map, key).into(), present_tpe)
-          .into(),
-        self.base.get_or_create_syn_item(MapValuePresentField),
-      )
-      .into(),
+      self
+        .base
+        .std_option_some_value(f.AsInstanceOf(f.MapApply(map, key).into(), some_tpe).into())
+        .into(),
     )
     .into()
   }
@@ -86,8 +76,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let f = self.factory();
     let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     f.Not(
-      f.Equals(f.MapApply(map, key).into(), self.map_value_absent(val_tpe))
-        .into(),
+      f.Equals(
+        f.MapApply(map, key).into(),
+        self.base.std_option_none(val_tpe),
+      )
+      .into(),
     )
     .into()
   }
@@ -99,10 +92,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
-    let key_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
+    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     self
       .factory()
-      .MapUpdated(map, key, self.map_value_absent(key_tpe))
+      .MapUpdated(map, key, self.base.std_option_none(val_tpe))
       .into()
   }
 
@@ -116,17 +109,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    f.MapUpdated(
-      map,
-      key,
-      f.ADT(
-        self.base.get_or_create_syn_item(MapValuePresent),
-        vec![val_tpe],
-        vec![val],
-      )
-      .into(),
-    )
-    .into()
+    f.MapUpdated(map, key, self.base.std_option_some(val, val_tpe))
+      .into()
   }
 
   fn extract_map_get_or_else(
@@ -139,37 +123,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     let f = self.factory();
     let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    let present_tpe = self.map_value_present_type(val_tpe);
-
+    let some_tpe = self.base.std_option_some_type(val_tpe);
     f.IfExpr(
-      f.IsInstanceOf(f.MapApply(map, key).into(), present_tpe)
-        .into(),
-      f.ClassSelector(
-        f.AsInstanceOf(f.MapApply(map, key).into(), present_tpe)
-          .into(),
-        self.base.get_or_create_syn_item(MapValuePresentField),
-      )
-      .into(),
+      f.IsInstanceOf(f.MapApply(map, key).into(), some_tpe).into(),
+      self
+        .base
+        .std_option_some_value(f.AsInstanceOf(f.MapApply(map, key).into(), some_tpe).into()),
       or_else,
     )
     .into()
-  }
-
-  fn map_value_absent(&mut self, tpe: st::Type<'l>) -> st::Expr<'l> {
-    self
-      .factory()
-      .ADT(
-        self.base.get_or_create_syn_item(MapValueAbsent),
-        vec![tpe],
-        vec![],
-      )
-      .into()
-  }
-
-  fn map_value_present_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
-    self
-      .factory()
-      .ADTType(self.base.get_or_create_syn_item(MapValuePresent), vec![tpe])
-      .into()
   }
 }

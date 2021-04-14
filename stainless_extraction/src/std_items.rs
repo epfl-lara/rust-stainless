@@ -7,6 +7,8 @@ use rustc_middle::ty::TyCtxt;
 
 use enum_iterator::IntoEnumIterator;
 
+use super::*;
+
 /// A standard item, either a rust LangItem, or one of the stainless library
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum StdItem {
@@ -52,6 +54,7 @@ pub enum CrateItem {
   OptionType,
 }
 
+use stainless_data::ast::{ADTSort, SymbolIdentifier};
 use CrateItem::*;
 
 impl CrateItem {
@@ -156,16 +159,15 @@ impl LangItem {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct StdItems {
   def_to_item: HashMap<DefId, StdItem>,
+  item_to_def: HashMap<StdItem, DefId>,
 }
 
 impl StdItems {
   pub(super) fn collect(tcx: TyCtxt) -> Self {
-    let mut this = Self {
-      def_to_item: HashMap::new(),
-    };
+    let mut this = Self::default();
 
     let crate_names: HashSet<_> = CRATE_ITEMS_BY_CRATE.keys().collect();
     let crate_nums: HashMap<_, CrateNum> = tcx
@@ -187,6 +189,7 @@ impl StdItems {
     for item in LangItem::into_enum_iter() {
       let def_id = tcx.require_lang_item(item.rust_lang_item(), None);
       this.def_to_item.insert(def_id, StdItem::LangItem(item));
+      this.item_to_def.insert(StdItem::LangItem(item), def_id);
     }
 
     // Register additional items from the rust standard library
@@ -223,6 +226,7 @@ impl StdItems {
         if tcx.def_kind(def_id) == item.def_kind() {
           if let Some(item) = items.remove(path.as_str()) {
             self.def_to_item.insert(def_id, StdItem::CrateItem(item));
+            self.item_to_def.insert(StdItem::CrateItem(item), def_id);
           }
         }
       }
@@ -248,5 +252,59 @@ impl StdItems {
         | Some(StdItem::LangItem(LangItem::FnMutTrait))
         | Some(StdItem::LangItem(LangItem::FnOnceTrait))
     )
+  }
+}
+
+/// Synthetisation of std::option::Option trees in Stainless AST.
+impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
+  pub(super) fn std_option_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
+    self
+      .factory()
+      .ADTType(self.option_adt().id, vec![tpe])
+      .into()
+  }
+
+  pub(super) fn std_option_none(&mut self, tpe: st::Type<'l>) -> st::Expr<'l> {
+    self.factory().ADT(self.none_id(), vec![tpe], vec![]).into()
+  }
+
+  pub(super) fn std_option_some(&mut self, val: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
+    self
+      .factory()
+      .ADT(self.some_id(), vec![tpe], vec![val])
+      .into()
+  }
+
+  pub(super) fn std_option_some_type(&mut self, tpe: st::Type<'l>) -> st::Type<'l> {
+    self.factory().ADTType(self.some_id(), vec![tpe]).into()
+  }
+
+  pub(super) fn std_option_some_value(&mut self, some: st::Expr<'l>) -> st::Expr<'l> {
+    self
+      .factory()
+      .ClassSelector(some, self.some_value_id())
+      .into()
+  }
+
+  fn option_adt(&mut self) -> &'l ADTSort<'l> {
+    let def_id = self
+      .std_items
+      .item_to_def
+      .get(&StdItem::CrateItem(OptionType))
+      .copied()
+      .unwrap();
+    self.get_or_extract_adt(def_id)
+  }
+
+  fn none_id(&mut self) -> &'l SymbolIdentifier<'l> {
+    self.option_adt().constructors[0].id
+  }
+
+  fn some_id(&mut self) -> &'l SymbolIdentifier<'l> {
+    self.option_adt().constructors[1].id
+  }
+
+  fn some_value_id(&mut self) -> &'l SymbolIdentifier<'l> {
+    self.option_adt().constructors[1].fields[0].v.id
   }
 }

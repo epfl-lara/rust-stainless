@@ -9,7 +9,6 @@ use rustc_span::{Span, DUMMY_SP};
 
 use std::collections::BTreeMap;
 
-use crate::syn::SyntheticItem::MapValueType;
 use stainless_data::ast as st;
 
 /// Extraction of types
@@ -118,13 +117,16 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
         Some(StdItem::CrateItem(CrateItem::MapType)) => {
           let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
-          let (key_tpe, tps) = arg_tps.split_first().unwrap();
-          f.MapType(
-            *key_tpe,
-            f.ADTType(self.get_or_create_syn_item(MapValueType), tps.to_vec())
-              .into(),
-          )
-          .into()
+          match &arg_tps[..] {
+            [key_tpe, val_tpe] => f.MapType(*key_tpe, self.std_option_type(*val_tpe)).into(),
+            _ => {
+              self.unsupported(
+                span,
+                format!("Cannot extract map type with arguments {:?}", arg_tps),
+              );
+              f.Untyped().into()
+            }
+          }
         }
 
         // String type
