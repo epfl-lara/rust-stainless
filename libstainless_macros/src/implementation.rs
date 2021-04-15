@@ -231,3 +231,23 @@ fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenS
     })
     .collect()
 }
+
+#[cfg(test)]
+mod test {
+  use super::*;
+
+  #[test]
+  pub fn post_no_params() {
+    let p = try_parse(
+      SpecType::Post,
+      quote!(ret),
+      quote!(
+        fn test() -> bool {
+          true
+        }
+      ),
+    );
+    assert!(p.is_ok());
+    generate_fn_with_spec(p.unwrap());
+  }
+}
