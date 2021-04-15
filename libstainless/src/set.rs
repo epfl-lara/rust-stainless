@@ -66,7 +66,7 @@ mod test {
   }
 
   #[test]
-  fn set_theory() {
+  fn test_set_theory() {
     let s1 = Set::singleton(1).add(2).add(3);
     let s2 = Set::singleton(1).add(2);
     let s3 = Set::singleton(3).add(4);
@@ -82,7 +82,7 @@ mod test {
   }
 
   #[test]
-  fn remove_contains() {
+  fn test_remove_contains() {
     let set: Set<String> = Set::singleton("foo".into()).add("bar".into());
     let set = set.difference(Set::singleton("bar".into()));
     assert!(!set.contains(&"bar".into()));

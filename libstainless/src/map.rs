@@ -1,6 +1,7 @@
 use im::HashMap;
 use std::hash::Hash;
 
+#[derive(Clone)]
 pub struct Map<K, V> {
   map: HashMap<K, V>,
 }
@@ -43,5 +44,42 @@ where
     Self {
       map: self.map.without(key),
     }
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::*;
+
+  #[test]
+  fn test_empty() {
+    assert!(!Map::<_, bool>::empty().contains(&123));
+    assert_eq!(Map::<_, u8>::empty().get(&456), None);
+    assert_eq!(Map::empty().get_or_else(&789, &0), &0);
+  }
+
+  #[test]
+  fn test_get_removed() {
+    let map: Map<String, i32> = Map::empty()
+      .updated("foo".into(), 1)
+      .updated("bar".into(), 2)
+      .updated("baz".into(), 3);
+
+    assert_eq!(Some(&1), map.get(&"foo".into()));
+    let map = map.removed(&"foo".into());
+    assert!(!map.contains(&"foo".into()));
+
+    assert_eq!(&3, map.apply(&"baz".into()));
+    let map = map.updated("bar".into(), 8);
+    assert_eq!(&8, map.apply(&"bar".into()));
+  }
+
+  #[test]
+  fn test_get_or_else() {
+    assert_eq!(Map::empty().get_or_else(&1, &0), &0);
+
+    let m1 = Map::empty().updated(1, 123);
+    assert_eq!(m1.get_or_else(&1, &0), &123);
+    assert_eq!(m1.get_or_else(&0, &-1), &-1);
   }
 }
