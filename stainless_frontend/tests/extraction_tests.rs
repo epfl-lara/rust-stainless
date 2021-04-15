@@ -125,7 +125,6 @@ define_tests!(
   pass: panic_type,
   pass: phantom_data,
   pass: return_stmt,
-  pass: set_ops,
   pass: spec_on_trait_impl,
   pass: trait_bounds,
   pass: struct_update,
