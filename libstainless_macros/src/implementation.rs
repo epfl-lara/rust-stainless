@@ -125,7 +125,8 @@ fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
     let spec_type = Ident::new(spec.typ.name(), Span::call_site());
 
     let ret_param: TokenStream = match spec.typ {
-      SpecType::Post => quote! { , ret: #fn_return_ty },
+      SpecType::Post if !fn_arg_tys.is_empty() => quote! { , ret: #fn_return_ty },
+      SpecType::Post => quote! { ret: #fn_return_ty },
       _ => quote! {},
     };
     let expr = replace_ident(spec.expr.to_token_stream(), "self", "_self");
@@ -230,4 +231,24 @@ fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenS
       t => t,
     })
     .collect()
+}
+
+#[cfg(test)]
+mod test {
+  use super::*;
+
+  #[test]
+  pub fn post_no_params() {
+    let p = try_parse(
+      SpecType::Post,
+      quote!(ret),
+      quote!(
+        fn test() -> bool {
+          true
+        }
+      ),
+    );
+    assert!(p.is_ok());
+    generate_fn_with_spec(p.unwrap());
+  }
 }

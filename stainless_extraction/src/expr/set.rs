@@ -29,6 +29,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         SetIntersectionFn => f.SetIntersection(*set, *arg).into(),
         SetUnionFn => f.SetUnion(*set, *arg).into(),
         SubsetOfFn => f.SubsetOf(*set, *arg).into(),
+        SetContainsFn => f.ElementOfSet(*arg, *set).into(),
         _ => unreachable!(),
       },
 
