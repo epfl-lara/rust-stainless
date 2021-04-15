@@ -16,8 +16,8 @@ pub fn test(m: &Map<u32, u32>) {
 #[pre(!a.contains(&0))]
 #[post(ret)]
 pub fn test1(a: &Map<u32, u32>) -> bool {
-  let b = a.updated(&0, &1);
-  let c = a.updated(&0, &1);
+  let b = a.updated(0, 1);
+  let c = a.updated(0, 1);
   // Deref to do primitive equality of ints
   *b.apply(&0) == *c.apply(&0)
 }
