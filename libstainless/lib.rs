@@ -18,15 +18,15 @@ where
       set: HashSet::new(),
     }
   }
-  pub fn singleton(t: &T) -> Self {
+  pub fn singleton(t: T) -> Self {
     Self {
-      set: HashSet::unit(t.clone()),
+      set: HashSet::unit(t),
     }
   }
 
-  pub fn add(&self, t: &T) -> Self {
+  pub fn add(&self, t: T) -> Self {
     Self {
-      set: self.set.update(t.clone()),
+      set: self.set.update(t),
     }
   }
 
@@ -34,26 +34,26 @@ where
     self.set.contains(t)
   }
 
-  pub fn union(&self, other: &Set<T>) -> Self {
+  pub fn union(self, other: Set<T>) -> Self {
     Self {
-      set: self.set.clone().union(other.set.clone()),
+      set: self.set.union(other.set),
     }
   }
 
-  pub fn intersection(&self, other: &Set<T>) -> Self {
+  pub fn intersection(self, other: Set<T>) -> Self {
     Self {
-      set: self.set.clone().intersection(other.set.clone()),
+      set: self.set.intersection(other.set),
     }
   }
 
-  pub fn difference(&self, other: &Set<T>) -> Self {
+  pub fn difference(self, other: Set<T>) -> Self {
     Self {
-      set: self.set.clone().difference(other.set.clone()),
+      set: self.set.difference(other.set),
     }
   }
 
   pub fn is_subset_of(&self, other: &Set<T>) -> bool {
-    self.set.is_subset(other.set.clone())
+    self.set.is_subset(&other.set)
   }
 }
 
@@ -89,9 +89,9 @@ where
     self.map.contains_key(key)
   }
 
-  pub fn updated(&self, key: &K, val: &V) -> Self {
+  pub fn updated(&self, key: K, val: V) -> Self {
     Self {
-      map: self.map.update(key.clone(), val.clone()),
+      map: self.map.update(key, val),
     }
   }
 
