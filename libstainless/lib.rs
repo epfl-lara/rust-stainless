@@ -20,10 +20,6 @@ impl<T> Set<T> {
     unimplemented!()
   }
 
-  pub fn contains(&self, _t: &T) -> bool {
-    unimplemented!()
-  }
-
   pub fn union(&self, _other: &Set<T>) -> Self {
     unimplemented!()
   }

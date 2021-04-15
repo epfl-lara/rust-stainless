@@ -31,7 +31,6 @@ pub enum CrateItem {
   BeginPanicFmtFn,
   SetType,
   SetAddFn,
-  SetContainsFn,
   SetDifferenceFn,
   SetIntersectionFn,
   SetUnionFn,
@@ -65,7 +64,6 @@ impl CrateItem {
       BeginPanicFmtFn => "std::rt::begin_panic_fmt",
       SetType => "stainless::Set",
       SetAddFn => "stainless::Set::<T>::add",
-      SetContainsFn => "stainless::Set::<T>::contains",
       SetDifferenceFn => "stainless::Set::<T>::difference",
       SetIntersectionFn => "stainless::Set::<T>::intersection",
       SetUnionFn => "stainless::Set::<T>::union",
@@ -118,7 +116,6 @@ impl CrateItem {
         | SetEmptyFn
         | SetSingletonFn
         | SetAddFn
-        | SetContainsFn
         | SetDifferenceFn
         | SetIntersectionFn
         | SetUnionFn
