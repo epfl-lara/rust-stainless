@@ -4,7 +4,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
 use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind};
 use rustc_hir_pretty as pretty;
-use rustc_middle::ty::{AssocKind, List};
+use rustc_middle::ty::{AssocKind, List, TraitRef};
 use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
@@ -18,7 +18,7 @@ fn pretty_path(path: &hir::Path<'_>) -> String {
 }
 
 // TODO: Ignore certain boilerplate/compiler-generated items
-fn should_ignore(item: &hir::Item<'_>) -> bool {
+fn should_ignore_item(item: &hir::Item<'_>) -> bool {
   match item.kind {
     ItemKind::ExternCrate(_) => {
       let name = item.ident.name.to_string();
@@ -68,7 +68,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           }
 
           // Ignore some known use statements and external crates.
-          _ if should_ignore(item) => {}
+          _ if should_ignore_item(item) => {}
 
           // Store top-level functions
           ItemKind::Fn(..) => {
@@ -86,25 +86,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           // Store functions of impl blocks and their specs
           ItemKind::Impl(hir::Impl { items, .. }) => {
             // if the impl implements a trait, then we need to extract it as a class/object.
-            match self.xtor.tcx.impl_trait_ref(def_id) {
-              Some(trait_ref)
-                if matches!(
-                  self.xtor.std_items.def_to_item_opt(trait_ref.def_id),
-                  Some(StdItem::CrateItem(CrateItem::CloneTrait))
-                ) => {}
+            let trait_ref = self.xtor.tcx.impl_trait_ref(def_id);
 
-              Some(trait_ref) => {
-                let class_def = self.xtor.extract_class(def_id, Some(trait_ref), item.span);
-                self.extract_class_item(
-                  items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
-                  Some(class_def),
-                )
-              }
+            // Some trait implementations are ignored/erased.
+            if !self.xtor.should_ignore_trait_impl(trait_ref) {
+              let class_def =
+                trait_ref.map(|t| self.xtor.extract_class(def_id, Some(t), item.span));
 
-              _ => self.extract_class_item(
+              self.extract_class_item(
                 items.iter().map(|i| (i.id.hir_id(), i.kind, i.defaultness)),
-                None,
-              ),
+                class_def,
+              )
             }
           }
 
@@ -223,6 +215,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   fn create_fn_item(&mut self, def_id: DefId, is_abstract: bool) -> FnItem<'l> {
     FnItem::new(def_id, self.get_or_extract_fn_ref(def_id), is_abstract)
+  }
+
+  /// We ignore i.e. erase some trait implementations, like Clone, on purpose
+  /// because we also erase calls to `Clone::clone`. Therefore, the
+  /// implementation is never called in the Stainless program and it needs to be
+  /// erased as well. Clone erasure is safe under the assumptions stated here:
+  /// https://github.com/epfl-lara/rust-stainless/issues/136
+  ///
+  /// FIXME: the soundness checks are not implemented yet.
+  fn should_ignore_trait_impl(&self, trait_ref: Option<TraitRef<'tcx>>) -> bool {
+    matches!(
+      trait_ref.and_then(|t| self.std_items.def_to_item_opt(t.def_id)),
+      Some(StdItem::CrateItem(CrateItem::CloneTrait))
+    )
   }
 
   /// Extract a function reference (regardless of whether it is local or external)
