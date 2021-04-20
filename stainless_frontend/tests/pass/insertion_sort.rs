@@ -24,17 +24,17 @@ impl<T> List<T> {
       List::Cons(_, tail) => 1 + tail.size(),
     }
   }
-
-  #[measure(self)]
-  pub fn contents(&self) -> Set<T> {
-    match self {
-      List::Nil => Set::empty(),
-      List::Cons(head, tail) => tail.contents().union(&Set::singleton(head)),
-    }
-  }
 }
 
 impl List<i32> {
+  #[measure(self)]
+  pub fn contents(&self) -> Set<i32> {
+    match self {
+      List::Nil => Set::empty(),
+      List::Cons(head, tail) => tail.contents().add(*head),
+    }
+  }
+
   #[measure(self)]
   pub fn is_sorted(&self) -> bool {
     match self {
@@ -69,8 +69,8 @@ impl List<i32> {
   #[post(
     ret.size() == self.size() + 1 &&
     ret.is_sorted() &&
-    ret.contents().is_subset_of(&self.contents().add(&e)) &&
-    self.contents().add(&e).is_subset_of(&ret.contents())
+    ret.contents().is_subset_of(&self.contents().add(e)) &&
+    self.contents().add(e).is_subset_of(&ret.contents())
   )]
   pub fn sorted_insert(self, e: i32) -> List<i32> {
     match self {
