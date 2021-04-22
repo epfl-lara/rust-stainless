@@ -94,27 +94,8 @@ fn try_parse(
 }
 
 fn generate_fn_with_spec(fn_specs: FnSpecs) -> TokenStream {
-  // Take the arguments of the actual function to create the closure's arguments.
-  let fn_arg_tys: Vec<_> = fn_specs.sig.inputs.iter().cloned().collect();
-
-  // Replace the [&]self param with a _self: [&]Self
-  let fn_arg_tys: Punctuated<FnArg, Token![,]> = (match &fn_arg_tys[..] {
-    [FnArg::Receiver(Receiver {
-      mutability: None,
-      reference,
-      ..
-    }), args @ ..] => {
-      let new_self: FnArg = if reference.is_some() {
-        parse_quote! { _self: &Self }
-      } else {
-        parse_quote! { _self: Self }
-      };
-      [&[new_self], args].concat()
-    }
-    args => args.to_vec(),
-  })
-  .into_iter()
-  .collect();
+  // Take the arguments of the actual function to create the closure's arguments
+  let fn_arg_tys = replace_param(&fn_specs.sig.inputs);
 
   let fn_return_ty: Type = match &fn_specs.sig.output {
     ReturnType::Type(_, ty) => *ty.clone(),
@@ -231,6 +212,29 @@ fn replace_ident(stream: TokenStream, ident: &str, replace_with: &str) -> TokenS
       t => t,
     })
     .collect()
+}
+
+/// Replace the [mut|&]self param with a _self: [mut|&]Self for the parameter
+/// list of the closure.
+fn replace_param(args: &Punctuated<FnArg, Token![,]>) -> Punctuated<FnArg, Token![,]> {
+  let fn_arg_tys: Vec<_> = args.iter().cloned().collect();
+  (match &fn_arg_tys[..] {
+    [FnArg::Receiver(Receiver {
+      mutability: None,
+      reference,
+      ..
+    }), args @ ..] => {
+      let new_self: FnArg = if reference.is_some() {
+        parse_quote! { _self: &Self }
+      } else {
+        parse_quote! { _self: Self }
+      };
+      [&[new_self], args].concat()
+    }
+    args => args.to_vec(),
+  })
+  .into_iter()
+  .collect()
 }
 
 #[cfg(test)]
