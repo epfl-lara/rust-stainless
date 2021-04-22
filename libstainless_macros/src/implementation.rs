@@ -231,6 +231,16 @@ fn replace_param(args: &Punctuated<FnArg, Token![,]>) -> Punctuated<FnArg, Token
       };
       [&[new_self], args].concat()
     }
+
+    [FnArg::Receiver(Receiver {
+      mutability: Some(_),
+      reference: None,
+      ..
+    }), args @ ..] => {
+      let new_self: FnArg = parse_quote! { mut _self: Self };
+      [&[new_self], args].concat()
+    }
+
     args => args.to_vec(),
   })
   .into_iter()
@@ -242,7 +252,7 @@ mod test {
   use super::*;
 
   #[test]
-  fn post_no_params() {
+  fn test_post_no_params() {
     let p = try_parse(
       SpecType::Post,
       quote!(ret),
@@ -257,7 +267,14 @@ mod test {
   }
 
   #[test]
-  fn mut_self_param() {
+  fn test_replace_self_param() {
+    assert_eq!(replace_param(&parse_quote!()), parse_quote!());
+
+    assert_eq!(
+      replace_param(&parse_quote!(self)),
+      parse_quote!(_self: Self)
+    );
+
     assert_eq!(
       replace_param(&parse_quote!(self, i: i32, b: bool)),
       parse_quote!(_self: Self, i: i32, b: bool)
