@@ -242,7 +242,7 @@ mod test {
   use super::*;
 
   #[test]
-  pub fn post_no_params() {
+  fn post_no_params() {
     let p = try_parse(
       SpecType::Post,
       quote!(ret),
@@ -254,5 +254,23 @@ mod test {
     );
     assert!(p.is_ok());
     generate_fn_with_spec(p.unwrap());
+  }
+
+  #[test]
+  fn mut_self_param() {
+    assert_eq!(
+      replace_param(&parse_quote!(self, i: i32, b: bool)),
+      parse_quote!(_self: Self, i: i32, b: bool)
+    );
+
+    assert_eq!(
+      replace_param(&parse_quote!(&self, i: i32, b: bool)),
+      parse_quote!(_self: &Self, i: i32, b: bool)
+    );
+
+    assert_eq!(
+      replace_param(&parse_quote!(mut self, i: i32, b: bool)),
+      parse_quote!(mut _self: Self, i: i32, b: bool)
+    );
   }
 }
