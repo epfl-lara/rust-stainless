@@ -319,10 +319,17 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Convert trait refs in the trait bounds to types
     let trait_bounds: Vec<&'l st::ClassType<'l>> = trait_bounds
       .iter()
-      .map(|&(ty::TraitRef { def_id, substs }, span)| {
-        let trait_id = self.get_or_register_def(def_id);
-        let tps = self.extract_tys(substs.types(), &txtcx, span);
-        &*f.ClassType(trait_id, tps)
+      .filter_map(|&(ty::TraitRef { def_id, substs }, span)| {
+        // Erase Clone trait bound
+        (!matches!(
+          self.std_items.def_to_item_opt(def_id),
+          Some(StdItem::CrateItem(CrateItem::CloneTrait))
+        ))
+        .then(|| {
+          let trait_id = self.get_or_register_def(def_id);
+          let tps = self.extract_tys(substs.types(), &txtcx, span);
+          &*f.ClassType(trait_id, tps)
+        })
       })
       .collect();
 
