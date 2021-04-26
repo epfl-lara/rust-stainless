@@ -243,13 +243,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   /// Extracts a call to `Clone::clone` by erasure.
   ///
-  /// FIXME: this is a quick-fix/hack to make use of `PartialEq::eq` for strings
-  ///   across clones, see [extract_partial_eq]. As soon, as strings can be mutated,
-  ///   this becomes potentially unsafe and has to be revisited.
-  ///   The way to correctly solve this use-case is by attaching a spec to the real
+  /// FIXME: This is a work-around for the problems encountered while extracting
+  ///   Clone and PartialEq as type classes. See the issue for details. The way
+  ///   to correctly solve this use-case is by attaching a spec to the real
   ///   `Clone::clone` that preserves equality.
+  ///   https://github.com/epfl-lara/rust-stainless/issues/136
   fn extract_clone(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
-    self.is_str_type(expr).then(|| self.extract_expr(expr))
+    Some(self.extract_expr(expr))
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {

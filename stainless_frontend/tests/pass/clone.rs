@@ -1,33 +1,17 @@
 extern crate stainless;
 use stainless::*;
 
-trait Equals {
-  fn eq(&self, other: &Self) -> bool;
-}
-
-trait Clone {
-  fn clone(&self) -> Self;
-}
-
+#[derive(Clone)]
 pub struct Key(String);
-impl Clone for Key {
-  fn clone(&self) -> Self {
-    Key(self.0.clone())
-  }
-}
-impl Equals for Key {
-  fn eq(&self, other: &Self) -> bool {
-    self.0 == other.0
-  }
-}
 
+#[derive(Clone)]
 pub struct Door {
   key_lock: Key,
 }
 
 impl Door {
   fn try_open(&self, key: &Key) -> Result<(), &'static str> {
-    if key.eq(&self.key_lock) {
+    if key.0 == self.key_lock.0 {
       Ok(())
     } else {
       Err("can't open that door")
@@ -35,12 +19,17 @@ impl Door {
   }
 }
 
+#[derive(Clone)]
 pub struct Person {
   key: Key,
 }
 
+fn do_clone<T: Clone>(t: &T) -> T {
+  t.clone()
+}
+
 // If the person has the key of the door, it implies that they can open it.
-#[post(!(person.key.eq( &door.key_lock)) || matches!(ret, Ok(output)))]
+#[post((person.key.0 == door.key_lock.0).implies(matches!(ret, Ok(_))))]
 pub fn main(door: Door, person: Person) -> Result<(), &'static str> {
-  door.try_open(&person.key.clone())
+  door.try_open(&do_clone(&person.key))
 }
