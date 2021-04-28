@@ -30,13 +30,13 @@ pub enum LangItem {
 pub enum CrateItem {
   BeginPanicFmtFn,
   SetType,
-  SetAddFn,
+  SetInsertFn,
   SetContainsFn,
   SetDifferenceFn,
   SetIntersectionFn,
   SetUnionFn,
-  SubsetOfFn,
-  SetEmptyFn,
+  SetSubsetFn,
+  SetNewFn,
   SetSingletonFn,
   BoxNewFn,
   PhantomData,
@@ -47,13 +47,13 @@ pub enum CrateItem {
   CloneTrait,
   ImpliesFn,
   MapType,
-  MapEmptyFn,
-  MapApplyFn,
+  MapNewFn,
+  MapIndexFn,
   MapGetFn,
-  MapGetOrElseFn,
-  MapContainsFn,
-  MapUpdatedFn,
-  MapRemovedFn,
+  MapGetOrFn,
+  MapContainsKeyFn,
+  MapInsertFn,
+  MapRemoveFn,
   OptionType,
 }
 
@@ -65,13 +65,13 @@ impl CrateItem {
     match self {
       BeginPanicFmtFn => "std::rt::begin_panic_fmt",
       SetType => "stainless::Set",
-      SetAddFn => "stainless::Set::<T>::add",
+      SetInsertFn => "stainless::Set::<T>::insert",
       SetContainsFn => "stainless::Set::<T>::contains",
       SetDifferenceFn => "stainless::Set::<T>::difference",
       SetIntersectionFn => "stainless::Set::<T>::intersection",
       SetUnionFn => "stainless::Set::<T>::union",
-      SubsetOfFn => "stainless::Set::<T>::is_subset_of",
-      SetEmptyFn => "stainless::Set::<T>::empty",
+      SetSubsetFn => "stainless::Set::<T>::is_subset",
+      SetNewFn => "stainless::Set::<T>::new",
       SetSingletonFn => "stainless::Set::<T>::singleton",
       BoxNewFn => "std::boxed::Box::<T>::new",
       PhantomData => "std::marker::PhantomData",
@@ -82,13 +82,13 @@ impl CrateItem {
       CloneTrait => "std::clone::Clone",
       ImpliesFn => "stainless::Implies::implies",
       MapType => "stainless::Map",
-      MapEmptyFn => "stainless::Map::<K, V>::empty",
-      MapApplyFn => "stainless::Map::<K, V>::apply",
+      MapNewFn => "stainless::Map::<K, V>::new",
+      MapIndexFn => "stainless::Map::<K, V>::index",
       MapGetFn => "stainless::Map::<K, V>::get",
-      MapGetOrElseFn => "stainless::Map::<K, V>::get_or_else",
-      MapContainsFn => "stainless::Map::<K, V>::contains",
-      MapUpdatedFn => "stainless::Map::<K, V>::updated",
-      MapRemovedFn => "stainless::Map::<K, V>::removed",
+      MapGetOrFn => "stainless::Map::<K, V>::get_or",
+      MapContainsKeyFn => "stainless::Map::<K, V>::contains_key",
+      MapInsertFn => "stainless::Map::<K, V>::insert",
+      MapRemoveFn => "stainless::Map::<K, V>::remove",
       OptionType => "std::option::Option",
     }
   }
@@ -118,14 +118,14 @@ impl CrateItem {
     matches!(
       self,
       SetType
-        | SetEmptyFn
+        | SetNewFn
         | SetSingletonFn
-        | SetAddFn
+        | SetInsertFn
         | SetContainsFn
         | SetDifferenceFn
         | SetIntersectionFn
         | SetUnionFn
-        | SubsetOfFn
+        | SetSubsetFn
     )
   }
 
@@ -133,13 +133,13 @@ impl CrateItem {
     matches!(
       self,
       MapType
-        | MapEmptyFn
-        | MapApplyFn
-        | MapContainsFn
+        | MapNewFn
+        | MapIndexFn
+        | MapContainsKeyFn
         | MapGetFn
-        | MapGetOrElseFn
-        | MapUpdatedFn
-        | MapRemovedFn
+        | MapGetOrFn
+        | MapInsertFn
+        | MapRemoveFn
     )
   }
 }

@@ -6,13 +6,13 @@ use stainless::*;
 
 #[post(ret)]
 pub fn set1() -> bool {
-  let s = Set::singleton(1).add(2).add(3).add(4);
+  let s = Set::singleton(1).insert(2).insert(3).insert(4);
   s.contains(&3)
 }
 
 #[post(ret)]
 pub fn set2() -> bool {
-  let s1 = Set::empty().add(1);
+  let s1 = Set::new().insert(1);
   let s2 = Set::singleton(1);
-  s1.is_subset_of(&s2) && s2.is_subset_of(&s1)
+  s1.is_subset(&s2) && s2.is_subset(&s1)
 }

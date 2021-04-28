@@ -30,8 +30,8 @@ impl List<i32> {
   #[measure(self)]
   pub fn contents(&self) -> Set<i32> {
     match self {
-      List::Nil => Set::empty(),
-      List::Cons(head, tail) => tail.contents().add(*head),
+      List::Nil => Set::new(),
+      List::Cons(head, tail) => tail.contents().insert(*head),
     }
   }
 
@@ -69,8 +69,8 @@ impl List<i32> {
   #[post(
     ret.size() == self.size() + 1 &&
     ret.is_sorted() &&
-    ret.contents().is_subset_of(&self.contents().add(e)) &&
-    self.contents().add(e).is_subset_of(&ret.contents())
+    ret.contents().is_subset(&self.contents().insert(e)) &&
+    self.contents().insert(e).is_subset(&ret.contents())
   )]
   pub fn sorted_insert(self, e: i32) -> List<i32> {
     match self {
@@ -85,8 +85,8 @@ impl List<i32> {
   #[post(
     ret.size() == self.size() &&
     ret.is_sorted() &&
-    ret.contents().is_subset_of(&self.contents()) &&
-    self.contents().is_subset_of(&ret.contents())
+    ret.contents().is_subset(&self.contents()) &&
+    self.contents().is_subset(&ret.contents())
   )]
   pub fn sort(self) -> List<i32> {
     match self {
