@@ -143,6 +143,7 @@ define_tests!(
   fail_extraction: double_measure_impl,
   fail_verification: liskov_rectangle,
   fail_extraction: mut_borrow_ref,
+  crash_verification: mut_immutable_field,
   fail_extraction: mut_params,
   crash_verification: return_in_cond,
   crash_verification: return_in_guard,
