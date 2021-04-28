@@ -33,6 +33,15 @@ impl<T> List<T> {
     }
   }
 
+  // Check that we can have a measure where the parameter is consumed.
+  #[measure(self)]
+  pub fn consume(self) -> () {
+    match self {
+      List::Nil => (),
+      List::Cons(..) => (),
+    }
+  }
+
   #[pre(index < self.size())]
   #[post(ret.is_some())]
   pub fn get(&self, index: u32) -> Option<&T> {
