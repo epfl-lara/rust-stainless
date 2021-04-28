@@ -9,16 +9,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> st::Expr<'l> {
     match (item, &self.extract_exprs(args)[..]) {
-      (MapEmptyFn, []) => self.extract_map_creation(substs_ref, span),
+      (MapNewFn, []) => self.extract_map_creation(substs_ref, span),
 
-      (MapApplyFn, [map, key]) => self.extract_map_apply(*map, *key, substs_ref, span),
-      (MapContainsFn, [map, key]) => self.extract_map_contains(*map, *key, substs_ref, span),
-      (MapRemovedFn, [map, key]) => self.extract_map_removed(*map, *key, substs_ref, span),
+      (MapIndexFn, [map, key]) => self.extract_map_apply(*map, *key, substs_ref, span),
+      (MapContainsKeyFn, [map, key]) => self.extract_map_contains(*map, *key, substs_ref, span),
+      (MapRemoveFn, [map, key]) => self.extract_map_removed(*map, *key, substs_ref, span),
       (MapGetFn, [map, key]) => self.factory().MapApply(*map, *key).into(),
-      (MapUpdatedFn, [map, key, val]) => {
+      (MapInsertFn, [map, key, val]) => {
         self.extract_map_updated(*map, *key, *val, substs_ref, span)
       }
-      (MapGetOrElseFn, [map, key, or_else]) => {
+      (MapGetOrFn, [map, key, or_else]) => {
         self.extract_map_get_or_else(*map, *key, *or_else, substs_ref, span)
       }
 
