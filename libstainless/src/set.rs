@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use im::HashSet;
 use std::hash::Hash;
 

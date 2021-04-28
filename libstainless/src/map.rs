@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default, clippy::should_implement_trait)]
+
 use im::HashMap;
 use std::hash::Hash;
 
