@@ -77,5 +77,5 @@ jobs:
           command: install
           args: --path stainless_frontend
 
-      - name: Run cargo stainless on demo
-        run: cd demo && cargo stainless
+      - name: Build & run cargo stainless on demo
+        run: cd demo && cargo build && cargo stainless
