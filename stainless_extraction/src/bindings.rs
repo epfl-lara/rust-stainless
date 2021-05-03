@@ -126,10 +126,57 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .dcx
         .let_var_pairs
         .iter()
-        .fold(body_expr, |body, (vd, &v)| {
-          f.LetVar(vd, v.into(), body).into()
+        .fold(body_expr, |body, (body_var, &fn_param)| {
+          let arg = match fn_param {
+            // Mutable ADTs need to be copied parameter-wise to work-around
+            // Stainless' anti-aliasing rules.
+            st::Variable {
+              tpe: st::Type::ADTType(st::ADTType { id, tps }),
+              ..
+            } => self.adt_fieldwise_copy(id, tps, fn_param),
+            _ => fn_param.into(),
+          };
+
+          f.LetVar(body_var, arg, body).into()
         }),
     }
+  }
+
+  fn adt_fieldwise_copy(
+    &self,
+    adt_id: &st::SymbolIdentifier,
+    adt_tps: &[st::Type<'l>],
+    var: &'l st::Variable,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let sort = self
+      .base
+      .with_extraction(|xt| *xt.adts.get(adt_id).unwrap());
+
+    f.MatchExpr(
+      var.into(),
+      sort
+        .constructors
+        .iter()
+        .map(|st::ADTConstructor { id, fields, .. }| {
+          &*f.MatchCase(
+            f.InstanceOfPattern(None, f.ADTType(id, adt_tps.to_vec()).into())
+              .into(),
+            None,
+            f.ADT(
+              id,
+              adt_tps.to_vec(),
+              fields
+                .iter()
+                .map(|fi| f.ADTSelector(var.into(), fi.v.id).into())
+                .collect(),
+            )
+            .into(),
+          )
+        })
+        .collect(),
+    )
+    .into()
   }
 }
 
