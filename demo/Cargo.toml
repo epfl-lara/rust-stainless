@@ -2,5 +2,5 @@
 name = "demo"
 version = "0.0.1"
 
-[dev-dependencies]
+[dependencies]
 stainless = { path = "../libstainless" }

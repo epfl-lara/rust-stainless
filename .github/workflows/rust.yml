@@ -70,3 +70,14 @@ jobs:
           STAINLESS_HOME: ${{ github.workspace }}/stainless-noxt
         with:
           command: test
+
+      - name: Run cargo install
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path stainless_frontend
+
+      - name: Build & run cargo stainless on demo
+        run: cd demo && cargo build && cargo stainless
+        env:
+          STAINLESS_HOME: ${{ github.workspace }}/stainless-noxt

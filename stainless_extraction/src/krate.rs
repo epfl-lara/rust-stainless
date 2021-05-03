@@ -2,7 +2,7 @@ use super::*;
 
 use rustc_hir::def_id::DefId;
 use rustc_hir::itemlikevisit::ItemLikeVisitor;
-use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind};
+use rustc_hir::{self as hir, def, AssocItemKind, Defaultness, ItemKind, Path};
 use rustc_hir_pretty as pretty;
 use rustc_middle::ty::{AssocKind, List, TraitRef};
 use rustc_span::DUMMY_SP;
@@ -12,29 +12,6 @@ use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 
 use crate::fns::FnItem;
 use std::iter;
-
-fn pretty_path(path: &hir::Path<'_>) -> String {
-  pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
-}
-
-// TODO: Ignore certain boilerplate/compiler-generated items
-fn should_ignore_item(item: &hir::Item<'_>) -> bool {
-  match item.kind {
-    ItemKind::ExternCrate(_) => {
-      let name = item.ident.name.to_string();
-      name == "std" || name == "stainless"
-    }
-    ItemKind::Use(ref path, _) => {
-      let path_str = pretty_path(path);
-      path_str.contains("std::prelude")
-        || path_str.starts_with("std::marker::PhantomData")
-        || path_str.starts_with("stainless")
-    }
-    // TODO: Quick fix to filter our synthetic functions
-    // ItemKind::Fn(..) if !item.attrs.is_empty() => true,
-    _ => false,
-  }
-}
 
 /// Top-level extraction
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
@@ -51,24 +28,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
         match &item.kind {
-          // Special known use statements
-          ItemKind::Use(
-            hir::Path {
-              res: def::Res::Def(def::DefKind::Struct, def_id),
-              ..
-            },
-            _,
-          ) => {
-            // Extract the 'use PhantomData' statement as the PhantomData ADT definition.
-            if let Some(StdItem::CrateItem(CrateItem::PhantomData)) =
-              self.xtor.std_items.def_to_item_opt(*def_id)
-            {
-              self.xtor.get_or_extract_adt(*def_id);
-            }
-          }
+          // Ignore extern crate statements for allowed crates.
+          ItemKind::ExternCrate(_)
+            if matches!(item.ident.name.to_string().as_str(), "std" | "stainless") => {}
 
-          // Ignore some known use statements and external crates.
-          _ if should_ignore_item(item) => {}
+          // Ignore module declarations
+          ItemKind::Mod(..) => {}
+
+          ItemKind::Use(path, _) => self.xtor.extract_use(path, item.span),
 
           // Store top-level functions
           ItemKind::Fn(..) => {
@@ -451,6 +418,46 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     }
   }
 
+  /// Extract a use statement. Mostly they are ignored but the user gets a
+  /// warning if they import something Stainless may not know.
+  fn extract_use(&mut self, path: &Path, span: Span) {
+    match path {
+      // Ignore crate-local use statements
+      Path {
+        res: def::Res::Def(_, def_id),
+        ..
+      } if def_id.is_local() => {}
+
+      // Extract the 'use PhantomData' statement as the PhantomData ADT definition.
+      Path {
+        res: def::Res::Def(def::DefKind::Struct, def_id),
+        ..
+      } if matches!(
+        self.std_items.def_to_item_opt(*def_id),
+        Some(StdItem::CrateItem(CrateItem::PhantomData))
+      ) =>
+      {
+        self.get_or_extract_adt(*def_id);
+      }
+
+      // If the use is not from stainless or some special std, then warn the
+      // user about that import.
+      _ => {
+        let path_str = pretty_path(path);
+        if !path_str.contains("std::prelude")
+          && !path_str.starts_with("std::marker::PhantomData")
+          && !path_str.starts_with("std::hash::Hash")
+          && !path_str.starts_with("stainless")
+        {
+          self.tcx.sess.span_warn(
+            span,
+            "Unknown use statement. Stainless likely cannot deal with the imported items.",
+          )
+        }
+      }
+    }
+  }
+
   /// Extract an ADT (regardless of whether it is local or external) or return it from the map of
   /// already extracted ADTs.
   /// Caution: if you only need the ADT's id, you should call [get_or_register_def] because there are
@@ -520,4 +527,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     f.ADTSort(adt_id, tparams, constructors, flags)
   }
+}
+
+fn pretty_path(path: &Path<'_>) -> String {
+  pretty::to_string(pretty::NO_ANN, |s| s.print_path(path, false))
 }
