@@ -15,6 +15,14 @@ fn set_field(s: S) -> S {
   s
 }
 
+struct Outer(S);
+
+fn set_inner_field(mut o: Outer) -> Outer {
+  o.0.field = 101112;
+  o
+}
+
+// As control, the same for a primitive type
 fn set_int(mut s: i32) -> i32 {
   s = 1000;
   s
@@ -29,6 +37,10 @@ pub fn main() {
 
   let s = set_field(s);
   assert!(s.field == 789);
+
+  let o = Outer(s);
+  let o = set_inner_field(o);
+  assert!(o.0.field == 101112);
 
   let i = set_int(12);
   assert!(i == 1000);

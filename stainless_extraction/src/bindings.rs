@@ -127,13 +127,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .let_var_pairs
         .iter()
         .fold(body_expr, |body, (body_var, &fn_param)| {
-          let arg = match fn_param {
+          let arg = match fn_param.tpe {
             // Mutable ADTs need to be copied parameter-wise to work-around
             // Stainless' anti-aliasing rules.
-            st::Variable {
-              tpe: st::Type::ADTType(st::ADTType { id, tps }),
-              ..
-            } => self.adt_fieldwise_copy(id, tps, fn_param),
+            st::Type::ADTType(st::ADTType { id, tps }) => {
+              self.adt_fieldwise_copy(id, tps, fn_param.into())
+            }
             _ => fn_param.into(),
           };
 
@@ -146,7 +145,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &self,
     adt_id: &st::SymbolIdentifier,
     adt_tps: &[st::Type<'l>],
-    var: &'l st::Variable,
+    var: st::Expr<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
     let sort = self
@@ -154,7 +153,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .with_extraction(|xt| *xt.adts.get(adt_id).unwrap());
 
     f.MatchExpr(
-      var.into(),
+      var,
       sort
         .constructors
         .iter()
@@ -168,7 +167,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
               adt_tps.to_vec(),
               fields
                 .iter()
-                .map(|fi| f.ADTSelector(var.into(), fi.v.id).into())
+                .map(|st::ValDef { v }| match v.tpe {
+                  st::Type::ADTType(st::ADTType { id, tps }) => {
+                    self.adt_fieldwise_copy(id, tps, f.ADTSelector(var, v.id).into())
+                  }
+                  _ => f.ADTSelector(var, v.id).into(),
+                })
                 .collect(),
             )
             .into(),
