@@ -1,3 +1,5 @@
+extern crate stainless;
+
 enum Maybe<T> {
   Nothing,
   Just(T),
@@ -21,11 +23,11 @@ fn get_or_else<T>(maybe: Maybe<T>, default: T) -> T {
 fn flatten<T>(maybemaybe: Maybe<Maybe<T>>) -> Maybe<T> {
   match maybemaybe {
     Maybe::Nothing => Maybe::Nothing,
-    Maybe::Just(maybe) => maybe
+    Maybe::Just(maybe) => maybe,
   }
 }
 
-fn main() -> () {
+pub fn main() -> () {
   let x = 123;
   let maybe_x = just(x);
   get_or_else(maybe_x, 0);

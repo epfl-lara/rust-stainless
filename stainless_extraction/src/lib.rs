@@ -249,6 +249,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
+  fn get_adt(&self, id: StainlessSymId<'l>) -> Option<&'l st::ADTSort<'l>> {
+    self.with_extraction(|xt| xt.adts.get(id).copied())
+  }
+
   fn add_function_ref(&mut self, def_id: DefId) {
     self.with_extraction_mut(|xt| {
       assert!(xt.function_refs.insert(def_id));

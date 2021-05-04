@@ -24,18 +24,12 @@ pub(super) enum Flag {
   Measure,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Flags {
   set: HashSet<Flag>,
 }
 
 impl Flags {
-  fn new() -> Self {
-    Self {
-      set: HashSet::new(),
-    }
-  }
-
   pub(super) fn add(&mut self, flag: Flag) {
     self.set.insert(flag);
   }
@@ -124,7 +118,7 @@ pub(super) fn extract_flag(
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_flags(&self, carrier_hid: HirId) -> (Flags, HashMap<Symbol, Flags>) {
     let attrs = self.tcx.hir().attrs(carrier_hid);
-    let mut carrier_flags = Flags::new();
+    let mut carrier_flags = Flags::default();
     let mut flags_by_symbol: HashMap<Symbol, Flags> = HashMap::new();
 
     for attr in attrs {
@@ -140,7 +134,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       let mut add_by_symbol = |symbol: Symbol| {
         flags_by_symbol
           .entry(symbol)
-          .or_insert_with(Flags::new)
+          .or_insert_with(Flags::default)
           .add(flag)
       };
 
