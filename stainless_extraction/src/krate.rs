@@ -466,7 +466,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn get_or_extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
     self
       .get_id_from_def(def_id)
-      .and_then(|id| self.with_extraction(|xt| xt.adts.get(id).copied()))
+      .and_then(|id| self.get_adt(id))
       .unwrap_or_else(|| {
         let adt = self.extract_adt(def_id);
         self.add_adt(adt);
@@ -474,7 +474,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       })
   }
 
-  pub(super) fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
+  fn extract_adt(&mut self, def_id: DefId) -> &'l st::ADTSort<'l> {
     let f = self.factory();
     let adt_id = self.get_or_register_def(def_id);
     let adt_def = self.tcx.adt_def(def_id);
