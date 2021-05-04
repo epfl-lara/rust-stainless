@@ -3,8 +3,8 @@ use super::*;
 mod std_option;
 
 /// This is just a proxy, a mutable reference to the base extractor. The idea of
-/// `Synth` is just to scope some methods under a common namespace, therefore
-/// the struct mainly provides a namespace/scope.
+/// `Synth` is to scope some methods under a common namespace, i.e. the struct
+/// mainly provides a namespace/scope.
 pub struct Synth<'a, 'l, 'tcx> {
   base: &'a mut BaseExtractor<'l, 'tcx>,
 }
