@@ -107,8 +107,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// function recorded in the DefContext. Because, specs (Ensuring, Require,
   /// Decreases) trees have to be the outermost trees, this also unpacks the
   /// specs and repacks them around the body wrapped in LetVars.
-  pub fn wrap_body_let_vars(&self, body_expr: st::Expr<'l>) -> st::Expr<'l> {
+  pub fn wrap_body_let_vars(&mut self, body_expr: st::Expr<'l>) -> st::Expr<'l> {
     let f = self.factory();
+    let synth = &mut self.base.synth();
+
     match body_expr {
       st::Expr::Ensuring(st::Ensuring { body, pred }) => {
         let wrapped_body = self.wrap_body_let_vars(*body);
@@ -130,57 +132,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           let arg = match fn_param.tpe {
             // Mutable ADTs need to be copied parameter-wise to work-around
             // Stainless' anti-aliasing rules.
-            st::Type::ADTType(st::ADTType { id, tps }) => {
-              self.adt_fieldwise_copy(id, tps, fn_param.into())
-            }
+            st::Type::ADTType(st::ADTType { id, tps }) => f
+              .FunctionInvocation(
+                synth.get_or_create_copy_fn(id),
+                tps.clone(),
+                vec![fn_param.into()],
+              )
+              .into(),
             _ => fn_param.into(),
           };
 
           f.LetVar(body_var, arg, body).into()
         }),
     }
-  }
-
-  fn adt_fieldwise_copy(
-    &self,
-    adt_id: &st::SymbolIdentifier,
-    adt_tps: &[st::Type<'l>],
-    var: st::Expr<'l>,
-  ) -> st::Expr<'l> {
-    let f = self.factory();
-    let sort = self
-      .base
-      .with_extraction(|xt| *xt.adts.get(adt_id).unwrap());
-
-    f.MatchExpr(
-      var,
-      sort
-        .constructors
-        .iter()
-        .map(|st::ADTConstructor { id, fields, .. }| {
-          &*f.MatchCase(
-            f.InstanceOfPattern(None, f.ADTType(id, adt_tps.to_vec()).into())
-              .into(),
-            None,
-            f.ADT(
-              id,
-              adt_tps.to_vec(),
-              fields
-                .iter()
-                .map(|st::ValDef { v }| match v.tpe {
-                  st::Type::ADTType(st::ADTType { id, tps }) => {
-                    self.adt_fieldwise_copy(id, tps, f.ADTSelector(var, v.id).into())
-                  }
-                  _ => f.ADTSelector(var, v.id).into(),
-                })
-                .collect(),
-            )
-            .into(),
-          )
-        })
-        .collect(),
-    )
-    .into()
   }
 }
 

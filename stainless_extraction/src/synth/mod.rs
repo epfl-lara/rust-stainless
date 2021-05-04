@@ -1,5 +1,6 @@
 use super::*;
 
+mod copy;
 mod std_option;
 
 /// This is just a proxy, a mutable reference to the base extractor. The idea of

@@ -99,6 +99,7 @@ struct Extraction<'l> {
   generics: HashMap<StainlessSymId<'l>, Generics<'l>>,
   functions: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
   classes: HashMap<StainlessSymId<'l>, &'l st::ClassDef<'l>>,
+  copy_fns: HashMap<StainlessSymId<'l>, &'l st::FunDef<'l>>,
 }
 
 impl<'l> Extraction<'l> {
@@ -112,6 +113,7 @@ impl<'l> Extraction<'l> {
       generics: Default::default(),
       functions: Default::default(),
       classes: Default::default(),
+      copy_fns: Default::default(),
     }
   }
 
