@@ -8,9 +8,7 @@ struct S {
   field: i32,
 }
 
-fn set_field(s: S) -> S {
-  // current work-around for anti-aliasing
-  let mut s = S { ..s };
+fn set_field(mut s: S) -> S {
   s.field = 789;
   s
 }
