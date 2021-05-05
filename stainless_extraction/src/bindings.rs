@@ -126,8 +126,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .dcx
         .let_var_pairs
         .iter()
-        .fold(body_expr, |body, (vd, &v)| {
-          f.LetVar(vd, v.into(), body).into()
+        .fold(body_expr, |body, (body_var, &fn_param)| {
+          // Mutable ADTs need to be copied freshly to work-around Stainless'
+          // anti-aliasing rules. The fresh copy marks them as owned i.e. safe
+          // to mutate locally.
+          let arg = match fn_param.tpe {
+            st::Type::ADTType(_) => f.FreshCopy(fn_param.into()).into(),
+            _ => fn_param.into(),
+          };
+          f.LetVar(body_var, arg, body).into()
         }),
     }
   }
