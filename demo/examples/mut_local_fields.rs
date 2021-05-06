@@ -8,13 +8,15 @@ struct S {
   field: i32,
 }
 
+#[pure]
 fn set_field(mut s: S) -> S {
-  s.field = 789;
+  s.field = 456;
   s
 }
 
 struct Outer(S);
 
+#[pure]
 fn set_inner_field(mut o: Outer) -> Outer {
   o.0.field = 101112;
   o
@@ -30,11 +32,11 @@ pub fn main() {
   // field assignment
   let mut s = S { field: 123 };
   assert!(s.field == 123);
-  s.field = 456;
+  s = set_field(s);
   assert!(s.field == 456);
 
-  let s = set_field(s);
-  assert!(s.field == 789);
+  s.field = -111;
+  assert!(s.field == -111);
 
   let o = Outer(s);
   let o = set_inner_field(o);
