@@ -275,7 +275,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           } else {
             let id = self.get_or_register_def(param.def_id);
             // TODO: Extract flags on type parameters
-            let flags = vec![];
+            let flags = vec![f.IsMutable().into()];
             let tparam = TyParam::Extracted(f.TypeParameter(id, flags));
             Some((param.index, tparam))
           }

@@ -9,6 +9,7 @@ use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
 
+use crate::flags::Flag;
 use crate::fns::{FnItem, FnSignature};
 use std::iter;
 
@@ -357,6 +358,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
     let mut flags = carrier_flags.to_stainless(f);
 
+    // As long as we only have local mutation, every function viewed from the
+    // outside is pure.
+    flags.push(f.IsPure().into());
+
     // Add flag specifying that this function is a method of its class (if there's a class)
     flags.extend(
       class_def
@@ -508,10 +513,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
             let field_ty = field.ty(self.tcx, substs);
             let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
 
-            let flags = flags_by_symbol.remove(&field.ident.name);
-            let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
+            let mut flags = flags_by_symbol
+              .remove(&field.ident.name)
+              .unwrap_or_default();
+            flags.add(Flag::IsVar);
 
-            let field = f.Variable(field_id, field_ty, flags);
+            let field = f.Variable(field_id, field_ty, flags.to_stainless(f));
             &*f.ValDef(field)
           })
           .collect();
