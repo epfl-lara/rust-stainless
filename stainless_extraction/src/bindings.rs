@@ -123,6 +123,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // to mutate locally.
           let arg = match fn_param.tpe {
             st::Type::ADTType(_) => f.FreshCopy(fn_param.into()).into(),
+            st::Type::TypeParameter(t) if t.is_mutable() => f.FreshCopy(fn_param.into()).into(),
             _ => fn_param.into(),
           };
           f.LetVar(body_var, arg, body).into()
