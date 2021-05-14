@@ -16,9 +16,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     let mut stmts: Vec<_> = stmts.iter().collect();
     let final_expr = final_expr
-      // Fresh copying the return value is safe, because we don't support
+      // The return value is necessarily aliasable because we don't support
       // returning `&mut` references.
-      .map(|e| f.FreshCopy(self.extract_expr(e)).into())
+      .map(|e| self.extract_aliasable_expr(e))
       // If there's no final expression, we need to check whether the last
       // statement is a return. If yes, we take the return as final expression.
       .or_else(|| {
