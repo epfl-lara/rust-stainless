@@ -12,9 +12,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     }: &Block<'a, 'tcx>,
   ) -> st::Expr<'l> {
+    let f = self.factory();
+
     let mut stmts: Vec<_> = stmts.iter().collect();
     let final_expr = final_expr
-      .map(|e| self.extract_expr(e))
+      // Fresh copying the return value is safe, because we don't support
+      // returning `&mut` references.
+      .map(|e| f.FreshCopy(self.extract_expr(e)).into())
       // If there's no final expression, we need to check whether the last
       // statement is a return. If yes, we take the return as final expression.
       .or_else(|| {
@@ -29,7 +33,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           _ => None,
         })
       })
-      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+      .unwrap_or_else(|| f.UnitLiteral().into());
 
     stmts.reverse();
     let mut spec_ids = HashMap::new();
