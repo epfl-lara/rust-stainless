@@ -69,11 +69,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Deref { arg } => self.extract_expr(arg),
 
       // Borrow an immutable and aliasable value (i.e. the meaning of
-      // BorrowKind::Shared). Handle this safe case with erasure.
+      // BorrowKind::Shared). Handle this safe case with erasure of the
+      // reference augmented with fresh copy to instruct Stainless that this
+      // aliasing is safe.
       ExprKind::Borrow {
         borrow_kind: BorrowKind::Shared,
         arg,
-      } => self.extract_expr(arg),
+      } => self.factory().FreshCopy(self.extract_expr(arg)).into(),
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
@@ -220,6 +222,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let expr = value
       .map(|v| self.extract_expr(v))
       .unwrap_or_else(|| self.factory().UnitLiteral().into());
+
+    // TODO: may need to freshCopy the return value
     self.factory().Return(expr).into()
   }
 
