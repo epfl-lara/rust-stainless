@@ -38,4 +38,4 @@ macro_rules! define_flags {
   }
 }
 
-define_flags!(external, pure, mutable, var, law);
+define_flags!(external, pure, law);
