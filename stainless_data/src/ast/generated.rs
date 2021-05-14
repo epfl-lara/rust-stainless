@@ -521,6 +521,7 @@ pub enum Flag<'a> {
   HasADTInvariant(&'a HasADTInvariant<'a>),
   Ignore(&'a Ignore),
   IndexedAt(&'a IndexedAt<'a>),
+  Induct(&'a Induct),
   Inline(&'a Inline),
   InlineInvariant(&'a InlineInvariant),
   InlineOnce(&'a InlineOnce),
@@ -602,6 +603,10 @@ impl Factory {
 
   pub fn IndexedAt<'a>(&'a self, e: Expr<'a>) -> &'a mut IndexedAt<'a> {
     self.bump.alloc(IndexedAt { e })
+  }
+
+  pub fn Induct<'a>(&'a self) -> &'a mut Induct {
+    self.bump.alloc(Induct {})
   }
 
   pub fn Inline<'a>(&'a self) -> &'a mut Inline {
@@ -740,6 +745,7 @@ impl<'a> Serializable for Flag<'a> {
       Flag::HasADTInvariant(v) => v.serialize(s)?,
       Flag::Ignore(v) => v.serialize(s)?,
       Flag::IndexedAt(v) => v.serialize(s)?,
+      Flag::Induct(v) => v.serialize(s)?,
       Flag::Inline(v) => v.serialize(s)?,
       Flag::InlineInvariant(v) => v.serialize(s)?,
       Flag::InlineOnce(v) => v.serialize(s)?,
@@ -786,6 +792,7 @@ derive_conversions_for_ast!(Flag<'a>, HasADTEquality<'a>);
 derive_conversions_for_ast!(Flag<'a>, HasADTInvariant<'a>);
 derive_conversions_for_ast!(Flag<'a>, Ignore);
 derive_conversions_for_ast!(Flag<'a>, IndexedAt<'a>);
+derive_conversions_for_ast!(Flag<'a>, Induct);
 derive_conversions_for_ast!(Flag<'a>, Inline);
 derive_conversions_for_ast!(Flag<'a>, InlineInvariant);
 derive_conversions_for_ast!(Flag<'a>, InlineOnce);
@@ -969,6 +976,17 @@ impl<'a> Serializable for IndexedAt<'a> {
   fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
     s.write_marker(MarkerId(156))?;
     self.e.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.extraction.termination.Trees.Induct
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Induct {}
+
+impl Serializable for Induct {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(258))?;
     Ok(())
   }
 }
@@ -1339,6 +1357,8 @@ pub enum Expr<'a> {
   BVNot(&'a BVNot<'a>),
   BVOr(&'a BVOr<'a>),
   BVShiftLeft(&'a BVShiftLeft<'a>),
+  BVSignedToUnsigned(&'a BVSignedToUnsigned<'a>),
+  BVUnsignedToSigned(&'a BVUnsignedToSigned<'a>),
   BVWideningCast(&'a BVWideningCast<'a>),
   BVXor(&'a BVXor<'a>),
   BagAdd(&'a BagAdd<'a>),
@@ -1367,6 +1387,7 @@ pub enum Expr<'a> {
   FiniteSet(&'a FiniteSet<'a>),
   Forall(&'a Forall<'a>),
   FractionLiteral(&'a FractionLiteral),
+  FreshCopy(&'a FreshCopy<'a>),
   FunctionInvocation(&'a FunctionInvocation<'a>),
   GenericValue(&'a GenericValue<'a>),
   GreaterEquals(&'a GreaterEquals<'a>),
@@ -1423,6 +1444,7 @@ pub enum Expr<'a> {
   SubString(&'a SubString<'a>),
   SubsetOf(&'a SubsetOf<'a>),
   Super(&'a Super<'a>),
+  Swap(&'a Swap<'a>),
   This(&'a This<'a>),
   Throw(&'a Throw<'a>),
   Throwing(&'a Throwing<'a>),
@@ -1580,6 +1602,14 @@ impl Factory {
 
   pub fn BVShiftLeft<'a>(&'a self, lhs: Expr<'a>, rhs: Expr<'a>) -> &'a mut BVShiftLeft<'a> {
     self.bump.alloc(BVShiftLeft { lhs, rhs })
+  }
+
+  pub fn BVSignedToUnsigned<'a>(&'a self, expr: Expr<'a>) -> &'a mut BVSignedToUnsigned<'a> {
+    self.bump.alloc(BVSignedToUnsigned { expr })
+  }
+
+  pub fn BVUnsignedToSigned<'a>(&'a self, expr: Expr<'a>) -> &'a mut BVUnsignedToSigned<'a> {
+    self.bump.alloc(BVUnsignedToSigned { expr })
   }
 
   pub fn BVWideningCast<'a>(
@@ -1743,6 +1773,10 @@ impl Factory {
       numerator,
       denominator,
     })
+  }
+
+  pub fn FreshCopy<'a>(&'a self, e: Expr<'a>) -> &'a mut FreshCopy<'a> {
+    self.bump.alloc(FreshCopy { e })
   }
 
   pub fn FunctionInvocation<'a>(
@@ -2106,6 +2140,21 @@ impl Factory {
     self.bump.alloc(Super { ct })
   }
 
+  pub fn Swap<'a>(
+    &'a self,
+    array1: Expr<'a>,
+    index1: Expr<'a>,
+    array2: Expr<'a>,
+    index2: Expr<'a>,
+  ) -> &'a mut Swap<'a> {
+    self.bump.alloc(Swap {
+      array1,
+      index1,
+      array2,
+      index2,
+    })
+  }
+
   pub fn This<'a>(&'a self, ct: &'a ClassType<'a>) -> &'a mut This<'a> {
     self.bump.alloc(This { ct })
   }
@@ -2165,8 +2214,14 @@ impl Factory {
     cond: Expr<'a>,
     body: Expr<'a>,
     pred: Option<Expr<'a>>,
+    flags: Seq<Flag<'a>>,
   ) -> &'a mut While<'a> {
-    self.bump.alloc(While { cond, body, pred })
+    self.bump.alloc(While {
+      cond,
+      body,
+      pred,
+      flags,
+    })
   }
 }
 
@@ -2195,6 +2250,8 @@ impl<'a> Serializable for Expr<'a> {
       Expr::BVNot(v) => v.serialize(s)?,
       Expr::BVOr(v) => v.serialize(s)?,
       Expr::BVShiftLeft(v) => v.serialize(s)?,
+      Expr::BVSignedToUnsigned(v) => v.serialize(s)?,
+      Expr::BVUnsignedToSigned(v) => v.serialize(s)?,
       Expr::BVWideningCast(v) => v.serialize(s)?,
       Expr::BVXor(v) => v.serialize(s)?,
       Expr::BagAdd(v) => v.serialize(s)?,
@@ -2223,6 +2280,7 @@ impl<'a> Serializable for Expr<'a> {
       Expr::FiniteSet(v) => v.serialize(s)?,
       Expr::Forall(v) => v.serialize(s)?,
       Expr::FractionLiteral(v) => v.serialize(s)?,
+      Expr::FreshCopy(v) => v.serialize(s)?,
       Expr::FunctionInvocation(v) => v.serialize(s)?,
       Expr::GenericValue(v) => v.serialize(s)?,
       Expr::GreaterEquals(v) => v.serialize(s)?,
@@ -2279,6 +2337,7 @@ impl<'a> Serializable for Expr<'a> {
       Expr::SubString(v) => v.serialize(s)?,
       Expr::SubsetOf(v) => v.serialize(s)?,
       Expr::Super(v) => v.serialize(s)?,
+      Expr::Swap(v) => v.serialize(s)?,
       Expr::This(v) => v.serialize(s)?,
       Expr::Throw(v) => v.serialize(s)?,
       Expr::Throwing(v) => v.serialize(s)?,
@@ -2317,6 +2376,8 @@ derive_conversions_for_ast!(Expr<'a>, BVNarrowingCast<'a>);
 derive_conversions_for_ast!(Expr<'a>, BVNot<'a>);
 derive_conversions_for_ast!(Expr<'a>, BVOr<'a>);
 derive_conversions_for_ast!(Expr<'a>, BVShiftLeft<'a>);
+derive_conversions_for_ast!(Expr<'a>, BVSignedToUnsigned<'a>);
+derive_conversions_for_ast!(Expr<'a>, BVUnsignedToSigned<'a>);
 derive_conversions_for_ast!(Expr<'a>, BVWideningCast<'a>);
 derive_conversions_for_ast!(Expr<'a>, BVXor<'a>);
 derive_conversions_for_ast!(Expr<'a>, BagAdd<'a>);
@@ -2345,6 +2406,7 @@ derive_conversions_for_ast!(Expr<'a>, FiniteMap<'a>);
 derive_conversions_for_ast!(Expr<'a>, FiniteSet<'a>);
 derive_conversions_for_ast!(Expr<'a>, Forall<'a>);
 derive_conversions_for_ast!(Expr<'a>, FractionLiteral);
+derive_conversions_for_ast!(Expr<'a>, FreshCopy<'a>);
 derive_conversions_for_ast!(Expr<'a>, FunctionInvocation<'a>);
 derive_conversions_for_ast!(Expr<'a>, GenericValue<'a>);
 derive_conversions_for_ast!(Expr<'a>, GreaterEquals<'a>);
@@ -2401,6 +2463,7 @@ derive_conversions_for_ast!(Expr<'a>, StringLiteral);
 derive_conversions_for_ast!(Expr<'a>, SubString<'a>);
 derive_conversions_for_ast!(Expr<'a>, SubsetOf<'a>);
 derive_conversions_for_ast!(Expr<'a>, Super<'a>);
+derive_conversions_for_ast!(Expr<'a>, Swap<'a>);
 derive_conversions_for_ast!(Expr<'a>, This<'a>);
 derive_conversions_for_ast!(Expr<'a>, Throw<'a>);
 derive_conversions_for_ast!(Expr<'a>, Throwing<'a>);
@@ -2761,6 +2824,34 @@ impl<'a> Serializable for BVShiftLeft<'a> {
     s.write_marker(MarkerId(52))?;
     self.lhs.serialize(s)?;
     self.rhs.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// inox.ast.Expressions.BVSignedToUnsigned
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BVSignedToUnsigned<'a> {
+  pub expr: Expr<'a>,
+}
+
+impl<'a> Serializable for BVSignedToUnsigned<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(105))?;
+    self.expr.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// inox.ast.Expressions.BVUnsignedToSigned
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct BVUnsignedToSigned<'a> {
+  pub expr: Expr<'a>,
+}
+
+impl<'a> Serializable for BVUnsignedToSigned<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(104))?;
+    self.expr.serialize(s)?;
     Ok(())
   }
 }
@@ -3211,6 +3302,20 @@ impl Serializable for FractionLiteral {
     s.write_marker(MarkerId(22))?;
     self.numerator.serialize(s)?;
     self.denominator.serialize(s)?;
+    Ok(())
+  }
+}
+
+/// stainless.extraction.imperative.Trees.FreshCopy
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FreshCopy<'a> {
+  pub e: Expr<'a>,
+}
+
+impl<'a> Serializable for FreshCopy<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(260))?;
+    self.e.serialize(s)?;
     Ok(())
   }
 }
@@ -4127,6 +4232,26 @@ impl<'a> Serializable for Super<'a> {
   }
 }
 
+/// stainless.extraction.imperative.Trees.Swap
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Swap<'a> {
+  pub array1: Expr<'a>,
+  pub index1: Expr<'a>,
+  pub array2: Expr<'a>,
+  pub index2: Expr<'a>,
+}
+
+impl<'a> Serializable for Swap<'a> {
+  fn serialize<S: Serializer>(&self, s: &mut S) -> SerializationResult {
+    s.write_marker(MarkerId(259))?;
+    self.array1.serialize(s)?;
+    self.index1.serialize(s)?;
+    self.array2.serialize(s)?;
+    self.index2.serialize(s)?;
+    Ok(())
+  }
+}
+
 /// stainless.extraction.methods.Trees.This
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct This<'a> {
@@ -4284,6 +4409,7 @@ pub struct While<'a> {
   pub cond: Expr<'a>,
   pub body: Expr<'a>,
   pub pred: Option<Expr<'a>>,
+  pub flags: Seq<Flag<'a>>,
 }
 
 impl<'a> Serializable for While<'a> {
@@ -4292,6 +4418,7 @@ impl<'a> Serializable for While<'a> {
     self.cond.serialize(s)?;
     self.body.serialize(s)?;
     self.pred.serialize(s)?;
+    self.flags.serialize(s)?;
     Ok(())
   }
 }
