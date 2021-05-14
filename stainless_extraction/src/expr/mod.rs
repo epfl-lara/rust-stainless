@@ -219,12 +219,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn extract_return(&mut self, value: Option<&'a Expr<'a, 'tcx>>) -> st::Expr<'l> {
-    let expr = value
-      .map(|v| self.extract_expr(v))
-      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+    let f = self.factory();
 
-    // TODO: may need to freshCopy the return value
-    self.factory().Return(expr).into()
+    // Fresh copying the return value is safe, because we don't support
+    // returning `&mut` references.
+    let expr = if let Some(v) = value {
+      f.FreshCopy(self.extract_expr(v)).into()
+    } else {
+      f.UnitLiteral().into()
+    };
+    f.Return(expr).into()
   }
 
   fn extract_str_to_string(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
