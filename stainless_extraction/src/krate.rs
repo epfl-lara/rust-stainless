@@ -11,6 +11,7 @@ use stainless_data::ast as st;
 
 use crate::flags::Flag;
 use crate::fns::{FnItem, FnSignature};
+
 use std::iter;
 
 /// Top-level extraction
@@ -515,10 +516,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
             let mut flags = flags_by_symbol
               .remove(&field.ident.name)
+              .map(|flags| flags.to_stainless(f))
               .unwrap_or_default();
-            flags.add(Flag::IsVar);
-
-            let field = f.Variable(field_id, field_ty, flags.to_stainless(f));
+            flags.push(f.IsVar().into());
+            let field = f.Variable(field_id, field_ty, flags);
             &*f.ValDef(field)
           })
           .collect();
