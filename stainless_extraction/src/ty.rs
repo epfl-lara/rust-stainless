@@ -103,6 +103,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       // Immutably borrowed string slice, erased to a plain String
       TyKind::Ref(_, ty, Mutability::Not) if *ty.kind() == TyKind::Str => f.StringType().into(),
+      // Pointee of a string slice
+      TyKind::Str => f.StringType().into(),
 
       // "Real" ADTs
       TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {

@@ -75,7 +75,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Borrow {
         borrow_kind: BorrowKind::Shared,
         arg,
-      } => self.factory().FreshCopy(self.extract_expr(arg)).into(),
+      } => self.extract_aliasable_expr(arg),
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
@@ -220,15 +220,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_return(&mut self, value: Option<&'a Expr<'a, 'tcx>>) -> st::Expr<'l> {
     let f = self.factory();
-
-    // Fresh copying the return value is safe, because we don't support
+    // The return value is necessarily aliasable because we don't support
     // returning `&mut` references.
-    let expr = if let Some(v) = value {
-      f.FreshCopy(self.extract_expr(v)).into()
-    } else {
-      f.UnitLiteral().into()
-    };
-    f.Return(expr).into()
+    f.Return(
+      value
+        .map(|v| self.extract_aliasable_expr(v))
+        .unwrap_or_else(|| f.UnitLiteral().into()),
+    )
+    .into()
   }
 
   fn extract_str_to_string(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
@@ -355,6 +354,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Scope { value, .. } => self.strip_scopes(value),
       _ => expr,
     }
+  }
+
+  fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
+    let e = self.extract_expr(expr);
+    let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+    self.base.fresh_copy_if_needed(e, tpe)
   }
 
   fn unsupported_expr<M: Into<String>>(&mut self, span: Span, msg: M) -> st::Expr<'l> {

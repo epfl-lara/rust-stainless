@@ -121,12 +121,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // Mutable ADTs need to be copied freshly to work-around Stainless'
           // anti-aliasing rules. The fresh copy marks them as owned i.e. safe
           // to mutate locally.
-          let arg = match fn_param.tpe {
-            st::Type::ADTType(_) => f.FreshCopy(fn_param.into()).into(),
-            st::Type::TypeParameter(t) if t.is_mutable() => f.FreshCopy(fn_param.into()).into(),
-            _ => fn_param.into(),
-          };
-          f.LetVar(body_var, arg, body).into()
+          f.LetVar(
+            body_var,
+            self
+              .base
+              .fresh_copy_if_needed(fn_param.into(), fn_param.tpe),
+            body,
+          )
+          .into()
         }),
     }
   }
