@@ -9,7 +9,6 @@ use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
 
-use crate::flags::Flag;
 use crate::fns::{FnItem, FnSignature};
 
 use std::iter;
