@@ -36,13 +36,13 @@ where
     self.map.contains_key(key)
   }
 
-  pub fn insert(&self, key: K, val: V) -> Self {
+  pub fn insert(self, key: K, val: V) -> Self {
     Self {
       map: self.map.update(key, val),
     }
   }
 
-  pub fn remove(&self, key: &K) -> Self {
+  pub fn remove(self, key: &K) -> Self {
     Self {
       map: self.map.without(key),
     }
