@@ -86,10 +86,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      /// Ignore fn items in because they are already treated when the entire
-      /// impl/trait block is extracted.
       fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
         match trait_item.kind {
+          // Ignore fn items in because they are already treated when the entire
+          // impl/trait block is extracted.
           hir::TraitItemKind::Fn(..) => {}
           _ => self
             .xtor
@@ -97,10 +97,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      /// Ignore fn items in because they are already treated when the entire
-      /// impl/trait block is extracted.
       fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
         match impl_item.kind {
+          // Ignore fn items in because they are already treated when the entire
+          // impl/trait block is extracted.
           hir::ImplItemKind::Fn(..) => {}
           _ => self
             .xtor
@@ -204,13 +204,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.get_id_from_def(def_id).unwrap_or_else(|| {
       self.add_function_ref(def_id);
 
-      // Check whether this function implements some method of a trait.
-      // More specifically, if the function has a name
+      // Check whether this function implements some method of a trait, in other
+      // words, overrides some existing function.
       let overridden_def_id: Option<DefId> =
+        // Get the name of this function
         self.tcx.opt_item_name(def_id).and_then(|fn_item_name| {
           self
             .tcx
-            // and it is a method of an impl block
+            // Then, if it is a method of an impl block
             .impl_of_method(def_id)
             // and that impl block implements a trait
             .and_then(|impl_id| self.tcx.trait_id_of_impl(impl_id))
@@ -223,8 +224,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                 trait_id,
               )
             })
-            // then we want to use that method's symbol path.
-            .map(|item| item.def_id)
+            // then we want to use the trait method's symbol path.
+            .map(|trait_item_method| trait_item_method.def_id)
         });
 
       match overridden_def_id {
@@ -254,7 +255,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract an external function
-  pub(super) fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+  fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
     assert!(
       !def_id.is_local(),
       "Expected non-local def id, got: {:?}",
@@ -347,7 +348,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract a local function
-  pub(super) fn extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
+  fn extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
     let f = self.factory();
 
     assert!(fn_item.def_id.is_local());
@@ -517,7 +518,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
               .remove(&field.ident.name)
               .map(|flags| flags.to_stainless(f))
               .unwrap_or_default();
+            // All fields are potentially mutable in Rust
             flags.push(f.IsVar().into());
+
             let field = f.Variable(field_id, field_ty, flags);
             &*f.ValDef(field)
           })
