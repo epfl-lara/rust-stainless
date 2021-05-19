@@ -210,7 +210,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Discovering HOF parameters.
     // We extract `F: Fn*(S) -> T` trait predicates by replacing `F` by `S => T`.
-    // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
+    // We also enumerate all other predicates and use them as trait bounds or
+    // complain about all but the obviously innocuous ones.
     let mut tparam_to_fun_params: HashMap<u32, (Vec<Ty<'tcx>>, Span)> = HashMap::new();
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();

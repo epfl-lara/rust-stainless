@@ -268,9 +268,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  /// Return a reference to the class definition on which the given function is
-  /// defined as method. If the function is not a method, None is returned. The
-  /// function is identified by its id.
+  /// Return a reference to the class definition on which the given function
+  /// (identified by its id) is defined as method. If the function is not a
+  /// method, None is returned.
   fn get_class_of_method(&mut self, id: StainlessSymId<'l>) -> Option<&'l st::ClassDef<'l>> {
     self.with_extraction(|xt| xt.method_to_class.get(&id).copied())
   }
@@ -353,11 +353,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Error reporting helpers
 
   fn unsupported<S: Into<MultiSpan>, M: Into<String>>(&self, span: S, msg: M) {
-    let msg = msg.into();
     self
       .tcx
       .sess
-      .span_err(span, format!("Unsupported tree: {}", msg).as_str());
+      .span_err(span, format!("Unsupported tree: {}", msg.into()).as_str());
   }
 }
 

@@ -25,6 +25,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     match &expr.kind {
+      // TODO: Handle arbitrary-precision integers?
       ExprKind::Literal { literal, .. } => match Literal::from_const(literal, self.tcx()) {
         Some(lit) => lit.as_st_literal(self.factory()),
         _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
@@ -61,7 +62,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       } => self.extract_if(cond, then, *else_opt),
       ExprKind::Match { scrutinee, arms } => self.extract_match(scrutinee, arms),
 
-      // TODO: Handle arbitrary-precision integers
       ExprKind::Scope { value, .. } => self.extract_expr(value),
       ExprKind::Use { source } => self.extract_expr(source),
       ExprKind::NeverToAny { source } => self.extract_expr(source),
@@ -356,6 +356,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
+  /// Inserts a fresh copy around the expression, if the expression can contain
+  /// mutable types. This function must only be called, when it is safe to add a
+  /// fresh copy.
+  ///
+  /// TODO: Check that fresh copy is safe for expression.
   fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let e = self.extract_expr(expr);
     let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
