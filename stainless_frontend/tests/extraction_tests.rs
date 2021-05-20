@@ -120,6 +120,7 @@ define_tests!(
   pass: mut_local_lets,
   pass: mut_local_params,
   pass: mut_ref_immut_borrow,
+  pass: mut_return,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: panic_type,
