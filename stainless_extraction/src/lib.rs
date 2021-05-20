@@ -306,10 +306,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub fn fresh_copy_if_needed(&self, expr: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
     let f = self.factory();
     match expr {
-      st::Expr::FreshCopy(_) => expr,
+      st::Expr::FreshCopy(_)
+      | st::Expr::MatchExpr(_)
+      | st::Expr::IfExpr(_)
+      | st::Expr::Return(_) => expr,
       _ => match tpe {
-        st::Type::ADTType(_) => f.FreshCopy(expr).into(),
-        st::Type::StringType(_) => f.FreshCopy(expr).into(),
+        st::Type::ADTType(_) | st::Type::StringType(_) => f.FreshCopy(expr).into(),
         st::Type::TypeParameter(t) if t.is_mutable() => f.FreshCopy(expr).into(),
         _ => expr,
       },
