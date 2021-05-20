@@ -86,7 +86,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       Guard::If(expr) => Some(self.extract_expr(expr)),
       _ => None,
     });
-    let body = self.extract_expr(body);
+    let body = self.extract_aliasable_expr(body);
     self.factory().MatchCase(pattern, guard, body)
   }
 
