@@ -99,6 +99,7 @@ define_tests!(
   pass: adts,
   pass: blocks,
   pass: boxes,
+  pass: cast_correctness,
   pass: clone,
   pass: double_ref_param,
   pass: external_fn,
