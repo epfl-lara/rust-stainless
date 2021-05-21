@@ -256,7 +256,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ///   `Clone::clone` that preserves equality.
   ///   https://github.com/epfl-lara/rust-stainless/issues/136
   fn extract_clone(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
-    Some(self.extract_expr(expr))
+    // Extract with fresh copy to be sure to have distinct objects.
+    Some(self.extract_aliasable_expr(expr))
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
