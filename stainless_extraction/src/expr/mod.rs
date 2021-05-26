@@ -358,10 +358,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   /// Inserts a fresh copy around the expression, if the expression can contain
-  /// mutable types. This function must only be called, when it is safe to add a
-  /// fresh copy.
+  /// mutable types.
+  /// Currently, this is safe everywhere because:
+  ///  - we either work on an immutable reference aka shared borrow aka `&T`
+  ///  - or we own the the value, meaning it's moved when we return/alias it somewhere
+  ///    and the compiler has made sure that it's not used afterwards.
   ///
-  /// TODO: Check that fresh copy is safe for expression.
+  /// TODO: Check that this is still safe (at call sites) when mutable references are introduced.
   fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let e = self.extract_expr(expr);
     let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
