@@ -25,6 +25,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ),
       },
 
+      ExprKind::Deref { arg } => {
+        let arg = self.extract_expr(arg);
+        self
+          .factory()
+          .FieldAssignment(arg, self.synth().mut_ref_value_id(), value)
+          .into()
+      }
+
       e => self.unsupported_expr(
         lhs.span,
         format!("Cannot extract assignment to kind {:?}", e),

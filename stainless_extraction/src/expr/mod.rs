@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use literal::Literal;
-use rustc_middle::mir::BorrowKind;
+use rustc_middle::mir::{BorrowKind, Mutability};
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
@@ -66,7 +66,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr(source),
       ExprKind::NeverToAny { source } => self.extract_expr(source),
 
-      ExprKind::Deref { arg } => self.extract_expr(arg),
+      ExprKind::Deref { arg } => match arg.ty.ref_mutability() {
+        Some(Mutability::Mut) => {
+          let arg = self.extract_expr(arg);
+          self
+            .factory()
+            .ADTSelector(arg, self.synth().mut_ref_value_id())
+            .into()
+        }
+        _ => self.extract_expr(arg),
+      },
 
       // Borrow an immutable and aliasable value (i.e. the meaning of
       // BorrowKind::Shared). Handle this safe case with erasure of the
@@ -76,6 +85,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         borrow_kind: BorrowKind::Shared,
         arg,
       } => self.extract_aliasable_expr(arg),
+
+      ExprKind::Borrow {
+        borrow_kind: BorrowKind::Mut { .. },
+        arg,
+      } => {
+        let tpe = self.base.extract_ty(arg.ty, &self.txtcx, arg.span);
+        let arg = self.extract_expr(arg);
+        self.synth().mut_ref(tpe, arg)
+      }
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
@@ -358,17 +376,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   /// Inserts a fresh copy around the expression, if the expression can contain
-  /// mutable types.
-  /// Currently, this is safe everywhere because:
-  ///  - we either work on an immutable reference aka shared borrow aka `&T`
+  /// mutable types. And if the expression IS NOT a mutable reference
+  /// This is safe because:
+  ///  - we don't do anything for mutable references.
+  ///  - Otherwise, we either work on an immutable reference aka shared borrow aka `&T`
   ///  - or we own the the value, meaning it's moved when we return/alias it somewhere
   ///    and the compiler has made sure that it's not used afterwards.
   ///
-  /// TODO: Check that this is still safe (at call sites) when mutable references are introduced.
   fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let e = self.extract_expr(expr);
-    let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
-    self.base.fresh_copy_if_needed(e, tpe)
+
+    // If this is a mutable reference, we DON'T freshCopy
+    if let Some(Mutability::Mut) = expr.ty.ref_mutability() {
+      e
+    } else {
+      let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+      self.base.fresh_copy_if_needed(e, tpe)
+    }
   }
 
   fn unsupported_expr<M: Into<String>>(&mut self, span: Span, msg: M) -> st::Expr<'l> {

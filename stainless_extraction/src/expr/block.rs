@@ -126,10 +126,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
 
                 // wrap that body expression into the Let
-
-                // This is safe, because we don't support mutable references.
                 let init = self.extract_aliasable_expr(init);
-
                 let last_expr = if vd.is_mutable() {
                   f.LetVar(vd, init, body_expr).into()
                 } else {
