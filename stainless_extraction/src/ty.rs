@@ -143,6 +143,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       // Immutable references
       TyKind::Ref(_, ty, Mutability::Not) => self.extract_ty(ty, txtcx, span),
 
+      TyKind::Ref(_, ty, Mutability::Mut) => {
+        let arg_ty = self.extract_ty(ty, txtcx, span);
+        self.synth().mut_ref_type(arg_ty)
+      }
+
       TyKind::Param(param_ty) => txtcx
         .index_to_tparam
         .get(&param_ty.index)
