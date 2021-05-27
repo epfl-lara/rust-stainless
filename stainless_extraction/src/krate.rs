@@ -359,8 +359,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
     let mut flags = carrier_flags.to_stainless(f);
 
-    // As long as we only have local mutation, every function viewed from the
-    // outside is pure.
+    // TODO: check whether the function has any '&mut' params, otherwise mark as 'pure'.
     flags.push(f.IsPure().into());
 
     // Add flag specifying that this function is a method of its class (if there's a class)
