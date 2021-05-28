@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use literal::Literal;
-use rustc_middle::mir::{BorrowKind, Mutability};
+use rustc_middle::mir::Mutability;
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
@@ -15,6 +15,7 @@ mod literal;
 mod map;
 mod ops;
 mod pattern;
+mod refs;
 mod set;
 mod spec;
 mod tuple;
@@ -66,34 +67,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Use { source } => self.extract_expr(source),
       ExprKind::NeverToAny { source } => self.extract_expr(source),
 
-      ExprKind::Deref { arg } => match arg.ty.ref_mutability() {
-        Some(Mutability::Mut) => {
-          let arg = self.extract_expr(arg);
-          self
-            .factory()
-            .ADTSelector(arg, self.synth().mut_ref_value_id())
-            .into()
-        }
-        _ => self.extract_expr(arg),
-      },
-
-      // Borrow an immutable and aliasable value (i.e. the meaning of
-      // BorrowKind::Shared). Handle this safe case with erasure of the
-      // reference augmented with fresh copy to instruct Stainless that this
-      // aliasing is safe.
-      ExprKind::Borrow {
-        borrow_kind: BorrowKind::Shared,
-        arg,
-      } => self.extract_aliasable_expr(arg),
-
-      ExprKind::Borrow {
-        borrow_kind: BorrowKind::Mut { .. },
-        arg,
-      } => {
-        let tpe = self.base.extract_ty(arg.ty, &self.txtcx, arg.span);
-        let arg = self.extract_expr(arg);
-        self.synth().mut_ref(tpe, arg)
-      }
+      ExprKind::Deref { arg } => self.extract_deref(arg),
+      ExprKind::Borrow { borrow_kind, arg } => self.extract_borrow(borrow_kind, arg),
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 

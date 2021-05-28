@@ -1,6 +1,6 @@
 use super::*;
 
-use rustc_middle::mir::Mutability;
+use rustc_middle::mir::{BorrowKind, Mutability};
 use rustc_middle::ty::AdtDef;
 use rustc_mir_build::thir::{Arm, BindingMode, FieldPat, Guard, Pat, PatKind};
 use rustc_target::abi::VariantIdx;

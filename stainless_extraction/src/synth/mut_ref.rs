@@ -13,6 +13,13 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
     self.factory().ADTType(self.mut_ref_id(), vec![tpe]).into()
   }
 
+  pub fn mut_ref_value(&mut self, arg: st::Expr<'l>) -> st::Expr<'l> {
+    self
+      .factory()
+      .ADTSelector(arg, self.mut_ref_value_id())
+      .into()
+  }
+
   pub fn mut_ref_value_id(&mut self) -> StainlessSymId<'l> {
     self.mut_ref_adt().constructors[0].fields[0].v.id
   }
