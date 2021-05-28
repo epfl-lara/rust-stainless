@@ -33,6 +33,7 @@ pub struct FnSignature<'l> {
   pub tparams: Vec<&'l st::TypeParameterDef<'l>>,
   pub params: Params<'l>,
   pub return_tpe: st::Type<'l>,
+  pub is_pure: bool,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {

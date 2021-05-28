@@ -266,6 +266,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe,
+      is_pure,
     } = self.extract_fn_signature(def_id);
 
     let f = self.factory();
@@ -276,7 +277,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       params,
       return_tpe,
       empty_body,
-      vec![f.Extern().into()],
+      is_pure
+        .then(|| f.IsPure().into())
+        .into_iter()
+        .chain(iter::once(f.Extern().into()))
+        .collect(),
     )
   }
 
@@ -294,6 +299,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe,
+      is_pure,
     } = self.extract_fn_signature(def_id);
     let class_def = self.get_class_of_method(id);
 
@@ -309,6 +315,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .iter()
         .map(|cd| f.IsMethodOf(cd.id).into())
         .chain(iter::once(f.IsAbstract().into()))
+        .chain(is_pure.then(|| f.IsPure().into()).into_iter())
         .collect(),
     )
   }
@@ -336,6 +343,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe: self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP),
+      is_pure: !fn_sig.inputs().iter().any(|ty| is_mut_ref(ty)),
     }
   }
 
@@ -358,9 +366,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     // Extract flags
     let (carrier_flags, mut flags_by_symbol) = self.extract_flags(hir_id);
     let mut flags = carrier_flags.to_stainless(f);
-
-    // TODO: check whether the function has any '&mut' params, otherwise mark as 'pure'.
-    flags.push(f.IsPure().into());
 
     // Add flag specifying that this function is a method of its class (if there's a class)
     flags.extend(
@@ -391,6 +396,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
         let body_expr = bxtor.extract_body_expr(fn_item.def_id.expect_local());
         let body_expr = bxtor.wrap_body_let_vars(body_expr);
+
+        if !bxtor.has_mut_ref() {
+          flags.push(f.IsPure().into());
+        }
 
         (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
