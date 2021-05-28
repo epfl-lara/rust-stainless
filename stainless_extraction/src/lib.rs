@@ -306,9 +306,12 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub fn fresh_copy_if_needed(&self, expr: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
     let f = self.factory();
     match expr {
+      // don't duplicate fresh copies
       st::Expr::FreshCopy(_)
+      // don't fresh copy entire matches/ifs, we leave that to each block
       | st::Expr::MatchExpr(_)
       | st::Expr::IfExpr(_)
+      // don't fresh copy "around" the return, we do it inside
       | st::Expr::Return(_) => expr,
       _ => match tpe {
         st::Type::ADTType(_) | st::Type::StringType(_) => f.FreshCopy(expr).into(),
@@ -429,6 +432,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let span = self.tcx().hir().span(hir_id);
     let sig = self.base.ty_fn_sig(self.tables.hir_owner.to_def_id());
     self.base.extract_ty(sig.output(), &self.txtcx, span)
+  }
+
+  /// Checks whether the function has any parameters passed by mutable
+  /// reference.
+  fn has_mut_ref(&self) -> bool {
+    self.body.params.iter().any(|p| {
+      matches!(
+        self.tables.node_type(p.hir_id).ref_mutability(),
+        Some(Mutability::Mut)
+      )
+    })
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
