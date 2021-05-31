@@ -67,7 +67,7 @@ pub fn uint_bit_width(int_ty: &UintTy, tcx: TyCtxt<'_>) -> u64 {
   int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
-pub fn is_mut_ref<'tcx>(ty: Ty<'tcx>) -> bool {
+pub fn is_mut_ref(ty: Ty) -> bool {
   matches!(ty.ref_mutability(), Some(Mutability::Mut))
 }
 

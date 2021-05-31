@@ -36,7 +36,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       ExprKind::Tuple { fields } => self.extract_tuple(fields, expr.span),
       ExprKind::Field { lhs, name } => self.extract_field(lhs, *name),
-      ExprKind::VarRef { id } => self.fetch_var(*id).into(),
+      ExprKind::VarRef { id } => self.extract_var_ref(*id),
 
       ExprKind::Call { ty, ref args, .. } => match ty.kind() {
         TyKind::FnDef(def_id, substs_ref) => {

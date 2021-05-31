@@ -2,11 +2,12 @@ use super::flags::Flags;
 use super::*;
 
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
-use rustc_hir::{self as hir, HirId, Node, Pat, PatKind};
+use rustc_hir::{self as hir, def, BorrowKind, HirId, Node, Pat, PatKind};
 use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
 
 use stainless_data::ast as st;
+use std::iter;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Build a DefContext that includes all variable bindings
@@ -179,6 +180,24 @@ impl<'l> DefContext<'l> {
   pub(super) fn get_var(&self, hir_id: HirId) -> Option<&'l st::Variable<'l>> {
     self.vars.get(&hir_id).copied()
   }
+
+  pub(super) fn make_mut_ref(&mut self, hir_id: HirId, xtor: &mut BaseExtractor<'l, '_>) {
+    self.vars.entry(hir_id).and_modify(|v| {
+      if !v.is_mut_ref() {
+        let f = xtor.factory();
+        let tpe = xtor.synth().mut_ref_type(v.tpe);
+        *v = f.Variable(
+          v.id,
+          tpe,
+          v.flags
+            .iter()
+            .copied()
+            .chain(iter::once(f.wrapped_flag()))
+            .collect(),
+        )
+      }
+    });
+  }
 }
 
 /// BindingsCollector populates a DefContext
@@ -209,6 +228,29 @@ impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
 
   fn visit_body(&mut self, _b: &'tcx hir::Body<'tcx>) {
     unreachable!();
+  }
+
+  fn visit_expr(&mut self, expr: &'tcx hir::Expr<'tcx>) {
+    // If a local variable (path) is mutably borrowed
+    if let hir::ExprKind::AddrOf(
+      BorrowKind::Ref,
+      Mutability::Mut,
+      hir::Expr {
+        kind:
+          hir::ExprKind::Path(hir::QPath::Resolved(
+            _,
+            hir::Path {
+              res: def::Res::Local(id),
+              ..
+            },
+          )),
+        ..
+      },
+    ) = expr.kind
+    {
+      self.bxtor.dcx.make_mut_ref(*id, &mut self.bxtor.base)
+    }
+    intravisit::walk_expr(self, expr)
   }
 
   fn visit_pat(&mut self, pattern: &'tcx hir::Pat<'tcx>) {
