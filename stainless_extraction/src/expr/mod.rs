@@ -1,7 +1,6 @@
 use std::convert::TryFrom;
 
 use literal::Literal;
-use rustc_middle::mir::Mutability;
 use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
@@ -362,7 +361,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let e = self.extract_expr(expr);
 
     // If this is a mutable reference, we DON'T freshCopy
-    if let Some(Mutability::Mut) = expr.ty.ref_mutability() {
+    if is_mut_ref(expr.ty) {
       e
     } else {
       let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);

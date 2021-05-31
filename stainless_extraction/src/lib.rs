@@ -34,7 +34,7 @@ use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
 use synth::SynthItem;
-use ty::{Generics, TyExtractionCtxt};
+use ty::{is_mut_ref, Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
 mod bindings;
@@ -437,12 +437,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   /// Checks whether the function has any parameters passed by mutable
   /// reference.
   fn has_mut_ref(&self) -> bool {
-    self.body.params.iter().any(|p| {
-      matches!(
-        self.tables.node_type(p.hir_id).ref_mutability(),
-        Some(Mutability::Mut)
-      )
-    })
+    self
+      .body
+      .params
+      .iter()
+      .any(|p| is_mut_ref(self.tables.node_type(p.hir_id)))
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
