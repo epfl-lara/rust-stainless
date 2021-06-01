@@ -23,3 +23,30 @@ fn main() {
   assert!(*x.0 == 789);
   assert!(int == 789)
 }
+
+/*
+Desired Scala translation:
+
+import stainless.annotation._
+
+object Mutable {
+  final case class MutRef[@mutable T](var t: T)
+  final case class S(var s: MutRef[Int])
+
+  def main() = {
+    val int = MutRef(123)
+    val x = MutRef(S(int))
+
+    val y = x
+    assert(y.t.s.t == 123 && x.t.s.t == 123)
+
+    val z = x
+    assert(z.t.s.t == 123)
+
+    z.t.s.t = 789
+    assert(z.t.s.t == 789)
+    assert(x.t.s.t == 789)
+    assert(int.t == 789)
+  }
+}
+*/
