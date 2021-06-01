@@ -9,3 +9,23 @@ pub fn main() {
 
   assert!(x == 2)
 }
+
+/*
+Desired Scala translation:
+
+import stainless.annotation._
+
+object Mutable {
+  final case class MutRef[@mutable T](var t: T)
+
+  def main() = {
+    var x = MutRef(1)
+
+    val y = x
+    assert(y.t == 1)
+    y.t = 2
+
+    assert(x.t == 2)
+  }
+}
+*/
