@@ -10,3 +10,23 @@ pub fn main() {
 
   assert!(a.0 == 100 && a.1 == 200)
 }
+
+/*
+Desired Scala translation:
+
+import stainless.annotation._
+
+object Mutable {
+  final case class MutRef[@mutable T](var t: T)
+  final case class S(var s1: Int, var s2: Int)
+
+  def main() = {
+    var a = MutRef(S(1, 2))
+
+    val b = a
+    b.t = S(100, 200)
+
+    assert(a.t.s1 == 100 && a.t.s2 == 200)
+  }
+}
+*/
