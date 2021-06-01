@@ -127,6 +127,8 @@ define_tests!(
   pass: mut_ref_borrow_2,
   pass: mut_ref_borrow_3,
   pass: mut_ref_borrow_5,
+  pass: mut_ref_borrow_6,
+  pass: mut_ref_borrow_7,
   pass: mut_ref_immut_borrow,
   pass: mut_return,
   pass: nested_spec,
