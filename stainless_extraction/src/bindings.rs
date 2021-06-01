@@ -2,7 +2,7 @@ use super::flags::Flags;
 use super::*;
 
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
-use rustc_hir::{self as hir, def, BorrowKind, HirId, Node, Pat, PatKind};
+use rustc_hir::{self as hir, def, BorrowKind, HirId, ImplicitSelfKind, Node, Pat, PatKind};
 use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
 
@@ -48,8 +48,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let xtor = &mut self.base;
 
       // Extract ident from corresponding HIR node, sanity-check binding mode
+
       let node = xtor.tcx.hir().find(hir_id).unwrap();
-      let (ident, binding_mode, span) = if let Node::Binding(Pat {
+      let (ident, binding_mode) = if let Node::Binding(Pat {
         kind: PatKind::Binding(_, _, ident, _),
         hir_id,
         span,
@@ -62,7 +63,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             .tables
             .extract_binding_mode(xtor.tcx.sess, *hir_id, *span)
             .expect("Cannot extract binding without binding mode."),
-          span,
         )
       } else {
         xtor.unsupported(
@@ -72,12 +72,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         unreachable!()
       };
 
-      if let ty::BindByReference(Mutability::Mut) = binding_mode {
-        xtor.unsupported(*span, "Only immutable bindings are supported");
-      }
-
       let id = xtor.register_hir(hir_id, ident.name.to_string());
-      let mutable = matches!(binding_mode, ty::BindByValue(Mutability::Mut));
+      let mutable = matches!(
+        binding_mode,
+        ty::BindByValue(hir::Mutability::Mut) | ty::BindByReference(hir::Mutability::Mut)
+      );
 
       // Build a Variable node
       let f = xtor.factory();
@@ -231,25 +230,26 @@ impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
   }
 
   fn visit_expr(&mut self, expr: &'tcx hir::Expr<'tcx>) {
-    // If a local variable (path) is mutably borrowed
-    if let hir::ExprKind::AddrOf(
-      BorrowKind::Ref,
-      Mutability::Mut,
-      hir::Expr {
-        kind:
-          hir::ExprKind::Path(hir::QPath::Resolved(
-            _,
-            hir::Path {
-              res: def::Res::Local(id),
-              ..
-            },
-          )),
-        ..
-      },
-    ) = expr.kind
-    {
-      self.bxtor.dcx.make_mut_ref(*id, &mut self.bxtor.base)
-    }
+    // We promote a local variable to a MutRef
+    match expr.kind {
+      // if it is later mutably borrowed
+      hir::ExprKind::AddrOf(BorrowKind::Ref, Mutability::Mut, expr) => {
+        if let Some(id) = id_from_path_expr(expr) {
+          self.bxtor.dcx.make_mut_ref(id, &mut self.bxtor.base)
+        }
+      }
+
+      // if it's the receiver of a method with implicit `&mut self`
+      hir::ExprKind::MethodCall(_, _, args, ..) => {
+        if let Some(ImplicitSelfKind::MutRef) = self.implicit_self_of_call(expr.hir_id) {
+          if let Some(id) = id_from_path_expr(&args[0]) {
+            self.bxtor.dcx.make_mut_ref(id, &mut self.bxtor.base)
+          }
+        }
+      }
+      _ => {}
+    };
+    // Visit subexpressions
     intravisit::walk_expr(self, expr)
   }
 
@@ -264,5 +264,33 @@ impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
       }
       _ => intravisit::walk_pat(self, pattern),
     }
+  }
+}
+
+impl BindingsCollector<'_, '_, '_, '_> {
+  fn implicit_self_of_call(&self, hir_id: HirId) -> Option<ImplicitSelfKind> {
+    let tcx = self.bxtor.tcx();
+    let parent_did = tcx.hir().get_parent_did(hir_id);
+    let called_fn_did = tcx.typeck(parent_did).type_dependent_def_id(hir_id)?;
+    let called_fn_hid = tcx.hir().local_def_id_to_hir_id(called_fn_did.as_local()?);
+    let decl = tcx.hir().fn_decl_by_hir_id(called_fn_hid)?;
+    Some(decl.implicit_self)
+  }
+}
+
+fn id_from_path_expr(expr: &hir::Expr) -> Option<HirId> {
+  match expr {
+    hir::Expr {
+      kind:
+        hir::ExprKind::Path(hir::QPath::Resolved(
+          _,
+          hir::Path {
+            res: def::Res::Local(id),
+            ..
+          },
+        )),
+      ..
+    } => Some(*id),
+    _ => None,
   }
 }

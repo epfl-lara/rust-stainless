@@ -34,16 +34,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       PatKind::Binding {
         mutability,
-        mode: BindingMode::ByValue,
+        mode,
         var: hir_id,
         ..
-      }
-      | PatKind::Binding {
-        mutability,
-        mode: BindingMode::ByRef(BorrowKind::Shared),
-        var: hir_id,
-        ..
-      } => {
+      } if matches!(
+        mode,
+        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared)
+      ) =>
+      {
         let var = self.fetch_var(*hir_id);
         if *mutability == Mutability::Not || var.is_mutable() {
           Ok(self.factory().ValDef(var))
