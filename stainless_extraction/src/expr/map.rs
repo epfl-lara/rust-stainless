@@ -62,10 +62,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       f.IsInstanceOf(f.MutableMapApply(map, key).into(), some_tpe)
         .into(),
       Some("Map undefined at this index".into()),
-      self.synth().std_option_some_value(
-        f.AsInstanceOf(f.MutableMapApply(map, key).into(), some_tpe)
-          .into(),
-      ),
+      self.some_value(map, key, some_tpe),
     )
     .into()
   }
@@ -99,10 +96,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     f.IfExpr(
       f.IsInstanceOf(f.MutableMapApply(map, key).into(), some_tpe)
         .into(),
-      self.synth().std_option_some_value(
-        f.AsInstanceOf(f.MutableMapApply(map, key).into(), some_tpe)
-          .into(),
-      ),
+      self.some_value(map, key, some_tpe),
       or_else,
     )
     .into()
@@ -159,5 +153,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .into(),
     )
     .into()
+  }
+
+  fn some_value(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    some_tpe: st::Type<'l>,
+  ) -> st::Expr<'l> {
+    let f = self.factory();
+    let some_value = self.synth().std_option_some_value(
+      f.AsInstanceOf(f.MutableMapApply(map, key).into(), some_tpe)
+        .into(),
+    );
+    self.synth().mut_cell_value(some_value)
   }
 }

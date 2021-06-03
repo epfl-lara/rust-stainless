@@ -24,7 +24,7 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
     self.mut_cell_adt().constructors[0].fields[0].v.id
   }
 
-  fn mut_cell_id(&mut self) -> StainlessSymId<'l> {
+  pub fn mut_cell_id(&mut self) -> StainlessSymId<'l> {
     self.mut_cell_adt().id
   }
 
