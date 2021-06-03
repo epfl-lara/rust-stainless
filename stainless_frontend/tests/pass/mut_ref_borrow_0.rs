@@ -16,10 +16,10 @@ Desired Scala translation:
 import stainless.annotation._
 
 object Mutable {
-  final case class MutRef[@mutable T](var t: T)
+  final case class MutCell[@mutable T](var t: T)
 
   def main() = {
-    var x = MutRef(1)
+    var x = MutCell(1)
 
     val y = x
     assert(y.t == 1)

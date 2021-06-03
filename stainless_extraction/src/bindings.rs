@@ -180,11 +180,11 @@ impl<'l> DefContext<'l> {
     self.vars.get(&hir_id).copied()
   }
 
-  pub(super) fn make_mut_ref(&mut self, hir_id: HirId, xtor: &mut BaseExtractor<'l, '_>) {
+  pub(super) fn make_mut_cell(&mut self, hir_id: HirId, xtor: &mut BaseExtractor<'l, '_>) {
     self.vars.entry(hir_id).and_modify(|v| {
-      if !v.is_mut_ref() {
+      if !v.is_wrapped() {
         let f = xtor.factory();
-        let tpe = xtor.synth().mut_ref_type(v.tpe);
+        let tpe = xtor.synth().mut_cell_type(v.tpe);
         *v = f.Variable(
           v.id,
           tpe,
@@ -230,12 +230,12 @@ impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
   }
 
   fn visit_expr(&mut self, expr: &'tcx hir::Expr<'tcx>) {
-    // We promote a local variable to a MutRef
+    // We promote a local variable to a MutCell
     match expr.kind {
       // if it is later mutably borrowed
       hir::ExprKind::AddrOf(BorrowKind::Ref, Mutability::Mut, expr) => {
         if let Some(id) = id_from_path_expr(expr) {
-          self.bxtor.dcx.make_mut_ref(id, &mut self.bxtor.base)
+          self.bxtor.dcx.make_mut_cell(id, &mut self.bxtor.base)
         }
       }
 
@@ -243,7 +243,7 @@ impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
       hir::ExprKind::MethodCall(_, _, args, ..) => {
         if let Some(ImplicitSelfKind::MutRef) = self.implicit_self_of_call(expr.hir_id) {
           if let Some(id) = id_from_path_expr(&args[0]) {
-            self.bxtor.dcx.make_mut_ref(id, &mut self.bxtor.base)
+            self.bxtor.dcx.make_mut_cell(id, &mut self.bxtor.base)
           }
         }
       }

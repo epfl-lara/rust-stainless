@@ -17,11 +17,11 @@ Desired Scala translation:
 import stainless.annotation._
 
 object Mutable {
-  final case class MutRef[@mutable T](var t: T)
+  final case class MutCell[@mutable T](var t: T)
   final case class S(var s1: Int, var s2: Int)
 
   def main() = {
-    var a = MutRef(S(1, 2))
+    var a = MutCell(S(1, 2))
 
     val b = a
     b.t = S(100, 200)

@@ -30,12 +30,12 @@ Desired Scala translation:
 import stainless.annotation._
 
 object Mutable {
-  final case class MutRef[@mutable T](var t: T)
-  final case class S(var s: MutRef[Int])
+  final case class MutCell[@mutable T](var t: T)
+  final case class S(var s: MutCell[Int])
 
   def main() = {
-    val int = MutRef(123)
-    val x = MutRef(S(int))
+    val int = MutCell(123)
+    val x = MutCell(S(int))
 
     val y = x
     assert(y.t.s.t == 123 && x.t.s.t == 123)

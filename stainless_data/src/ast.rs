@@ -155,7 +155,7 @@ impl Variable<'_> {
     self.flags.iter().any(|f| matches!(f, Flag::IsVar(_)))
   }
 
-  pub fn is_mut_ref(&self) -> bool {
+  pub fn is_wrapped(&self) -> bool {
     self
       .flags
       .iter()
@@ -168,8 +168,8 @@ impl ValDef<'_> {
     self.v.is_mutable()
   }
 
-  pub fn is_mut_ref(&self) -> bool {
-    self.v.is_mut_ref()
+  pub fn is_wrapped(&self) -> bool {
+    self.v.is_wrapped()
   }
 }
 

@@ -149,7 +149,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       TyKind::Ref(_, ty, Mutability::Mut) => {
         let arg_ty = self.extract_ty(ty, txtcx, span);
-        self.synth().mut_ref_type(arg_ty)
+        self.synth().mut_cell_type(arg_ty)
       }
 
       TyKind::Param(param_ty) => txtcx
