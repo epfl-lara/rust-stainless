@@ -2,10 +2,11 @@ use super::*;
 
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, IntTy, Predicate, PredicateKind, TraitRef, Ty,
-  TyKind, UintTy,
+  subst::SubstsRef, AdtDef, GenericParamDef, GenericParamDefKind, IntTy, Predicate, PredicateKind,
+  TraitRef, Ty, TyKind, UintTy,
 };
 use rustc_span::{Span, DUMMY_SP};
+use rustc_target::abi::VariantIdx;
 
 use std::collections::BTreeMap;
 
@@ -367,6 +368,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .rev()
       .flat_map(|pred| pred.predicates)
       .collect()
+  }
+
+  pub(super) fn adt_field_types(
+    &mut self,
+    adt_def: &AdtDef,
+    variant_index: VariantIdx,
+    txtcx: &TyExtractionCtxt<'l>,
+    substs: SubstsRef<'tcx>,
+  ) -> Vec<st::Type<'l>> {
+    adt_def.variants[variant_index]
+      .fields
+      .iter()
+      .map(|f| {
+        let tpe = f.ty(self.tcx, substs);
+        self.extract_ty(tpe, txtcx, f.ident.span)
+      })
+      .collect::<Vec<_>>()
   }
 
   // Various helpers

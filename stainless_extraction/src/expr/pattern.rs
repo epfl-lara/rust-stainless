@@ -156,8 +156,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         TyKind::Tuple(substs) => {
           let id = self.synth().tuple_id(substs.len());
+          let field_types =
+            self
+              .base
+              .extract_tys(pattern.ty.tuple_fields(), &self.txtcx, pattern.span);
           self
-            .adt_pattern(binder, id, subpatterns, substs, substs.len(), pattern.span)
+            .adt_pattern(binder, id, subpatterns, substs, field_types, pattern.span)
             .into()
         }
 
@@ -190,12 +194,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> &'l st::ADTPattern<'l> {
     let sort = self.base.get_or_extract_adt(adt_def.did);
     let constructor = sort.constructors[variant_index.index()];
+    let field_types = self
+      .base
+      .adt_field_types(adt_def, variant_index, &self.txtcx, substs);
     self.adt_pattern(
       binder,
       constructor.id,
       subpatterns,
       substs,
-      constructor.fields.len(),
+      field_types,
       span,
     )
   }
@@ -206,12 +213,24 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     id: StainlessSymId<'l>,
     subpatterns: &[FieldPat<'tcx>],
     substs: SubstsRef<'tcx>,
-    fields_len: usize,
+    field_types: Vec<st::Type<'l>>,
     span: Span,
   ) -> &'l st::ADTPattern<'l> {
+    let f = self.factory();
     let arg_tps = self.extract_arg_types(substs.types(), span);
-    let subpatterns = self.extract_subpatterns(subpatterns.to_vec(), fields_len);
-    self.factory().ADTPattern(binder, id, arg_tps, subpatterns)
+
+    // Wrap subpatterns in MutCells
+    let subpatterns = self
+      .extract_subpatterns(subpatterns.to_vec(), field_types.len())
+      .into_iter()
+      .zip(field_types)
+      .map(|(p, t)| {
+        f.ADTPattern(None, self.synth().mut_cell_id(), vec![t], vec![p])
+          .into()
+      })
+      .collect();
+
+    f.ADTPattern(binder, id, arg_tps, subpatterns)
   }
 
   fn extract_subpatterns(

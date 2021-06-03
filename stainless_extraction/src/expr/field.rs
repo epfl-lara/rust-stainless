@@ -8,16 +8,22 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     lhs: &'a Expr<'a, 'tcx>,
     rhs: &'a Expr<'a, 'tcx>,
   ) -> st::Expr<'l> {
+    let f = self.factory();
     let value = self.extract_expr(rhs);
     let lhs = self.strip_scopes(lhs);
     match &lhs.kind {
-      ExprKind::VarRef { id } => self.factory().Assignment(self.fetch_var(*id), value).into(),
+      ExprKind::VarRef { id } => f.Assignment(self.fetch_var(*id), value).into(),
 
       ExprKind::Field { lhs, name } => match lhs.ty.kind() {
         TyKind::Adt(adt_def, _) => {
           let adt = self.extract_expr(lhs);
           let selector = self.extract_field_selector(adt_def.did, *name);
-          self.factory().FieldAssignment(adt, selector, value).into()
+          f.FieldAssignment(
+            f.ADTSelector(adt, selector).into(),
+            self.synth().mut_cell_value_id(),
+            value,
+          )
+          .into()
         }
         ref t => self.unsupported_expr(
           lhs.span,
@@ -27,9 +33,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       ExprKind::Deref { arg } => {
         let arg = self.extract_expr(arg);
-        self
-          .factory()
-          .FieldAssignment(arg, self.synth().mut_cell_value_id(), value)
+        f.FieldAssignment(arg, self.synth().mut_cell_value_id(), value)
           .into()
       }
 
@@ -41,16 +45,21 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   pub(super) fn extract_field(&mut self, lhs: &'a Expr<'a, 'tcx>, field: Field) -> st::Expr<'l> {
+    let f = self.factory();
     match lhs.ty.kind() {
       TyKind::Tuple(substs) => {
         let lhs = self.extract_expr(lhs);
         self.synth().tuple_select(substs.len(), lhs, field.index())
       }
+
       TyKind::Adt(adt_def, _) => {
         let selector = self.extract_field_selector(adt_def.did, field);
         let lhs = self.extract_expr(lhs);
-        self.factory().ADTSelector(lhs, selector).into()
+        self
+          .synth()
+          .mut_cell_value(f.ADTSelector(lhs, selector).into())
       }
+
       ref kind => unexpected(
         lhs.span,
         format!("Unexpected kind of field selection: {:?}", kind),
