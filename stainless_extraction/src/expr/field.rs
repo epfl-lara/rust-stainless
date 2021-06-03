@@ -29,7 +29,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         let arg = self.extract_expr(arg);
         self
           .factory()
-          .FieldAssignment(arg, self.synth().mut_ref_value_id(), value)
+          .FieldAssignment(arg, self.synth().mut_cell_value_id(), value)
           .into()
       }
 

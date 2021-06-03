@@ -1,6 +1,6 @@
 use super::*;
 
-mod mut_ref;
+mod mut_cell;
 mod std_option;
 mod tuple;
 
@@ -8,7 +8,7 @@ mod tuple;
 pub enum SynthItem {
   StdOption,
   Tuple(usize),
-  MutRef,
+  MutCell,
 }
 
 /// This is just a proxy, a mutable reference to the base extractor. The idea of

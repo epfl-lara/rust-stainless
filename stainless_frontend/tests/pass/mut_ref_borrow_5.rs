@@ -29,15 +29,15 @@ import stainless.lang._
 import stainless.annotation._
 
 object Mutable {
-  final case class MutRef[@mutable T](var t: T)
+  final case class MutCell[@mutable T](var t: T)
   final case class Thing[@mutable T](var field: T)
 
-  def change_thing[@mutable T](thing: MutRef[Thing[T]], t: T) = {
+  def change_thing[@mutable T](thing: MutCell[Thing[T]], t: T) = {
     thing.t = Thing(freshCopy(t))
   }
 
   def main() = {
-    val thing = MutRef(Thing(123))
+    val thing = MutCell(Thing(123))
     change_thing(thing, 456)
     assert(thing.t.field == 456)
 
