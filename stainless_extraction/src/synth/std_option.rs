@@ -16,7 +16,7 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
   pub fn std_option_some(&mut self, val: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
     self
       .factory()
-      .ADT(self.some_id(), vec![tpe], vec![val])
+      .ADT(self.some_id(), vec![tpe], vec![self.mut_cell(tpe, val)])
       .into()
   }
 

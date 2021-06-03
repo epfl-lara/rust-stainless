@@ -307,7 +307,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let arg_tps = self.extract_arg_types(substs.types(), expr.span);
 
       // If the ADT is constructed with "struct update syntax"
-      let args = if let Some(FruInfo { base, .. }) = base {
+      let args: Vec<_> = if let Some(FruInfo { base, .. }) = base {
         // we take the explicit fields
         let fields_by_index = fields
           .iter()
@@ -320,10 +320,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .iter()
           .enumerate()
           .map(|(index, fi)| {
-            fields_by_index
-              .get(&index)
-              .copied()
-              .unwrap_or_else(|| f.ADTSelector(adt, fi.v.id).into())
+            fields_by_index.get(&index).copied().unwrap_or_else(|| {
+              self
+                .synth()
+                .mut_cell_value(f.ADTSelector(adt, fi.v.id).into())
+            })
           })
           .collect()
       }
@@ -336,6 +337,18 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .map(|field| self.extract_expr(field.expr))
           .collect()
       };
+
+      // Wrap args in MutCell
+      let args = args
+        .into_iter()
+        .zip(
+          self
+            .base
+            .adt_field_types(adt_def, *variant_index, &self.txtcx, substs),
+        )
+        .map(|(a, t)| self.synth().mut_cell(t, a))
+        .collect();
+
       f.ADT(constructor.id, arg_tps, args).into()
     } else {
       unreachable!()

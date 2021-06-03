@@ -518,21 +518,22 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .iter()
           .map(|field| {
             let field_id = self.get_or_register_def(field.did);
+
             let substs = List::identity_for_item(self.tcx, def_id);
             let field_ty = field.ty(self.tcx, substs);
             let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
+            // All fields are MutCells
+            let field_ty = self.synth().mut_cell_type(field_ty);
 
-            let mut flags = flags_by_symbol
+            let flags = flags_by_symbol
               .remove(&field.ident.name)
               .map(|flags| flags.to_stainless(f))
               .unwrap_or_default();
-            // All fields are potentially mutable in Rust
-            flags.push(f.IsVar().into());
 
-            let field = f.Variable(field_id, field_ty, flags);
-            &*f.ValDef(field)
+            &*f.ValDef(f.Variable(field_id, field_ty, flags))
           })
           .collect();
+
         &*f.ADTConstructor(cons_id, adt_id, fields)
       })
       .collect();
