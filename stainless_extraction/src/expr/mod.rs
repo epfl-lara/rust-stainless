@@ -35,7 +35,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::LogicalOp { op, lhs, rhs } => self.extract_logical_op(*op, lhs, rhs),
 
       ExprKind::Tuple { fields } => self.extract_tuple(fields, expr.span),
-      ExprKind::Field { lhs, name } => self.extract_field(lhs, *name),
+      ExprKind::Field { lhs, name } => self.extract_field(lhs, *name, false),
       ExprKind::VarRef { id } => self.extract_var_ref(*id),
 
       ExprKind::Call { ty, ref args, .. } => match ty.kind() {
