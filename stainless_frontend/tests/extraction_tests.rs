@@ -130,6 +130,7 @@ define_tests!(
   pass: mut_ref_borrow_6,
   pass: mut_ref_borrow_7,
   pass: mut_ref_borrow_8,
+  pass: mut_ref_borrow_9,
   pass: mut_ref_immut_borrow,
   pass: mut_return,
   pass: nested_spec,
