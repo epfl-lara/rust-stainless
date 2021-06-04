@@ -30,6 +30,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           // Re-borrows a dereferenced mutable borrow, we take the original ref
           ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => self.extract_expr(inner),
 
+          ExprKind::Field { lhs, name } => self.extract_field(lhs, name, true),
+
           ExprKind::VarRef { id } => self.fetch_var(id).into(),
           _ => self.extract_expr(arg),
         }
