@@ -34,19 +34,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       PatKind::Binding {
         mutability,
-        mode,
         var: hir_id,
         ..
-      } if matches!(
-        mode,
-        BindingMode::ByValue | BindingMode::ByRef(BorrowKind::Shared)
-      ) =>
-      {
+      } => {
         let var = self.fetch_var(*hir_id);
         if *mutability == Mutability::Not || var.is_mutable() {
           Ok(self.factory().ValDef(var))
         } else {
-          Err("Binding mode not allowed")
+          Err("Mutability not allowed")
         }
       }
 
@@ -177,7 +172,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       },
 
       // TODO: Confirm that rustc introduces this pattern only for primitive derefs
-      box PatKind::Deref { ref subpattern } => self.extract_pattern(subpattern, binder),
+      box PatKind::Deref { ref subpattern } => {
+        let sub = self.extract_pattern(subpattern, binder);
+
+        // If we pattern match on mutable vars, we want the MutCell not it's value
+        if ty::is_mut_ref(pattern.ty) {
+          if let st::Type::ADTType(st::ADTType { tps, .. }) =
+            self.base.extract_ty(pattern.ty, &self.txtcx, pattern.span)
+          {
+            f.ADTPattern(None, self.synth().mut_cell_id(), tps.clone(), vec![sub])
+              .into()
+          } else {
+            sub
+          }
+        } else {
+          sub
+        }
+      }
 
       _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
     }
@@ -224,9 +235,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .extract_subpatterns(subpatterns.to_vec(), field_types.len())
       .into_iter()
       .zip(field_types)
-      .map(|(p, t)| {
-        f.ADTPattern(None, self.synth().mut_cell_id(), vec![t], vec![p])
-          .into()
+      .map(|((st_pat, thir_pat), t)| {
+        if is_mut_ref(thir_pat) {
+          st_pat
+        } else {
+          f.ADTPattern(None, self.synth().mut_cell_id(), vec![t], vec![st_pat])
+            .into()
+        }
       })
       .collect();
 
@@ -237,7 +252,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     mut field_pats: Vec<FieldPat<'tcx>>,
     num_fields: usize,
-  ) -> Vec<st::Pattern<'l>> {
+  ) -> Vec<(st::Pattern<'l>, Option<Pat<'tcx>>)> {
     let f = self.factory();
     field_pats.sort_by_key(|field| field.field.index());
     field_pats.reverse();
@@ -246,15 +261,28 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let next = if let Some(FieldPat { field, .. }) = field_pats.last() {
         if field.index() == i {
           let FieldPat { pattern, .. } = field_pats.pop().unwrap();
-          self.extract_pattern(&pattern, None)
+          (self.extract_pattern(&pattern, None), Some(pattern))
         } else {
-          f.WildcardPattern(None).into()
+          (f.WildcardPattern(None).into(), None)
         }
       } else {
-        f.WildcardPattern(None).into()
+        (f.WildcardPattern(None).into(), None)
       };
       subpatterns.push(next);
     }
     subpatterns
   }
+}
+
+fn is_mut_ref<'tcx>(pat: Option<Pat<'tcx>>) -> bool {
+  matches!(
+    pat,
+    Some(Pat {
+      kind: box PatKind::Binding {
+        mode: BindingMode::ByRef(BorrowKind::Mut { .. }),
+        ..
+      },
+      ..
+    })
+  )
 }
