@@ -9,7 +9,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     rhs: &'a Expr<'a, 'tcx>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let value = self.extract_expr(rhs);
+
+    // Assigning creates an alias of the rhs, therefore the rhs needs to be
+    // potentially fresh copied. Fresh copies are not inserted for MutCells i.e.
+    // mutable references. For other types it's safe to fresh copy because rustc
+    // ensures that we own the value we assign.
+    let value = self.extract_aliasable_expr(rhs);
     let lhs = self.strip_scopes(lhs);
     match &lhs.kind {
       ExprKind::VarRef { id } => f.Assignment(self.fetch_var(*id), value).into(),
@@ -44,7 +49,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  pub(super) fn extract_field(&mut self, lhs: &'a Expr<'a, 'tcx>, field: Field) -> st::Expr<'l> {
+  pub(super) fn extract_field(
+    &mut self,
+    lhs: &'a Expr<'a, 'tcx>,
+    field: Field,
+    mutable_borrow: bool,
+  ) -> st::Expr<'l> {
     let f = self.factory();
     match lhs.ty.kind() {
       TyKind::Tuple(substs) => {
@@ -55,9 +65,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       TyKind::Adt(adt_def, _) => {
         let selector = self.extract_field_selector(adt_def.did, field);
         let lhs = self.extract_expr(lhs);
-        self
-          .synth()
-          .mut_cell_value(f.ADTSelector(lhs, selector).into())
+        let field = f.ADTSelector(lhs, selector).into();
+        if mutable_borrow {
+          field
+        } else {
+          self.synth().mut_cell_value(field)
+        }
       }
 
       ref kind => unexpected(
