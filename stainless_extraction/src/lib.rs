@@ -33,6 +33,7 @@ use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
+use synth::SynthItem;
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
@@ -87,6 +88,7 @@ struct SymbolMapping<'l> {
   local_id_counter: UniqueCounter<String>,
   did_to_stid: HashMap<DefId, StainlessSymId<'l>>,
   hid_to_stid: HashMap<HirId, StainlessSymId<'l>>,
+  synth_to_stid: HashMap<SynthItem, StainlessSymId<'l>>,
 }
 
 /// Extraction encapsulates the state of extracting a Stainless program

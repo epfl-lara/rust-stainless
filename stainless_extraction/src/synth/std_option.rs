@@ -31,14 +31,6 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
       .into()
   }
 
-  fn option_adt(&mut self) -> &'l st::ADTSort<'l> {
-    let def_id = self
-      .base
-      .std_items
-      .item_to_def(StdItem::CrateItem(CrateItem::OptionType));
-    self.base.get_or_extract_adt(def_id)
-  }
-
   fn none_id(&mut self) -> StainlessSymId<'l> {
     self.option_adt().constructors[0].id
   }
@@ -49,5 +41,19 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
 
   fn some_value_id(&mut self) -> StainlessSymId<'l> {
     self.option_adt().constructors[1].fields[0].v.id
+  }
+
+  fn option_adt(&mut self) -> &'l st::ADTSort<'l> {
+    self
+      .get_adt_from_synth(SynthItem::StdOption)
+      .unwrap_or_else(|| {
+        let def_id = self
+          .base
+          .std_items
+          .item_to_def(StdItem::CrateItem(CrateItem::OptionType));
+        let adt = self.base.get_or_extract_adt(def_id);
+        self.register_synth_id(SynthItem::StdOption, adt.id);
+        adt
+      })
   }
 }
