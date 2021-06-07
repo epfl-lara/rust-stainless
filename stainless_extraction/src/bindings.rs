@@ -1,6 +1,7 @@
 use super::flags::Flags;
 use super::*;
 
+use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId, Node, Pat, PatKind};
 use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
@@ -46,50 +47,40 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let xtor = &mut self.base;
 
       // Extract ident from corresponding HIR node, sanity-check binding mode
-      let (id, span, mutable) = {
-        let node = xtor.tcx.hir().find(hir_id).unwrap();
-
-        let (ident, mutable) = if let Node::Binding(Pat {
-          kind: PatKind::Binding(_, _, ident, _),
-          hir_id,
-          span,
-          ..
-        }) = node
-        {
-          match self
+      let node = xtor.tcx.hir().find(hir_id).unwrap();
+      let (ident, binding_mode, span) = if let Node::Binding(Pat {
+        kind: PatKind::Binding(_, _, ident, _),
+        hir_id,
+        span,
+        ..
+      }) = node
+      {
+        (
+          ident,
+          self
             .tables
             .extract_binding_mode(xtor.tcx.sess, *hir_id, *span)
-          {
-            // allowed binding modes
-            Some(ty::BindByValue(hir::Mutability::Not))
-            | Some(ty::BindByReference(hir::Mutability::Not)) => (ident, false),
-            Some(ty::BindByValue(hir::Mutability::Mut)) => (ident, true),
-
-            // For the forbidden binding modes, return the identifier anyway
-            // because failure will occur later.
-            _ => {
-              xtor.unsupported(*span, "Only immutable bindings are supported");
-              (ident, false)
-            }
-          }
-        } else {
-          xtor.unsupported(
-            node.ident().map(|ident| ident.span).unwrap_or_default(),
-            "Cannot extract complex pattern in binding (cannot recover from this)",
-          );
-          unreachable!()
-        };
-
-        (
-          xtor.register_hir(hir_id, ident.name.to_string()),
-          ident.span,
-          mutable,
+            .expect("Cannot extract binding without binding mode."),
+          span,
         )
+      } else {
+        xtor.unsupported(
+          node.ident().map(|ident| ident.span).unwrap_or_default(),
+          "Cannot extract complex pattern in binding (cannot recover from this)",
+        );
+        unreachable!()
       };
+
+      if let ty::BindByReference(Mutability::Mut) = binding_mode {
+        xtor.unsupported(*span, "Only immutable bindings are supported");
+      }
+
+      let id = xtor.register_hir(hir_id, ident.name.to_string());
+      let mutable = matches!(binding_mode, ty::BindByValue(Mutability::Mut));
 
       // Build a Variable node
       let f = xtor.factory();
-      let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, span);
+      let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, ident.span);
       let flags = flags_opt
         .map(|flags| flags.to_stainless(f))
         .into_iter()
@@ -206,7 +197,7 @@ impl<'bxtor, 'a, 'l, 'tcx> BindingsCollector<'bxtor, 'a, 'l, 'tcx> {
   }
 }
 
-impl<'bxtor, 'a, 'l, 'tcx> Visitor<'tcx> for BindingsCollector<'bxtor, 'a, 'l, 'tcx> {
+impl<'tcx> Visitor<'tcx> for BindingsCollector<'_, '_, '_, 'tcx> {
   type Map = rustc_middle::hir::map::Map<'tcx>;
 
   fn nested_visit_map(&mut self) -> NestedVisitorMap<Self::Map> {
