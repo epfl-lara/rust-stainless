@@ -2,7 +2,7 @@ use super::*;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_tuple(&mut self, fields: &'a [Expr<'a, 'tcx>], span: Span) -> st::Expr<'l> {
-    if fields.len() == 0 {
+    if fields.is_empty() {
       self.factory().UnitLiteral().into()
     } else {
       let tps = self
