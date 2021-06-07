@@ -25,6 +25,13 @@ impl<'a> FnItem<'a> {
   }
 }
 
+pub struct FnSignature<'l> {
+  pub id: &'l st::SymbolIdentifier<'l>,
+  pub tparams: Vec<&'l st::TypeParameterDef<'l>>,
+  pub params: Params<'l>,
+  pub return_tpe: st::Type<'l>,
+}
+
 /// Identifies the specific implementation/instance of a type class that is
 /// needed at a method call site.
 #[derive(Debug, Eq, PartialEq)]

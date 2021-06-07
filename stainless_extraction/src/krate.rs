@@ -8,9 +8,8 @@ use rustc_middle::ty::{AssocKind, List, TraitRef};
 use rustc_span::DUMMY_SP;
 
 use stainless_data::ast as st;
-use stainless_data::ast::{SymbolIdentifier, TypeParameterDef};
 
-use crate::fns::FnItem;
+use crate::fns::{FnItem, FnSignature};
 use std::iter;
 
 /// Top-level extraction
@@ -260,15 +259,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       "Expected non-local def id, got: {:?}",
       def_id
     );
-    let (id, tparams, params, rtp) = self.extract_fn_signature(def_id);
+    let FnSignature {
+      id,
+      tparams,
+      params,
+      return_tpe,
+    } = self.extract_fn_signature(def_id);
 
     let f = self.factory();
-    let empty_body = f.NoTree(rtp).into();
+    let empty_body = f.NoTree(return_tpe).into();
     f.FunDef(
       id,
       tparams,
       params,
-      rtp,
+      return_tpe,
       empty_body,
       vec![f.Extern().into()],
     )
@@ -282,17 +286,22 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  pub fn extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
-    let (id, tparams, params, rtp) = self.extract_fn_signature(def_id);
+  fn extract_abstract_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+    let FnSignature {
+      id,
+      tparams,
+      params,
+      return_tpe,
+    } = self.extract_fn_signature(def_id);
     let class_def = self.get_class_of_method(id);
 
     let f = self.factory();
-    let empty_body = f.NoTree(rtp).into();
+    let empty_body = f.NoTree(return_tpe).into();
     f.FunDef(
       id,
       self.filter_class_tparams(tparams, class_def),
       params,
-      rtp,
+      return_tpe,
       empty_body,
       class_def
         .iter()
@@ -302,15 +311,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     )
   }
 
-  fn extract_fn_signature(
-    &mut self,
-    def_id: DefId,
-  ) -> (
-    &'l SymbolIdentifier<'l>,
-    Vec<&'l TypeParameterDef<'l>>,
-    Params<'l>,
-    st::Type<'l>,
-  ) {
+  fn extract_fn_signature(&mut self, def_id: DefId) -> FnSignature<'l> {
     let f = self.factory();
 
     // Extract the function signature
@@ -328,10 +329,13 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         &*f.ValDef(var)
       })
       .collect();
-    let return_tpe = self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP);
 
-    let fun_id = self.get_or_extract_fn_ref(def_id);
-    (fun_id, tparams, params, return_tpe)
+    FnSignature {
+      id: self.get_or_extract_fn_ref(def_id),
+      tparams,
+      params,
+      return_tpe: self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP),
+    }
   }
 
   pub fn get_or_extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
