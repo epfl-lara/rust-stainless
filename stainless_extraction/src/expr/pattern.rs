@@ -1,7 +1,9 @@
 use super::*;
 
 use rustc_middle::mir::Mutability;
+use rustc_middle::ty::AdtDef;
 use rustc_mir_build::thir::{Arm, BindingMode, FieldPat, Guard, Pat, PatKind};
+use rustc_target::abi::VariantIdx;
 
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_if(
@@ -124,34 +126,37 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         variant_index,
         subpatterns,
         substs,
-      } => {
-        let sort = self.base.get_or_extract_adt(adt_def.did);
-        let constructor = sort.constructors[variant_index.index()];
-        let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
-        let subpatterns = self.extract_subpatterns(subpatterns.to_vec(), constructor.fields.len());
-        f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
-          .into()
-      }
+      } => self
+        .extract_adt_pattern(
+          adt_def,
+          *variant_index,
+          binder,
+          subpatterns,
+          substs,
+          pattern.span,
+        )
+        .into(),
 
       // From rustc_hair docs:  `(...)`, `Foo(...)`, `Foo{...}`, or `Foo`, where
       // `Foo` is a variant name from an ADT with a single variant.
       box PatKind::Leaf { subpatterns } => match pattern.ty.kind() {
-        TyKind::Adt(adt_def, substs) => {
-          let sort = self.base.get_or_extract_adt(adt_def.did);
-          assert_eq!(sort.constructors.len(), 1);
-          let constructor = sort.constructors[0];
-          let arg_tps = self.extract_arg_types(substs.types(), pattern.span);
-          let subpatterns =
-            self.extract_subpatterns(subpatterns.to_vec(), constructor.fields.len());
-          f.ADTPattern(binder, constructor.id, arg_tps, subpatterns)
-            .into()
-        }
-        TyKind::Tuple(substs) => f
-          .TuplePattern(
+        TyKind::Adt(adt_def, substs) => self
+          .extract_adt_pattern(
+            adt_def,
+            VariantIdx::from_u32(0),
             binder,
-            self.extract_subpatterns(subpatterns.to_vec(), substs.len()),
+            subpatterns,
+            substs,
+            pattern.span,
           )
           .into(),
+
+        TyKind::Tuple(substs) => {
+          let id = self.synth().tuple_id(substs.len());
+          self
+            .adt_pattern(binder, id, subpatterns, substs, substs.len(), pattern.span)
+            .into()
+        }
 
         _ => self.unsupported_pattern(
           pattern.span,
@@ -169,6 +174,41 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
       _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
     }
+  }
+
+  fn extract_adt_pattern(
+    &mut self,
+    adt_def: &AdtDef,
+    variant_index: VariantIdx,
+    binder: Option<&'l st::ValDef<'l>>,
+    subpatterns: &[FieldPat<'tcx>],
+    substs: SubstsRef<'tcx>,
+    span: Span,
+  ) -> &'l st::ADTPattern<'l> {
+    let sort = self.base.get_or_extract_adt(adt_def.did);
+    let constructor = sort.constructors[variant_index.index()];
+    self.adt_pattern(
+      binder,
+      constructor.id,
+      subpatterns,
+      substs,
+      constructor.fields.len(),
+      span,
+    )
+  }
+
+  fn adt_pattern(
+    &mut self,
+    binder: Option<&'l st::ValDef<'l>>,
+    id: StainlessSymId<'l>,
+    subpatterns: &[FieldPat<'tcx>],
+    substs: SubstsRef<'tcx>,
+    fields_len: usize,
+    span: Span,
+  ) -> &'l st::ADTPattern<'l> {
+    let arg_tps = self.extract_arg_types(substs.types(), span);
+    let subpatterns = self.extract_subpatterns(subpatterns.to_vec(), fields_len);
+    self.factory().ADTPattern(binder, id, arg_tps, subpatterns)
   }
 
   fn extract_subpatterns(

@@ -28,7 +28,7 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
       .into()
   }
 
-  fn tuple_id(&mut self, arity: usize) -> StainlessSymId<'l> {
+  pub fn tuple_id(&mut self, arity: usize) -> StainlessSymId<'l> {
     self.tuple_adt(arity).id
   }
 
