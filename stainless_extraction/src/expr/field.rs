@@ -33,16 +33,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   pub(super) fn extract_field(&mut self, lhs: &'a Expr<'a, 'tcx>, field: Field) -> st::Expr<'l> {
-    let f = self.factory();
     match lhs.ty.kind() {
-      TyKind::Tuple(_) => {
+      TyKind::Tuple(substs) => {
         let lhs = self.extract_expr(lhs);
-        f.TupleSelect(lhs, (field.index() as i32) + 1).into()
+        self.synth().tuple_select(substs.len(), lhs, field.index())
       }
       TyKind::Adt(adt_def, _) => {
         let selector = self.extract_field_selector(adt_def.did, field);
         let lhs = self.extract_expr(lhs);
-        f.ADTSelector(lhs, selector).into()
+        self.factory().ADTSelector(lhs, selector).into()
       }
       ref kind => unexpected(
         lhs.span,

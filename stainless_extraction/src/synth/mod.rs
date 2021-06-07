@@ -1,10 +1,12 @@
 use super::*;
 
 mod std_option;
+mod tuple;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SynthItem {
   StdOption,
+  Tuple(usize),
 }
 
 /// This is just a proxy, a mutable reference to the base extractor. The idea of
@@ -49,5 +51,11 @@ impl<'l> Synth<'_, 'l, '_> {
     self
       .base
       .with_extraction_mut(|xt| xt.mapping.synth_to_stid.insert(synth, id));
+  }
+
+  fn fresh_synth_id(&mut self, synth: SynthItem, name: String) -> StainlessSymId<'l> {
+    let id = self.base.fresh_id(name);
+    self.register_synth_id(synth, id);
+    id
   }
 }
