@@ -473,8 +473,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .and_then(|id| self.get_adt(id))
       .unwrap_or_else(|| {
         let adt = self.extract_adt(def_id);
-        self.add_adt(adt);
-        adt
+        self.add_adt(adt)
       })
   }
 

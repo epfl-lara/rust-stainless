@@ -33,6 +33,7 @@ use bindings::DefContext;
 use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
+use synth::SynthItem;
 use ty::{Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
@@ -87,6 +88,7 @@ struct SymbolMapping<'l> {
   local_id_counter: UniqueCounter<String>,
   did_to_stid: HashMap<DefId, StainlessSymId<'l>>,
   hid_to_stid: HashMap<HirId, StainlessSymId<'l>>,
+  synth_to_stid: HashMap<SynthItem, StainlessSymId<'l>>,
 }
 
 /// Extraction encapsulates the state of extracting a Stainless program
@@ -243,10 +245,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
   /// ADTs and Functions
 
-  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) {
+  fn add_adt(&mut self, adt: &'l st::ADTSort<'l>) -> &'l st::ADTSort<'l> {
     self.with_extraction_mut(|xt| {
       assert!(xt.adts.insert(adt.id, adt).is_none());
-    })
+    });
+    adt
   }
 
   fn get_adt(&self, id: StainlessSymId<'l>) -> Option<&'l st::ADTSort<'l>> {

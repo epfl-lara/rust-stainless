@@ -91,11 +91,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let arg_tps = self.extract_tys(ty.tuple_fields(), txtcx, span);
         match arg_tps.len() {
           0 => f.UnitType().into(),
-          1 => {
-            self.unsupported(span, "Cannot extract type of one-tuples");
-            f.Untyped().into()
-          }
-          _ => f.TupleType(arg_tps).into(),
+          _ => self.synth().tuple_type(arg_tps),
         }
       }
 
