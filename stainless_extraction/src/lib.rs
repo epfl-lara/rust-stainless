@@ -20,8 +20,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use rustc_hir::def_id::{DefId, LocalDefId};
-use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId};
+use rustc_middle::mir::Mutability;
 use rustc_middle::span_bug;
 use rustc_middle::ty::{TyCtxt, TypeckResults, WithOptConstParam};
 use rustc_mir_build::thir;

@@ -5,22 +5,28 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     item: CrateItem,
     args: &'a [Expr<'a, 'tcx>],
-    substs_ref: SubstsRef<'tcx>,
+    substs: SubstsRef<'tcx>,
     span: Span,
   ) -> st::Expr<'l> {
-    match (item, &self.extract_exprs(args)[..]) {
-      (MapNewFn, []) => self.extract_map_creation(substs_ref, span),
+    let (key_tpe, val_tpe) = match &self.base.extract_tys(substs.types(), &self.txtcx, span)[..] {
+      [key_tpe, val_tpe] => (*key_tpe, *val_tpe),
+      _ => {
+        return self.unsupported_expr(
+          span,
+          format!("Cannot extract {:?} with {} types.", item, substs.len()),
+        )
+      }
+    };
 
-      (MapIndexFn, [map, key]) => self.extract_map_apply(*map, *key, substs_ref, span),
-      (MapContainsKeyFn, [map, key]) => self.extract_map_contains(*map, *key, substs_ref, span),
-      (MapRemoveFn, [map, key]) => self.extract_map_removed(*map, *key, substs_ref, span),
+    match (item, &self.extract_exprs(args)[..]) {
+      (MapNewFn, []) => self.extract_map_creation(key_tpe, val_tpe),
+
+      (MapIndexFn, [map, key]) => self.extract_map_apply(*map, *key, val_tpe),
+      (MapContainsKeyFn, [map, key]) => self.extract_map_contains(*map, *key, val_tpe),
+      (MapRemoveFn, [map, key]) => self.extract_map_remove(*map, *key, val_tpe),
       (MapGetFn, [map, key]) => self.factory().MapApply(*map, *key).into(),
-      (MapInsertFn, [map, key, val]) => {
-        self.extract_map_updated(*map, *key, *val, substs_ref, span)
-      }
-      (MapGetOrFn, [map, key, or_else]) => {
-        self.extract_map_get_or_else(*map, *key, *or_else, substs_ref, span)
-      }
+      (MapInsertFn, [map, key, val]) => self.extract_map_insert(*map, *key, val_tpe, *val),
+      (MapGetOrFn, [map, key, or_else]) => self.extract_map_get_or(*map, *key, val_tpe, *or_else),
 
       (op, _) => self.unsupported_expr(
         span,
@@ -29,32 +35,25 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  fn extract_map_creation(&mut self, substs: SubstsRef<'tcx>, span: Span) -> st::Expr<'l> {
-    let f = self.factory();
-    let tps = self.base.extract_tys(substs.types(), &self.txtcx, span);
-
-    match &tps[..] {
-      [key_tpe, val_tpe] => f
-        .FiniteMap(
-          vec![],
-          self.synth().std_option_none(*val_tpe),
-          *key_tpe,
-          self.synth().std_option_type(*val_tpe),
-        )
-        .into(),
-      _ => unreachable!(),
-    }
+  fn extract_map_creation(&mut self, key_tpe: st::Type<'l>, val_tpe: st::Type<'l>) -> st::Expr<'l> {
+    self
+      .factory()
+      .FiniteMap(
+        vec![],
+        self.synth().std_option_none(val_tpe),
+        key_tpe,
+        self.synth().std_option_type(val_tpe),
+      )
+      .into()
   }
 
   fn extract_map_apply(
     &mut self,
     map: st::Expr<'l>,
     key: st::Expr<'l>,
-    substs: SubstsRef<'tcx>,
-    span: Span,
+    val_tpe: st::Type<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     let some_tpe = self.synth().std_option_some_type(val_tpe);
     f.Assert(
       f.IsInstanceOf(f.MapApply(map, key).into(), some_tpe).into(),
@@ -70,11 +69,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     &mut self,
     map: st::Expr<'l>,
     key: st::Expr<'l>,
-    substs: SubstsRef<'tcx>,
-    span: Span,
+    val_tpe: st::Type<'l>,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     f.Not(
       f.Equals(
         f.MapApply(map, key).into(),
@@ -85,44 +82,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     .into()
   }
 
-  fn extract_map_removed(
+  fn extract_map_get_or(
     &mut self,
     map: st::Expr<'l>,
     key: st::Expr<'l>,
-    substs: SubstsRef<'tcx>,
-    span: Span,
-  ) -> st::Expr<'l> {
-    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    self
-      .factory()
-      .MapUpdated(map, key, self.synth().std_option_none(val_tpe))
-      .into()
-  }
-
-  fn extract_map_updated(
-    &mut self,
-    map: st::Expr<'l>,
-    key: st::Expr<'l>,
-    val: st::Expr<'l>,
-    substs: SubstsRef<'tcx>,
-    span: Span,
-  ) -> st::Expr<'l> {
-    let f = self.factory();
-    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
-    f.MapUpdated(map, key, self.synth().std_option_some(val, val_tpe))
-      .into()
-  }
-
-  fn extract_map_get_or_else(
-    &mut self,
-    map: st::Expr<'l>,
-    key: st::Expr<'l>,
+    val_tpe: st::Type<'l>,
     or_else: st::Expr<'l>,
-    substs: SubstsRef<'tcx>,
-    span: Span,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    let val_tpe = self.base.extract_ty(substs.type_at(1), &self.txtcx, span);
     let some_tpe = self.synth().std_option_some_type(val_tpe);
     f.IfExpr(
       f.IsInstanceOf(f.MapApply(map, key).into(), some_tpe).into(),
@@ -132,5 +99,35 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       or_else,
     )
     .into()
+  }
+
+  fn extract_map_insert(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    val_tpe: st::Type<'l>,
+    val: st::Expr<'l>,
+  ) -> st::Expr<'l> {
+    let update_value = self.synth().std_option_some(val, val_tpe);
+    self.extract_map_update(map, key, update_value)
+  }
+
+  fn extract_map_remove(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    val_tpe: st::Type<'l>,
+  ) -> st::Expr<'l> {
+    let update_value = self.synth().std_option_none(val_tpe);
+    self.extract_map_update(map, key, update_value)
+  }
+
+  fn extract_map_update(
+    &mut self,
+    map: st::Expr<'l>,
+    key: st::Expr<'l>,
+    update_value: st::Expr<'l>,
+  ) -> st::Expr<'l> {
+    self.factory().MapUpdated(map, key, update_value).into()
   }
 }
