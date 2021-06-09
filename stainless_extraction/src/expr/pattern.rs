@@ -274,7 +274,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 }
 
-fn is_mut_ref<'tcx>(pat: Option<Pat<'tcx>>) -> bool {
+fn is_mut_ref(pat: Option<Pat>) -> bool {
   matches!(
     pat,
     Some(Pat {
