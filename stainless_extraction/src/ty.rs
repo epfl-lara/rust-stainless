@@ -72,6 +72,19 @@ pub fn is_mut_ref(ty: Ty) -> bool {
   matches!(ty.ref_mutability(), Some(Mutability::Mut))
 }
 
+/// Deeply checks whether a type is or contains mutable references.
+/// TODO: also check on function & generator types
+pub fn is_mutable(ty: Ty) -> bool {
+  is_mut_ref(ty)
+    || match ty.kind() {
+      TyKind::Adt(_, subst) | TyKind::Tuple(subst) | TyKind::Opaque(_, subst) => {
+        subst.types().any(|t| is_mutable(t))
+      }
+      TyKind::Array(ty, _) | TyKind::Slice(ty) => is_mutable(ty),
+      _ => false,
+    }
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_ty(
     &mut self,

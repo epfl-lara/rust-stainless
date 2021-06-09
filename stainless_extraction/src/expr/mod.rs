@@ -373,7 +373,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let e = self.extract_expr(expr);
 
     // If this is a mutable reference, we DON'T freshCopy
-    if is_mut_ref(expr.ty) {
+    if is_mutable(expr.ty) {
       e
     } else {
       let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
