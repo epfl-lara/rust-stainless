@@ -182,7 +182,7 @@ impl<'l> DefContext<'l> {
 
   pub(super) fn make_mut_cell(&mut self, hir_id: HirId, xtor: &mut BaseExtractor<'l, '_>) {
     self.vars.entry(hir_id).and_modify(|v| {
-      if !v.is_wrapped() {
+      if !xtor.is_mut_cell(v.tpe) {
         let f = xtor.factory();
         let tpe = xtor.synth().mut_cell_type(v.tpe);
         *v = f.Variable(

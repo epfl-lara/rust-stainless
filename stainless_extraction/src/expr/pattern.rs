@@ -105,6 +105,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             } => f.WildcardPattern(Some(binder)).into(),
             _ => unreachable!(),
           },
+
           Err(reason) => self.unsupported_pattern(
             pattern.span,
             format!("Unsupported pattern binding: {}", reason),
@@ -176,17 +177,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         let sub = self.extract_pattern(subpattern, binder);
 
         // If we pattern match on mutable vars, we want the MutCell not it's value
-        if ty::is_mut_ref(pattern.ty) {
-          if let st::Type::ADTType(st::ADTType { tps, .. }) =
-            self.base.extract_ty(pattern.ty, &self.txtcx, pattern.span)
-          {
-            f.ADTPattern(None, self.synth().mut_cell_id(), tps.clone(), vec![sub])
+        match pattern.ty.kind() {
+          TyKind::Ref(_, inner, Mutability::Mut) => {
+            let tpe = self.base.extract_ty(inner, &self.txtcx, pattern.span);
+            f.ADTPattern(None, self.synth().mut_cell_id(), vec![tpe], vec![sub])
               .into()
-          } else {
-            sub
           }
-        } else {
-          sub
+          _ => sub,
         }
       }
 
@@ -228,7 +225,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     span: Span,
   ) -> &'l st::ADTPattern<'l> {
     let f = self.factory();
-    let arg_tps = self.extract_arg_types(substs.types(), span);
+    let arg_tps = self.base.extract_arg_tys(substs.types(), &self.txtcx, span);
 
     // Wrap subpatterns in MutCells
     let subpatterns = self
@@ -275,14 +272,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 }
 
 fn is_mut_ref(pat: Option<Pat>) -> bool {
-  matches!(
-    pat,
-    Some(Pat {
-      kind: box PatKind::Binding {
-        mode: BindingMode::ByRef(BorrowKind::Mut { .. }),
-        ..
-      },
-      ..
-    })
-  )
+  pat.map_or(false, |p| {
+    ty::is_mut_ref(p.ty)
+      || matches!(
+        p,
+        Pat {
+          kind: box PatKind::Binding {
+            mode: BindingMode::ByRef(BorrowKind::Mut { .. }),
+            ..
+          },
+          ..
+        }
+      )
+  })
 }

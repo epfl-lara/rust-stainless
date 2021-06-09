@@ -56,6 +56,7 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
             ))
           })
           .collect::<Vec<_>>();
+
         let fields = tparams
           .iter()
           .enumerate()
