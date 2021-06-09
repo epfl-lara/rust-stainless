@@ -130,6 +130,7 @@ define_tests!(
   pass: trait_bounds,
   pass: struct_update,
   pass: tuple_match,
+  pass: tuple_result,
   pass: tuples,
   pass: type_class,
   pass: type_class_multi_lookup,
