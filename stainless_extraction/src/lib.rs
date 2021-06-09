@@ -34,7 +34,7 @@ use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
 use synth::SynthItem;
-use ty::{is_mut_ref, Generics, TyExtractionCtxt};
+use ty::{is_mut_ref, is_mutable, Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
 mod bindings;
