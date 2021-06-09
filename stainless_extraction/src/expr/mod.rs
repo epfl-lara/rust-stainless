@@ -161,10 +161,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
     //   parent etc. => improve
-    let arg_tps_without_parents = self.extract_arg_types(
+    let arg_tps_without_parents = self.base.extract_arg_tys(
       substs_ref
         .types()
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
+      &self.txtcx,
       span,
     );
     let mut args = self.extract_exprs(args);
@@ -257,17 +258,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     matches!(ty, st::Type::StringType(_))
   }
 
-  fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
-  where
-    I: IntoIterator<Item = Ty<'tcx>>,
-  {
-    // Remove closure type parameters (they were already replaced by FunctionTypes)
-    let arg_tys = types
-      .into_iter()
-      .filter(|ty| !matches!(ty.kind(), TyKind::Closure(..)));
-    self.base.extract_tys(arg_tys, &self.txtcx, span)
-  }
-
   fn extract_panic(
     &mut self,
     args: &'a [Expr<'a, 'tcx>],
@@ -304,7 +294,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     {
       let sort = self.base.get_or_extract_adt(adt_def.did);
       let constructor = sort.constructors[variant_index.index()];
-      let arg_tps = self.extract_arg_types(substs.types(), expr.span);
+
+      let arg_tps = self
+        .base
+        .extract_arg_tys(substs.types(), &self.txtcx, expr.span);
 
       // If the ADT is constructed with "struct update syntax"
       let args: Vec<_> = if let Some(FruInfo { base, .. }) = base {
@@ -346,7 +339,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             .base
             .adt_field_types(adt_def, *variant_index, &self.txtcx, substs),
         )
-        .map(|(a, t)| self.synth().mut_cell(t, a))
+        .map(|(a, t)| {
+          if self.base.is_mut_cell(t) {
+            a
+          } else {
+            self.synth().mut_cell(t, a)
+          }
+        })
         .collect();
 
       f.ADT(constructor.id, arg_tps, args).into()
