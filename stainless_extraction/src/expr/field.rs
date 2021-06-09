@@ -59,7 +59,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     match lhs.ty.kind() {
       TyKind::Tuple(substs) => {
         let lhs = self.extract_expr(lhs);
-        self.synth().tuple_select(substs.len(), lhs, field.index())
+        let tuple_select = self.synth().tuple_select(substs.len(), lhs, field.index());
+        self.synth().mut_cell_value(tuple_select)
       }
 
       TyKind::Adt(adt_def, _) => {
