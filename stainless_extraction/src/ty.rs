@@ -140,7 +140,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Normal user-defined ADTs
         _ => {
           let sort_id = self.get_or_register_def(adt_def.did);
-          let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+
+          // ADTs already wrap all their fields in MutCells, we don't need to
+          // wrap the type params as well.
+          let arg_tps = self.extract_arg_tys(substitutions.types(), txtcx, span);
           f.ADTType(sort_id, arg_tps).into()
         }
       },
@@ -179,6 +182,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .into_iter()
       .map(|ty| self.extract_ty(ty, txtcx, span))
       .collect()
+  }
+
+  pub(super) fn extract_arg_tys<I>(
+    &mut self,
+    types: I,
+    txtcx: &TyExtractionCtxt<'l>,
+    span: Span,
+  ) -> Vec<st::Type<'l>>
+  where
+    I: IntoIterator<Item = Ty<'tcx>>,
+  {
+    let arg_tys = types
+      .into_iter()
+      // Remove closure type parameters (they were already replaced by FunctionTypes)
+      .filter(|ty| !matches!(ty.kind(), TyKind::Closure(..)))
+      // For tparams, we only want the inner types. MutCells are already there by construction.
+      .map(|t| match t.kind() {
+        TyKind::Ref(_, inner, Mutability::Mut) => inner,
+        _ => t,
+      });
+    self.extract_tys(arg_tys, txtcx, span)
   }
 
   /// Get the extracted generics for a def_id, usually a function or a class.
@@ -409,6 +433,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn is_bigint(&self, adt_def: &'tcx AdtDef) -> bool {
     // TODO: Add a check for BigInt that avoids generating the string?
     self.tcx.def_path_str(adt_def.did) == "num_bigint::BigInt"
+  }
+
+  pub(super) fn is_mut_cell(&mut self, t: st::Type) -> bool {
+    matches!(t, st::Type::ADTType(st::ADTType{id,..}) if *id == self.synth().mut_cell_id())
   }
 }
 
