@@ -151,6 +151,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           )
           .into(),
 
+        // Empty tuple is more like Unit
+        TyKind::Tuple(substs) if substs.is_empty() => {
+          f.LiteralPattern(binder, f.UnitLiteral().into()).into()
+        }
+
         TyKind::Tuple(substs) => {
           let id = self.synth().tuple_id(substs.len());
           self
