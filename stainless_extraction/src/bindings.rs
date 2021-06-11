@@ -113,23 +113,29 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         let wrapped_body = self.wrap_body_let_vars(*body);
         f.Decreases(*measure, wrapped_body).into()
       }
-      _ => self
-        .dcx
-        .let_var_pairs
-        .iter()
-        .fold(body_expr, |body, (body_var, &fn_param)| {
+      _ => self.dcx.let_var_pairs.iter().fold(
+        body_expr,
+        |body, (body_var, &(fn_param, opt_hir_id))| {
           // Mutable ADTs need to be copied freshly to work-around Stainless'
           // anti-aliasing rules. The fresh copy marks them as owned i.e. safe
-          // to mutate locally.
+          // to mutate locally. The exception is for types that contain mutable
+          // references.
+          let is_mutable = opt_hir_id.map_or(false, |id| is_mutable(self.tables.node_type(id)));
+
           f.LetVar(
             body_var,
-            self
-              .base
-              .fresh_copy_if_needed(fn_param.into(), fn_param.tpe),
+            if is_mutable {
+              fn_param.into()
+            } else {
+              self
+                .base
+                .fresh_copy_if_needed(fn_param.into(), fn_param.tpe)
+            },
             body,
           )
           .into()
-        }),
+        },
+      ),
     }
   }
 }
@@ -139,7 +145,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
   params: Vec<&'l st::ValDef<'l>>,
-  let_var_pairs: HashMap<&'l st::ValDef<'l>, &'l st::Variable<'l>>,
+  let_var_pairs: HashMap<&'l st::ValDef<'l>, (&'l st::Variable<'l>, Option<HirId>)>,
 }
 
 impl<'l> DefContext<'l> {
@@ -166,9 +172,15 @@ impl<'l> DefContext<'l> {
   ) -> &mut Self {
     assert!(!self.params.contains(&vd));
     if vd.is_mutable() {
+      let original_id = self
+        .vars
+        .iter()
+        .find(|(_, &v)| v == vd.v)
+        .map(|(id, _)| *id);
+
       let new_param_var = xtor.immutable_var_with_name(vd.v, &format!("var{}", self.params.len()));
       self.params.push(xtor.factory().ValDef(new_param_var));
-      self.let_var_pairs.insert(vd, new_param_var);
+      self.let_var_pairs.insert(vd, (new_param_var, original_id));
     } else {
       self.params.push(vd);
     };
