@@ -213,8 +213,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
   fn extract_return(&mut self, value: Option<&'a Expr<'a, 'tcx>>) -> st::Expr<'l> {
     let f = self.factory();
-    // The return value is necessarily aliasable because we don't support
-    // returning `&mut` references.
     f.Return(
       value
         .map(|v| self.extract_aliasable_expr(v))
@@ -248,9 +246,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ///   to correctly solve this use-case is by attaching a spec to the real
   ///   `Clone::clone` that preserves equality.
   ///   https://github.com/epfl-lara/rust-stainless/issues/136
-  fn extract_clone(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
-    // Extract with fresh copy to be sure to have distinct objects.
-    Some(self.extract_aliasable_expr(expr))
+  fn extract_clone(&mut self, arg: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
+    // Extract with fresh copy to be sure to have distinct objects. Rustc
+    // doesn't automatically derive Clone for types that contain mutable
+    // references, therefore we can't accidentally freshCopy MutCells that we
+    // shouldn't copy here. (Once we test that the clone is derived)
+    Some(self.extract_aliasable_expr(arg))
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
@@ -361,18 +362,17 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  /// Inserts a fresh copy around the expression, if the expression can contain
-  /// mutable types. And if the expression IS NOT a mutable reference
-  /// This is safe because:
-  ///  - we don't do anything for mutable references.
-  ///  - Otherwise, we either work on an immutable reference aka shared borrow aka `&T`
-  ///  - or we own the the value, meaning it's moved when we return/alias it somewhere
-  ///    and the compiler has made sure that it's not used afterwards.
+  /// Inserts a fresh copy around the expression if the expression IS NOT of a
+  /// mutable Rust type.
   ///
+  /// This is safe because:
+  ///  - we don't do anything for mutable references or types that contain them.
+  ///  - Otherwise, the expression is either an immutable reference/shared borrow/`&T`,
+  ///  - or we own the value (and it doesn't contain mutable references). This means,
+  ///    the value is consumed when we return/alias it somewhere and the compiler has
+  ///    made sure that it's not used afterwards.
   fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let e = self.extract_expr(expr);
-
-    // If this is a mutable reference, we DON'T freshCopy
     if is_mutable(expr.ty) {
       e
     } else {
