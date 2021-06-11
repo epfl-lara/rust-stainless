@@ -434,14 +434,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     self.base.extract_ty(sig.output(), &self.txtcx, span)
   }
 
-  /// Checks whether the function has any parameters passed by mutable
-  /// reference.
-  fn has_mut_ref(&self) -> bool {
+  fn has_mutable_params(&self) -> bool {
     self
       .body
       .params
       .iter()
-      .any(|p| is_mut_ref(self.tables.node_type(p.hir_id)))
+      .any(|p| is_mutable(self.tables.node_type(p.hir_id)))
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {

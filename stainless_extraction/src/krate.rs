@@ -343,7 +343,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe: self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP),
-      is_pure: !fn_sig.inputs().iter().any(|ty| is_mut_ref(ty)),
+      is_pure: !fn_sig.inputs().iter().any(|ty| is_mutable(ty)),
     }
   }
 
@@ -397,7 +397,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let body_expr = bxtor.extract_body_expr(fn_item.def_id.expect_local());
         let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
-        if !bxtor.has_mut_ref() {
+        if !bxtor.has_mutable_params() {
           flags.push(f.IsPure().into());
         }
 
