@@ -134,6 +134,7 @@ define_tests!(
   pass: mut_ref_borrow_10,
   pass: mut_ref_borrow_11,
   pass: mut_ref_immut_borrow,
+  pass: mut_ref_tuple,
   pass: mut_return,
   pass: nested_spec,
   pass: nested_spec_impl,
@@ -160,6 +161,7 @@ define_tests!(
   fail_verification: liskov_rectangle,
   fail_verification: mut_clone,
   fail_extraction: mut_ref_borrow_4,
+  fail_verification: mut_ref_tuple,
   crash_verification: return_in_cond,
   crash_verification: return_in_guard,
   fail_extraction: user_deref
