@@ -56,28 +56,27 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     mutable_borrow: bool,
   ) -> st::Expr<'l> {
     let f = self.factory();
-    match lhs.ty.kind() {
+    let field = match lhs.ty.kind() {
       TyKind::Tuple(substs) => {
         let lhs = self.extract_expr(lhs);
-        let tuple_select = self.synth().tuple_select(substs.len(), lhs, field.index());
-        self.synth().mut_cell_value(tuple_select)
+        self.synth().tuple_select(substs.len(), lhs, field.index())
       }
 
       TyKind::Adt(adt_def, _) => {
         let selector = self.extract_field_selector(adt_def.did, field);
         let lhs = self.extract_expr(lhs);
-        let field = f.ADTSelector(lhs, selector).into();
-        if mutable_borrow {
-          field
-        } else {
-          self.synth().mut_cell_value(field)
-        }
+        f.ADTSelector(lhs, selector).into()
       }
 
       ref kind => unexpected(
         lhs.span,
         format!("Unexpected kind of field selection: {:?}", kind),
       ),
+    };
+    if mutable_borrow {
+      field
+    } else {
+      self.synth().mut_cell_value(field)
     }
   }
 
