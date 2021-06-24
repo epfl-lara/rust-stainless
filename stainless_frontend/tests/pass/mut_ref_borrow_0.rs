@@ -19,7 +19,7 @@ object Mutable {
   final case class MutCell[@mutable T](var t: T)
 
   def main() = {
-    var x = MutCell(1)
+    val x = MutCell(1)
 
     val y = x
     assert(y.t == 1)

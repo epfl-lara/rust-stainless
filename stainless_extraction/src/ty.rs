@@ -85,6 +85,13 @@ pub fn is_mutable(ty: Ty) -> bool {
     }
 }
 
+pub fn is_mutable_binding(pat: &hir::Pat) -> bool {
+  matches!(
+    pat.kind,
+    hir::PatKind::Binding(hir::BindingAnnotation::Mutable, ..)
+  )
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_ty(
     &mut self,

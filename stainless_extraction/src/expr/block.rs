@@ -121,7 +121,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
               ),
               Ok(vd) => {
                 let init_expr = self.extract_aliasable_expr(init);
-                let init_expr = if vd.is_wrapped() {
+                let init_expr = if vd.is_mutable() {
                   let tpe = self.base.extract_ty(init.ty, &self.txtcx, init.span);
                   self.synth().mut_cell(tpe, init_expr)
                 } else {
@@ -134,11 +134,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
 
                 // wrap that body expression into the Let
-                let last_expr = if vd.is_mutable() {
-                  f.LetVar(vd, init_expr, body_expr).into()
-                } else {
-                  f.Let(vd, init_expr, body_expr).into()
-                };
+                let last_expr = f.Let(vd, init_expr, body_expr).into();
                 finish(exprs, last_expr)
               }
             }

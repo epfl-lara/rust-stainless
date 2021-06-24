@@ -20,12 +20,12 @@ import stainless.annotation._
 
 object Mutable {
   final case class MutCell[@mutable T](var t: T)
-  final case class S(var s: Int)
+  final case class S(s: MutCell[Int])
 
   def borrows_mutably[@mutable T](t: MutCell[T]): MutCell[T] = t
 
   def main() = {
-    var a = MutCell(S(1))
+    val a = MutCell(S(1))
 
     val b = borrows_mutably(a)
     b.t.s = 100

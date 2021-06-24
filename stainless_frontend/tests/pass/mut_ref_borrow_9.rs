@@ -28,15 +28,15 @@ object Fields {
   case class Container[@mutable T](s: MutCell[S[T]])
 
   def main: Unit = {
-    var c: Container[String] = Container(MutCell(S(MutCell("hello"))))
+    val c: MutCell[Container[String]] = MutCell(Container(MutCell(S(MutCell("hello")))))
 
-    (c.s match {
+    (c.value.s match {
       case MutCell(S(v)) if v.value == "hello" =>
         v.value = "world"
       case _ =>
         ()
     })
-    assert(c.s.value._0.value == "world")
+    assert(c.value.s.value._0.value == "world")
   }
 }
 

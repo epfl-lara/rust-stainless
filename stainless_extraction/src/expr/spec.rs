@@ -171,7 +171,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           bxtor.dcx.add_var(sid, vd.v);
         }
         for e in ev_params {
-          bxtor.dcx.add_param(e, &mut bxtor.base);
+          bxtor.dcx.add_param(e);
         }
 
         // Pick up any additional local bindings

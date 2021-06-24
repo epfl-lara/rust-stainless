@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use literal::Literal;
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
+use rustc_middle::ty::{subst::Subst, subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
 use crate::std_items::{CrateItem::*, LangItem};
@@ -39,9 +39,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::VarRef { id } => self.extract_var_ref(*id),
 
       ExprKind::Call { ty, ref args, .. } => match ty.kind() {
-        TyKind::FnDef(def_id, substs_ref) => {
-          self.extract_call_like(*def_id, substs_ref, args, expr.span)
-        }
+        TyKind::FnDef(def_id, substs) => self.extract_call_like(*def_id, substs, args, expr.span),
         _ => self.unsupported_expr(
           expr.span,
           "Cannot extract call without statically known target",
@@ -146,7 +144,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_call(
     &mut self,
     def_id: DefId,
-    substs_ref: SubstsRef<'tcx>,
+    substs: SubstsRef<'tcx>,
     args: &'a [Expr<'a, 'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
@@ -162,13 +160,47 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     //   already provides. This clearly fails when there is more than one
     //   parent etc. => improve
     let arg_tps_without_parents = self.base.extract_arg_tys(
-      substs_ref
+      substs
         .types()
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
       &self.txtcx,
       span,
     );
-    let mut args = self.extract_exprs(args);
+    let fn_sig = self.base.ty_fn_sig(def_id).subst(self.tcx(), substs);
+
+    // If the callee has a HIR body, then we use the HIR body to see which
+    // arguments are locally mutable and hence need to be wrapped in a MutCell.
+    let are_params_mutable: Vec<bool> = self
+      .base
+      .def_to_hir_id(def_id)
+      .and_then(|hir_id| self.base.hir_body(hir_id))
+      .map(|body| {
+        body
+          .params
+          .iter()
+          .map(|p| is_mutable_binding(p.pat))
+          .collect()
+      })
+      .unwrap_or_else(|| vec![false; args.len()]);
+
+    // Wrap locally mutable params in a MutCell
+    let mut args: Vec<_> = self
+      .extract_exprs(args)
+      .into_iter()
+      .zip(
+        self
+          .base
+          .extract_arg_tys(fn_sig.inputs().iter().copied(), &self.txtcx, span),
+      )
+      .zip(are_params_mutable)
+      .map(|((arg, tpe), is_mutable)| {
+        if is_mutable {
+          self.synth().mut_cell(tpe, arg)
+        } else {
+          arg
+        }
+      })
+      .collect();
 
     // If the function has trait bounds but is not on a class, we must find the
     // corresponding evidence arguments.
@@ -196,7 +228,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // The receiver type is the type of the &self of the method call. This
       // is the first argument type. We have to extract it because we filtered
       // the self type above.
-      let recv_tps = self.base.extract_tys(substs_ref.types(), &self.txtcx, span);
+      let recv_tps = self.base.extract_tys(substs.types(), &self.txtcx, span);
       self.extract_method_receiver(&TypeClassKey { id, recv_tps })
     }) {
       Some(recv) => self

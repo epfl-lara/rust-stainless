@@ -17,7 +17,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let value = self.extract_aliasable_expr(rhs);
     let lhs = self.strip_scopes(lhs);
     match &lhs.kind {
-      ExprKind::VarRef { id } => f.Assignment(self.fetch_var(*id), value).into(),
+      ExprKind::VarRef { id } => f
+        .FieldAssignment(
+          self.fetch_var(*id).into(),
+          self.synth().mut_cell_value_id(),
+          value,
+        )
+        .into(),
 
       ExprKind::Field { lhs, name } => match lhs.ty.kind() {
         TyKind::Adt(adt_def, _) => {
@@ -37,9 +43,21 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       },
 
       ExprKind::Deref { arg } => {
-        let arg = self.extract_expr(arg);
-        f.FieldAssignment(arg, self.synth().mut_cell_value_id(), value)
-          .into()
+        let arg = self.strip_scopes(arg);
+        match arg.kind {
+          ExprKind::VarRef { id } if is_mut_ref(arg.ty) => f
+            .FieldAssignment(
+              self.fetch_var(id).into(),
+              self.synth().mut_cell_value_id(),
+              value,
+            )
+            .into(),
+          _ => {
+            let arg = self.extract_expr(arg);
+            f.FieldAssignment(arg, self.synth().mut_cell_value_id(), value)
+              .into()
+          }
+        }
       }
 
       e => self.unsupported_expr(

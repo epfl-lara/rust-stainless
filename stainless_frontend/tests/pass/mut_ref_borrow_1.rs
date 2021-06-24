@@ -21,7 +21,7 @@ object Mutable {
   final case class S(var s1: Int, var s2: Int)
 
   def main() = {
-    var a = MutCell(S(1, 2))
+    val a = MutCell(S(1, 2))
 
     val b = a
     b.t = S(100, 200)
