@@ -14,7 +14,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // potentially fresh copied. Fresh copies are not inserted for MutCells i.e.
     // mutable references. For other types it's safe to fresh copy because rustc
     // ensures that we own the value we assign.
-    let value = self.extract_aliasable_expr(rhs);
+    let value = self.extract_move_copy(rhs);
     let lhs = self.strip_scopes(lhs);
     match &lhs.kind {
       ExprKind::VarRef { id } => f

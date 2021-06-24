@@ -101,7 +101,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
   params: Vec<&'l st::ValDef<'l>>,
-  let_var_pairs: HashMap<&'l st::ValDef<'l>, (&'l st::Variable<'l>, Option<HirId>)>,
 }
 
 impl<'l> DefContext<'l> {
@@ -109,17 +108,15 @@ impl<'l> DefContext<'l> {
     &self.params[..]
   }
 
-  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) {
     assert!(!self.vars.contains_key(&hir_id));
     self.vars.insert(hir_id, var);
-    self
   }
 
   /// Adds a parameter to the available bindings.
-  pub(super) fn add_param(&mut self, vd: &'l st::ValDef<'l>) -> &mut Self {
+  pub(super) fn add_param(&mut self, vd: &'l st::ValDef<'l>) {
     assert!(!self.params.contains(&vd));
     self.params.push(vd);
-    self
   }
 
   #[inline]

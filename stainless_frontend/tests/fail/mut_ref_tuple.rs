@@ -1,6 +1,6 @@
 extern crate stainless;
 
-fn main() {
+pub fn main() {
   let x = (123, false);
   let mut y = x;
   let z = &mut y.0;

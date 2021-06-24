@@ -247,7 +247,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let f = self.factory();
     f.Return(
       value
-        .map(|v| self.extract_aliasable_expr(v))
+        .map(|v| self.extract_move_copy(v))
         .unwrap_or_else(|| f.UnitLiteral().into()),
     )
     .into()
@@ -282,8 +282,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // Extract with fresh copy to be sure to have distinct objects. Rustc
     // doesn't automatically derive Clone for types that contain mutable
     // references, therefore we can't accidentally freshCopy MutCells that we
-    // shouldn't copy here. (Once we test that the clone is derived)
-    Some(self.extract_aliasable_expr(arg))
+    // shouldn't copy here. (Once we test that the clone is derived => FIXME)
+    Some(self.extract_move_copy(arg))
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
@@ -394,22 +394,42 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     }
   }
 
-  /// Inserts a fresh copy around the expression if the expression IS NOT of a
-  /// mutable Rust type.
+  /// Extract a move or copy of the expression. By default everything is
+  /// freshCopy'd because this is safe except for mutable types (see thesis).
   ///
-  /// This is safe because:
-  ///  - we don't do anything for mutable references or types that contain them.
-  ///  - Otherwise, the expression is either an immutable reference/shared borrow/`&T`,
-  ///  - or we own the value (and it doesn't contain mutable references). This means,
-  ///    the value is consumed when we return/alias it somewhere and the compiler has
-  ///    made sure that it's not used afterwards.
-  fn extract_aliasable_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
+  /// A mutable type is a type that is or contains mutable references
+  /// [is_mutable]. For mutable types, we return the identity so that changes to
+  /// the mutable data will be propagated.
+  ///
+  /// Additionally, we don't insert freshCopy around some control structures for
+  /// which we know by design that a freshCopy will be inserted inside the
+  /// structure (like ifs, matches, return). We also omit freshCopy for common
+  /// Rust & JVM primitive types.
+  fn extract_move_copy(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let e = self.extract_expr(expr);
     if is_mutable(expr.ty) {
       e
     } else {
       let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
-      self.base.fresh_copy_if_needed(e, tpe)
+      match e {
+        // don't nest freshCopy
+        st::Expr::FreshCopy(_)
+        // don't fresh copy entire matches/ifs, we leave that to each block
+        | st::Expr::MatchExpr(_)
+        | st::Expr::IfExpr(_)
+        // don't fresh copy "around" the return, we do it inside
+        | st::Expr::Return(_) => e,
+        _ => match tpe {
+          st::Type::BooleanType(_)
+          | st::Type::NothingType(_)
+          | st::Type::BVType(_)
+          | st::Type::CharType(_)
+          | st::Type::UnitType(_)
+          | st::Type::RealType(_)
+          | st::Type::IntegerType(_) => e,
+          _ => self.factory().FreshCopy(e).into(),
+        },
+      }
     }
   }
 

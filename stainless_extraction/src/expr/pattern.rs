@@ -32,17 +32,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ..
       } if !allow_subpattern => Err("Subpatterns are not supported here"),
 
-      PatKind::Binding {
-        mutability,
-        var: hir_id,
-        ..
-      } => {
+      PatKind::Binding { var: hir_id, .. } => {
         let var = self.fetch_var(*hir_id);
-        if *mutability == Mutability::Not || var.is_mutable() {
-          Ok(self.factory().ValDef(var))
-        } else {
-          Err("Mutability not allowed")
-        }
+        Ok(self.factory().ValDef(var))
       }
 
       // This encodes a user-written type ascription: let a: u32 = ...
@@ -79,7 +71,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       Guard::If(expr) => Some(self.extract_expr(expr)),
       _ => None,
     });
-    let body = self.extract_aliasable_expr(body);
+    let body = self.extract_move_copy(body);
     self.factory().MatchCase(pattern, guard, body)
   }
 
