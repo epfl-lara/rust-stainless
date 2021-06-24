@@ -21,7 +21,6 @@ fn set_inner_field(mut o: Outer) -> Outer {
 struct Gen<T>(T);
 
 fn set_gen_field(mut g: Gen<S>) -> Gen<S> {
-  g.0.field = 131415;
   g = Gen(S { field: 161718 });
   g
 }

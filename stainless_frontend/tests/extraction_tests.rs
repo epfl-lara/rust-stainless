@@ -133,6 +133,7 @@ define_tests!(
   pass: mut_ref_borrow_9,
   pass: mut_ref_borrow_10,
   pass: mut_ref_borrow_11,
+  pass: mut_ref_borrow_12,
   pass: mut_ref_immut_borrow,
   pass: mut_ref_tuple,
   pass: mut_return,

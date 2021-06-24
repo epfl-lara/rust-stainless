@@ -393,9 +393,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .enter_body(hir_id, txtcx, class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
-
         let body_expr = bxtor.extract_body_expr(fn_item.def_id.expect_local());
-        let body_expr = bxtor.wrap_body_let_vars(body_expr);
 
         if !bxtor.has_mutable_params() {
           flags.push(f.IsPure().into());

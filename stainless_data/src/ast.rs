@@ -154,22 +154,11 @@ impl Variable<'_> {
   pub fn is_mutable(&self) -> bool {
     self.flags.iter().any(|f| matches!(f, Flag::IsVar(_)))
   }
-
-  pub fn is_wrapped(&self) -> bool {
-    self
-      .flags
-      .iter()
-      .any(|f| matches!(f, Flag::Annotation(Annotation{name,..}) if name == "wrapped"))
-  }
 }
 
 impl ValDef<'_> {
   pub fn is_mutable(&self) -> bool {
     self.v.is_mutable()
-  }
-
-  pub fn is_wrapped(&self) -> bool {
-    self.v.is_wrapped()
   }
 }
 
@@ -261,9 +250,5 @@ impl Factory {
 
   pub fn evidence_flag(&self) -> Flag<'_> {
     self.Annotation("evidence".into(), vec![]).into()
-  }
-
-  pub fn wrapped_flag(&self) -> Flag<'_> {
-    self.Annotation("wrapped".into(), vec![]).into()
   }
 }

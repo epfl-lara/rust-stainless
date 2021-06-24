@@ -22,7 +22,7 @@ object Mutable {
   final case class S(var s: Int)
 
   def main() = {
-    var a = MutCell(S(1))
+    val a = MutCell(S(1))
 
     val b = {
       a.t.s = 10

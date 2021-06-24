@@ -21,7 +21,6 @@ use std::rc::Rc;
 
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::{self as hir, HirId};
-use rustc_middle::mir::Mutability;
 use rustc_middle::span_bug;
 use rustc_middle::ty::{TyCtxt, TypeckResults, WithOptConstParam};
 use rustc_mir_build::thir;
@@ -34,7 +33,7 @@ use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
 use synth::SynthItem;
-use ty::{is_mut_ref, is_mutable, Generics, TyExtractionCtxt};
+use ty::{is_mut_ref, is_mutable, is_mutable_binding, Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
 mod bindings;
@@ -288,21 +287,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  pub fn immutable_var_with_name(
-    &mut self,
-    var: &st::Variable<'l>,
-    name: &str,
-  ) -> &'l st::Variable<'l> {
-    let new_id = self.fresh_id(name.into());
-    let flags = var
-      .flags
-      .iter()
-      .filter(|flag| !matches!(flag, st::Flag::IsVar(_)))
-      .copied()
-      .collect();
-    self.factory().Variable(new_id, var.tpe, flags)
-  }
-
   pub fn fresh_copy_if_needed(&self, expr: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
     let f = self.factory();
     match expr {
@@ -396,7 +380,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let local_def_id = tcx.hir().local_def_id(hir_id);
     assert!(tcx.has_typeck_results(local_def_id));
     let tables = tcx.typeck(local_def_id);
-    let body = base.hir_body(hir_id);
+    let body = base.hir_body(hir_id).unwrap();
 
     BodyExtractor {
       arena,
@@ -439,7 +423,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .body
       .params
       .iter()
-      .any(|p| is_mutable(self.tables.node_type(p.hir_id)))
+      .any(|p| is_mutable(self.tables.node_type(p.hir_id)) || is_mutable_binding(p.pat))
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
