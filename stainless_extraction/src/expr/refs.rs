@@ -26,10 +26,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         let arg = self.strip_scopes(arg);
         match arg.kind {
           // Re-borrows a dereferenced mutable borrow, we take the original ref
-          ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => {
-            self.extract_aliasable_expr(inner)
-          }
-          _ => self.extract_aliasable_expr(arg),
+          ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => self.extract_expr(inner),
+          _ => self.extract_expr(arg),
         }
       }
 

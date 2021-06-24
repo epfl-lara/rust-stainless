@@ -287,24 +287,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  pub fn fresh_copy_if_needed(&self, expr: st::Expr<'l>, tpe: st::Type<'l>) -> st::Expr<'l> {
-    let f = self.factory();
-    match expr {
-      // don't duplicate fresh copies
-      st::Expr::FreshCopy(_)
-      // don't fresh copy entire matches/ifs, we leave that to each block
-      | st::Expr::MatchExpr(_)
-      | st::Expr::IfExpr(_)
-      // don't fresh copy "around" the return, we do it inside
-      | st::Expr::Return(_) => expr,
-      _ => match tpe {
-        st::Type::ADTType(_) | st::Type::StringType(_) => f.FreshCopy(expr).into(),
-        st::Type::TypeParameter(t) if t.is_mutable() => f.FreshCopy(expr).into(),
-        _ => expr,
-      },
-    }
-  }
-
   fn hir_to_def_id(&self, hir_id: HirId) -> DefId {
     self.tcx.hir().local_def_id(hir_id).to_def_id()
   }

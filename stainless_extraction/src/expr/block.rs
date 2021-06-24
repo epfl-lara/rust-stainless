@@ -16,9 +16,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
     let mut stmts: Vec<_> = stmts.iter().collect();
     let final_expr = final_expr
-      // The return value is necessarily aliasable because we don't support
-      // returning `&mut` references.
-      .map(|e| self.extract_aliasable_expr(e))
+      .map(|e| self.extract_move_copy(e))
       // If there's no final expression, we need to check whether the last
       // statement is a return. If yes, we take the return as final expression.
       .or_else(|| {
@@ -120,7 +118,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 pattern.span,
               ),
               Ok(vd) => {
-                let init_expr = self.extract_aliasable_expr(init);
+                let init_expr = self.extract_move_copy(init);
                 let init_expr = if vd.is_mutable() {
                   let tpe = self.base.extract_ty(init.ty, &self.txtcx, init.span);
                   self.synth().mut_cell(tpe, init_expr)
