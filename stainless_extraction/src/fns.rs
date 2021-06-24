@@ -1,6 +1,7 @@
 use super::*;
 
 use rustc_hir::def_id::DefId;
+use rustc_middle::ty::FnSig;
 
 use stainless_data::ast as st;
 
@@ -25,11 +26,26 @@ impl<'a> FnItem<'a> {
   }
 }
 
+/// This does not include the tparams as they are contained in the generics.
+#[derive(Clone, Debug)]
 pub struct FnSignature<'l> {
   pub id: &'l st::SymbolIdentifier<'l>,
   pub tparams: Vec<&'l st::TypeParameterDef<'l>>,
   pub params: Params<'l>,
   pub return_tpe: st::Type<'l>,
+}
+
+impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
+  /// Panics if the given HirId does not own a HIR body.
+  pub(super) fn hir_body(&self, hir_id: HirId) -> &'tcx hir::Body<'tcx> {
+    let body_id = self.tcx.hir().body_owned_by(hir_id);
+    self.tcx.hir().body(body_id)
+  }
+
+  pub(super) fn ty_fn_sig(&self, def_id: DefId) -> FnSig<'tcx> {
+    let poly_fn_sig = self.tcx.fn_sig(def_id);
+    self.tcx.liberate_late_bound_regions(def_id, poly_fn_sig)
+  }
 }
 
 /// Identifies the specific implementation/instance of a type class that is
@@ -49,10 +65,6 @@ pub struct TypeClassKey<'l> {
 impl PartialEq<st::ClassType<'_>> for TypeClassKey<'_> {
   fn eq(&self, other: &st::ClassType<'_>) -> bool {
     let st::ClassType { id, tps } = other;
-    let key = TypeClassKey {
-      id: *id,
-      recv_tps: tps.clone(),
-    };
-    key == *self
+    self.id == *id && self.recv_tps == *tps
   }
 }

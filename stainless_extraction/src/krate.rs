@@ -23,7 +23,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     impl<'xtor, 'l, 'tcx> ItemLikeVisitor<'tcx> for ItemVisitor<'xtor, 'l, 'tcx> {
       fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
-        let def_id = self.xtor.tcx.hir().local_def_id(item.hir_id()).to_def_id();
+        let def_id = self.xtor.hir_to_def_id(item.hir_id());
         let def_path_str = self.xtor.tcx.def_path_str(def_id);
 
         match &item.kind {
@@ -120,7 +120,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         let fns = items
           .filter_map(|(hir_id, kind, defaultness)| match kind {
             AssocItemKind::Fn { .. } => {
-              let fn_id = self.xtor.tcx.hir().local_def_id(hir_id).to_def_id();
+              let fn_id = self.xtor.hir_to_def_id(hir_id);
               Some(self.xtor.create_fn_item(fn_id, !defaultness.has_value()))
             }
             // ignore consts and type aliases in impl blocks
@@ -316,8 +316,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Extract the function signature
     let Generics { tparams, txtcx, .. } = self.get_or_extract_generics(def_id);
-    let poly_fn_sig = self.tcx.fn_sig(def_id);
-    let fn_sig = self.tcx.liberate_late_bound_regions(def_id, poly_fn_sig);
+    let fn_sig = self.ty_fn_sig(def_id);
     let params: Params<'l> = fn_sig
       .inputs()
       .iter()
@@ -349,12 +348,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Extract a local function
   pub(super) fn extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
     let f = self.factory();
-    let tcx = self.tcx;
 
     assert!(fn_item.def_id.is_local());
-    let hir_id = tcx
-      .hir()
-      .local_def_id_to_hir_id(fn_item.def_id.expect_local());
+    let hir_id = self.ldef_to_hir_id(fn_item.def_id.expect_local());
     let class_def = self.get_class_of_method(fn_item.fd_id);
 
     // Extract flags
@@ -483,10 +479,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     let adt_def = self.tcx.adt_def(def_id);
 
     // Extract flags for local def ids.
-    let (flags, mut flags_by_symbol, hir_id_opt) = def_id
-      .as_local()
-      .map(|local_def_id| {
-        let hir_id = self.tcx.hir().local_def_id_to_hir_id(local_def_id);
+    let (flags, mut flags_by_symbol, hir_id_opt) = self
+      .def_to_hir_id(def_id)
+      .map(|hir_id| {
         let (carrier_flags, by_symbol) = self.extract_flags(hir_id);
         (carrier_flags.to_stainless(f), by_symbol, Some(hir_id))
       })

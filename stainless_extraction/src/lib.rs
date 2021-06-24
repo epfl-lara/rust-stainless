@@ -303,6 +303,20 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.factory().Variable(new_id, var.tpe, flags)
   }
 
+  fn hir_to_def_id(&self, hir_id: HirId) -> DefId {
+    self.tcx.hir().local_def_id(hir_id).to_def_id()
+  }
+
+  /// Returns None if the `def_id` is not local.
+  fn ldef_to_hir_id(&self, ldi: LocalDefId) -> HirId {
+    self.tcx.hir().local_def_id_to_hir_id(ldi)
+  }
+
+  /// Returns None if the `def_id` is not local.
+  fn def_to_hir_id(&self, def_id: DefId) -> Option<HirId> {
+    def_id.as_local().map(|ldi| self.ldef_to_hir_id(ldi))
+  }
+
   /// Get a BodyExtractor for some item with a body (like a function)
   fn enter_body<T, F>(
     &mut self,
@@ -365,10 +379,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let local_def_id = tcx.hir().local_def_id(hir_id);
     assert!(tcx.has_typeck_results(local_def_id));
     let tables = tcx.typeck(local_def_id);
-
-    // Fetch the body and the corresponding DefContext containing all bindings
-    let body_id = tcx.hir().body_owned_by(hir_id);
-    let body = tcx.hir().body(body_id);
+    let body = base.hir_body(hir_id);
 
     BodyExtractor {
       arena,
@@ -400,16 +411,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn return_tpe(&mut self) -> st::Type<'l> {
-    let hir_id = self
-      .tcx()
-      .hir()
-      .local_def_id_to_hir_id(self.tables.hir_owner);
-    let sigs = self.tables.liberated_fn_sigs();
-    let sig = sigs.get(hir_id).unwrap();
-    let decl = self.tcx().hir().fn_decl_by_hir_id(hir_id).unwrap();
-    self
-      .base
-      .extract_ty(sig.output(), &self.txtcx, decl.output.span())
+    let hir_id = self.base.ldef_to_hir_id(self.tables.hir_owner);
+    let span = self.tcx().hir().span(hir_id);
+    let sig = self.base.ty_fn_sig(self.tables.hir_owner.to_def_id());
+    self.base.extract_ty(sig.output(), &self.txtcx, span)
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {

@@ -116,7 +116,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // extraction to directly translate them to the surrounding function's
     // variables, instead of extracting new, unrelated identifiers.
 
-    let def_id = self.tcx().hir().local_def_id(hir_id).to_def_id();
+    let def_id = self.base.hir_to_def_id(hir_id);
     let outer_fn_txtcx = &self.txtcx;
     let outer_fn_params = self.dcx.params();
     let f = self.factory();
