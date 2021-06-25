@@ -36,6 +36,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           )
           .into()
         }
+        TyKind::Tuple(substs) => {
+          let lhs = self.extract_expr(lhs);
+          f.FieldAssignment(
+            self.synth().tuple_select(substs.len(), lhs, name.index()),
+            self.synth().mut_cell_value_id(),
+            value,
+          )
+          .into()
+        }
         ref t => self.unsupported_expr(
           lhs.span,
           format!("Cannot extract assignment to type {:?}", t),

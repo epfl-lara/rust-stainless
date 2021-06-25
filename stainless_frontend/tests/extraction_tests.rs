@@ -138,6 +138,7 @@ define_tests!(
   pass: mut_ref_immut_borrow,
   pass: mut_ref_tuple,
   pass: mut_return,
+  pass: mut_tuple,
   pass: nested_spec,
   pass: nested_spec_impl,
   pass: panic_type,
