@@ -279,11 +279,23 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ///   `Clone::clone` that preserves equality.
   ///   https://github.com/epfl-lara/rust-stainless/issues/136
   fn extract_clone(&mut self, arg: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
-    // Extract with fresh copy to be sure to have distinct objects. Rustc
-    // doesn't automatically derive Clone for types that contain mutable
-    // references, therefore we can't accidentally freshCopy MutCells that we
-    // shouldn't copy here. (Once we test that the clone is derived => FIXME)
-    Some(self.extract_move_copy(arg))
+    // The argument of clone is always `&T`, i.e. a borrow.
+    let arg = self.strip_scopes(arg);
+    match arg.kind {
+      ExprKind::Borrow { arg, .. } => {
+        // Extract with fresh copy to be sure to have distinct objects. Rustc
+        // doesn't automatically derive Clone for types that contain mutable
+        // references, therefore we can't accidentally freshCopy MutCells that we
+        // shouldn't copy here. (Once we test that the clone is derived => FIXME)
+        let arg_expr = self.extract_move_copy(arg);
+        if is_mut_ref(arg.ty) {
+          Some(self.synth().mut_cell_value(arg_expr))
+        } else {
+          Some(arg_expr)
+        }
+      }
+      _ => None,
+    }
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
