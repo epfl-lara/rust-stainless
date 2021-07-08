@@ -23,3 +23,5 @@ pub fn sole_if(y: i32) {
     panic!()
   }
 }
+
+fn main() -> () {}
