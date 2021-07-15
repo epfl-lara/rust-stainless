@@ -220,24 +220,16 @@ fn replace_param(args: &Punctuated<FnArg, Token![,]>) -> Punctuated<FnArg, Token
   let fn_arg_tys: Vec<_> = args.iter().cloned().collect();
   (match &fn_arg_tys[..] {
     [FnArg::Receiver(Receiver {
-      mutability: None,
+      mutability,
       reference,
       ..
     }), args @ ..] => {
-      let new_self: FnArg = if reference.is_some() {
-        parse_quote! { _self: &Self }
-      } else {
-        parse_quote! { _self: Self }
+      let new_self: FnArg = match (mutability, reference) {
+        (None, None) => parse_quote! { _self: Self },
+        (None, Some(_)) => parse_quote! { _self: &Self },
+        (Some(_), None) => parse_quote! { mut _self: Self },
+        (Some(_), Some(_)) => parse_quote! { _self: &mut Self },
       };
-      [&[new_self], args].concat()
-    }
-
-    [FnArg::Receiver(Receiver {
-      mutability: Some(_),
-      reference: None,
-      ..
-    }), args @ ..] => {
-      let new_self: FnArg = parse_quote! { mut _self: Self };
       [&[new_self], args].concat()
     }
 
