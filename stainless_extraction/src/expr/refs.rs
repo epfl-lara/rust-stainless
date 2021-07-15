@@ -19,14 +19,16 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> st::Expr<'l> {
     match borrow_kind {
       // Borrow an immutable and aliasable value (i.e. the meaning of
-      // BorrowKind::Shared). Handle this safe case with erasure of the
-      // reference augmented with fresh copy to instruct Stainless that this
-      // aliasing is safe.
+      // BorrowKind::Shared). Handle this safe case with erasure.
       BorrowKind::Shared => {
         let arg = self.strip_scopes(arg);
         match arg.kind {
-          // Re-borrows a dereferenced mutable borrow, we take the original ref
-          ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => self.extract_expr(inner),
+          // To safely reference a value inside a mutable cell without having a
+          // MutCell[T] type, we access the value of the cell.
+          ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => {
+            let cell = self.extract_mut_borrow_expr(inner);
+            self.synth().mut_cell_value(cell)
+          }
           _ => self.extract_expr(arg),
         }
       }
