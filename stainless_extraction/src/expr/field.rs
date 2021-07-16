@@ -56,7 +56,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         match arg.kind {
           ExprKind::VarRef { id } if is_mut_ref(arg.ty) => f
             .FieldAssignment(
-              self.fetch_var(id).into(),
+              self.extract_var_ref(id),
               self.synth().mut_cell_value_id(),
               value,
             )
