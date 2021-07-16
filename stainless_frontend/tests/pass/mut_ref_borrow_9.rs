@@ -17,7 +17,6 @@ pub fn main() {
 }
 
 /*
-
 Desired Scala translation:
 
 import stainless.annotation._

@@ -166,6 +166,7 @@ define_tests!(
   fail_verification: mut_clone,
   fail_extraction: mut_ref_borrow_4,
   fail_verification: mut_ref_clone,
+  crash_verification: mut_ref_nested,
   fail_verification: mut_ref_tuple,
   crash_verification: return_in_cond,
   crash_verification: return_in_guard,
