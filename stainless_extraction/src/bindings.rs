@@ -3,7 +3,6 @@ use super::*;
 
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId, Node, Pat, PatKind};
-use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
 
 use stainless_data::ast as st;
@@ -45,39 +44,32 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let xtor = &mut self.base;
       let f = xtor.factory();
 
-      // Extract ident from corresponding HIR node, sanity-check binding mode
-      let node = xtor.tcx.hir().find(hir_id).unwrap();
-      let (ident, binding_mode) = if let Node::Binding(Pat {
-        kind: PatKind::Binding(_, _, ident, _),
-        hir_id,
-        span,
-        ..
-      }) = node
-      {
-        (
+      // Extract identifier and mutability of the binding from corresponding HIR node
+      let (ident, is_mutable) = match xtor.tcx.hir().find(hir_id).unwrap() {
+        Node::Binding(Pat {
+          kind: PatKind::Binding(annotation, _, ident, _),
+          ..
+        }) => (
           ident,
-          self
-            .tables
-            .extract_binding_mode(xtor.tcx.sess, *hir_id, *span)
-            .expect("Cannot extract binding without binding mode."),
-        )
-      } else {
-        xtor.unsupported(
-          node.ident().map(|ident| ident.span).unwrap_or_default(),
-          "Cannot extract complex pattern in binding (cannot recover from this)",
-        );
-        unreachable!()
+          // Immutability here, will determine whether the variable is wrapped
+          // in a mutable cell. We only say the binding is mutable for `Mutable`
+          // not for `RefMut` because the latter happens in pattern matches and
+          // we can't create/wrap new mutable cells patterns.
+          matches!(annotation, hir::BindingAnnotation::Mutable),
+        ),
+        node => {
+          xtor.unsupported(
+            node.ident().map(|ident| ident.span).unwrap_or_default(),
+            "Cannot extract complex pattern in binding (cannot recover from this)",
+          );
+          unreachable!()
+        }
       };
-
       let id = xtor.register_hir(hir_id, ident.name.to_string());
-      let is_mutable = matches!(
-        binding_mode,
-        ty::BindByValue(hir::Mutability::Mut) | ty::BindByReference(hir::Mutability::Mut)
-      );
 
       // Build a Variable node
       let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, ident.span);
-      let tpe = if is_mutable && !self.base.is_mut_cell(tpe) {
+      let tpe = if is_mutable {
         self.synth().mut_cell_type(tpe)
       } else {
         tpe
