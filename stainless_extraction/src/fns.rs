@@ -33,13 +33,14 @@ pub struct FnSignature<'l> {
   pub tparams: Vec<&'l st::TypeParameterDef<'l>>,
   pub params: Params<'l>,
   pub return_tpe: st::Type<'l>,
+  pub is_pure: bool,
 }
 
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Panics if the given HirId does not own a HIR body.
-  pub(super) fn hir_body(&self, hir_id: HirId) -> &'tcx hir::Body<'tcx> {
-    let body_id = self.tcx.hir().body_owned_by(hir_id);
-    self.tcx.hir().body(body_id)
+  pub(super) fn hir_body(&self, hir_id: HirId) -> Option<&'tcx hir::Body<'tcx>> {
+    let body_id = self.tcx.hir().maybe_body_owned_by(hir_id)?;
+    Some(self.tcx.hir().body(body_id))
   }
 
   pub(super) fn ty_fn_sig(&self, def_id: DefId) -> FnSig<'tcx> {

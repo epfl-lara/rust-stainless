@@ -2,6 +2,17 @@ extern crate stainless;
 
 pub struct S(i32);
 
+pub fn f() {
+  let mut a = S(1);
+
+  let c = {
+    a.0 = 10;
+    a
+  };
+
+  assert!(c.0 == 10)
+}
+
 pub fn main() {
   let a = S(1);
   let b = S(2);

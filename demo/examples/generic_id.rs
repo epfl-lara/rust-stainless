@@ -1,9 +1,9 @@
 extern crate stainless;
 
-pub fn id<T>(x: T) -> T {
+fn id<T>(x: T) -> T {
   x
 }
 
-fn main() -> () {
+pub fn main() -> () {
   id(0);
 }

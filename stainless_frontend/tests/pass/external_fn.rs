@@ -3,7 +3,6 @@ use stainless::*;
 
 struct State(i32);
 
-#[var(0)]
 struct Printer(i32);
 
 #[pure(state)]

@@ -26,3 +26,5 @@ pub struct TwoIntOptions {
 pub fn get_sum(tio: TwoIntOptions) -> i32 {
   unwrap_or_zero(tio.io1) + unwrap_or_zero(tio.io2)
 }
+
+fn main() -> () {}

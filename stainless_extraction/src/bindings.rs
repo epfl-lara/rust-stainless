@@ -3,7 +3,6 @@ use super::*;
 
 use rustc_hir::intravisit::{self, NestedVisitorMap, Visitor};
 use rustc_hir::{self as hir, HirId, Node, Pat, PatKind};
-use rustc_middle::ty;
 use rustc_span::symbol::Symbol;
 
 use stainless_data::ast as st;
@@ -22,14 +21,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         .simple_ident()
         .and_then(|ident| flags_by_symbol.remove(&ident.name));
       let var = self.get_or_extract_binding(param.pat.hir_id, flags);
-      self
-        .dcx
-        .add_param(self.factory().ValDef(var), &mut self.base);
+      self.dcx.add_param(self.factory().ValDef(var));
     }
 
     // Additional parameters (usually evidence parameters)
-    for v in add_params {
-      self.dcx.add_param(v, &mut self.base);
+    for vd in add_params {
+      self.dcx.add_param(vd);
     }
 
     // Bindings from the body
@@ -45,89 +42,49 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> &'l st::Variable<'l> {
     self.dcx.get_var(hir_id).unwrap_or_else(|| {
       let xtor = &mut self.base;
+      let f = xtor.factory();
 
-      // Extract ident from corresponding HIR node, sanity-check binding mode
-      let node = xtor.tcx.hir().find(hir_id).unwrap();
-      let (ident, binding_mode, span) = if let Node::Binding(Pat {
-        kind: PatKind::Binding(_, _, ident, _),
-        hir_id,
-        span,
-        ..
-      }) = node
-      {
-        (
+      // Extract identifier and mutability of the binding from corresponding HIR node
+      let (ident, is_mutable) = match xtor.tcx.hir().find(hir_id).unwrap() {
+        Node::Binding(Pat {
+          kind: PatKind::Binding(annotation, _, ident, _),
+          ..
+        }) => (
           ident,
-          self
-            .tables
-            .extract_binding_mode(xtor.tcx.sess, *hir_id, *span)
-            .expect("Cannot extract binding without binding mode."),
-          span,
-        )
-      } else {
-        xtor.unsupported(
-          node.ident().map(|ident| ident.span).unwrap_or_default(),
-          "Cannot extract complex pattern in binding (cannot recover from this)",
-        );
-        unreachable!()
+          // Immutability here, will determine whether the variable is wrapped
+          // in a mutable cell. We only say the binding is mutable for `Mutable`
+          // not for `RefMut` because the latter happens in pattern matches and
+          // we can't create/wrap new mutable cells patterns.
+          matches!(annotation, hir::BindingAnnotation::Mutable),
+        ),
+        node => {
+          xtor.unsupported(
+            node.ident().map(|ident| ident.span).unwrap_or_default(),
+            "Cannot extract complex pattern in binding (cannot recover from this)",
+          );
+          unreachable!()
+        }
       };
-
-      if let ty::BindByReference(Mutability::Mut) = binding_mode {
-        xtor.unsupported(*span, "Only immutable bindings are supported");
-      }
-
       let id = xtor.register_hir(hir_id, ident.name.to_string());
-      let mutable = matches!(binding_mode, ty::BindByValue(Mutability::Mut));
 
       // Build a Variable node
-      let f = xtor.factory();
       let tpe = xtor.extract_ty(self.tables.node_type(hir_id), &self.txtcx, ident.span);
+      let tpe = if is_mutable {
+        self.synth().mut_cell_type(tpe)
+      } else {
+        tpe
+      };
       let flags = flags_opt
         .map(|flags| flags.to_stainless(f))
         .into_iter()
         .flatten()
         // Add @var flag if the param is mutable
-        .chain(mutable.then(|| f.IsVar().into()))
+        .chain(is_mutable.then(|| f.IsVar().into()))
         .collect();
       let var = f.Variable(id, tpe, flags);
       self.dcx.add_var(hir_id, var);
       var
     })
-  }
-
-  /// Wraps the body expression into a LetVar for each mutable parameter of the
-  /// function recorded in the DefContext. Because, specs (Ensuring, Require,
-  /// Decreases) trees have to be the outermost trees, this also unpacks the
-  /// specs and repacks them around the body wrapped in LetVars.
-  pub fn wrap_body_let_vars(&self, body_expr: st::Expr<'l>) -> st::Expr<'l> {
-    let f = self.factory();
-    match body_expr {
-      st::Expr::Ensuring(st::Ensuring { body, pred }) => {
-        let wrapped_body = self.wrap_body_let_vars(*body);
-        f.Ensuring(wrapped_body, pred).into()
-      }
-      st::Expr::Require(st::Require { body, pred }) => {
-        let wrapped_body = self.wrap_body_let_vars(*body);
-        f.Require(*pred, wrapped_body).into()
-      }
-      st::Expr::Decreases(st::Decreases { measure, body }) => {
-        let wrapped_body = self.wrap_body_let_vars(*body);
-        f.Decreases(*measure, wrapped_body).into()
-      }
-      _ => self
-        .dcx
-        .let_var_pairs
-        .iter()
-        .fold(body_expr, |body, (body_var, &fn_param)| {
-          // Mutable ADTs need to be copied freshly to work-around Stainless'
-          // anti-aliasing rules. The fresh copy marks them as owned i.e. safe
-          // to mutate locally.
-          let arg = match fn_param.tpe {
-            st::Type::ADTType(_) => f.FreshCopy(fn_param.into()).into(),
-            _ => fn_param.into(),
-          };
-          f.LetVar(body_var, arg, body).into()
-        }),
-    }
   }
 }
 
@@ -136,7 +93,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 pub(super) struct DefContext<'l> {
   vars: HashMap<HirId, &'l st::Variable<'l>>,
   params: Vec<&'l st::ValDef<'l>>,
-  let_var_pairs: HashMap<&'l st::ValDef<'l>, &'l st::Variable<'l>>,
 }
 
 impl<'l> DefContext<'l> {
@@ -144,32 +100,15 @@ impl<'l> DefContext<'l> {
     &self.params[..]
   }
 
-  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) -> &mut Self {
+  pub(super) fn add_var(&mut self, hir_id: HirId, var: &'l st::Variable<'l>) {
     assert!(!self.vars.contains_key(&hir_id));
     self.vars.insert(hir_id, var);
-    self
   }
 
   /// Adds a parameter to the available bindings.
-  ///
-  /// If the parameter is mutable, a new immutable parameter is inserted in the
-  /// parameter list. The binding with a LetVar from the new param to the
-  /// variable in the function's body needs to be created later with
-  /// [BodyExtractor::wrap_body_let_vars].
-  pub(super) fn add_param(
-    &mut self,
-    vd: &'l st::ValDef<'l>,
-    xtor: &mut BaseExtractor<'l, '_>,
-  ) -> &mut Self {
+  pub(super) fn add_param(&mut self, vd: &'l st::ValDef<'l>) {
     assert!(!self.params.contains(&vd));
-    if vd.is_mutable() {
-      let new_param_var = xtor.immutable_var_with_name(vd.v, &format!("var{}", self.params.len()));
-      self.params.push(xtor.factory().ValDef(new_param_var));
-      self.let_var_pairs.insert(vd, new_param_var);
-    } else {
-      self.params.push(vd);
-    };
-    self
+    self.params.push(vd);
   }
 
   #[inline]

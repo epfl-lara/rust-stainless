@@ -21,7 +21,6 @@ use std::rc::Rc;
 
 use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::{self as hir, HirId};
-use rustc_middle::mir::Mutability;
 use rustc_middle::span_bug;
 use rustc_middle::ty::{TyCtxt, TypeckResults, WithOptConstParam};
 use rustc_mir_build::thir;
@@ -34,7 +33,7 @@ use fns::TypeClassKey;
 use stainless_data::ast::Type;
 use std_items::{CrateItem, StdItem, StdItems};
 use synth::SynthItem;
-use ty::{Generics, TyExtractionCtxt};
+use ty::{is_mut_ref, is_mutable, is_mutable_binding, Generics, TyExtractionCtxt};
 use utils::UniqueCounter;
 
 mod bindings;
@@ -268,9 +267,9 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     })
   }
 
-  /// Return a reference to the class definition on which the given function is
-  /// defined as method. If the function is not a method, None is returned. The
-  /// function is identified by its id.
+  /// Return a reference to the class definition on which the given function
+  /// (identified by its id) is defined as method. If the function is not a
+  /// method, None is returned.
   fn get_class_of_method(&mut self, id: StainlessSymId<'l>) -> Option<&'l st::ClassDef<'l>> {
     self.with_extraction(|xt| xt.method_to_class.get(&id).copied())
   }
@@ -286,21 +285,6 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       xt.method_to_class
         .extend(methods.into_iter().map(|method_id| (method_id, cd)));
     })
-  }
-
-  pub fn immutable_var_with_name(
-    &mut self,
-    var: &st::Variable<'l>,
-    name: &str,
-  ) -> &'l st::Variable<'l> {
-    let new_id = self.fresh_id(name.into());
-    let flags = var
-      .flags
-      .iter()
-      .filter(|flag| !matches!(flag, st::Flag::IsVar(_)))
-      .copied()
-      .collect();
-    self.factory().Variable(new_id, var.tpe, flags)
   }
 
   fn hir_to_def_id(&self, hir_id: HirId) -> DefId {
@@ -340,11 +324,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   /// Error reporting helpers
 
   fn unsupported<S: Into<MultiSpan>, M: Into<String>>(&self, span: S, msg: M) {
-    let msg = msg.into();
     self
       .tcx
       .sess
-      .span_err(span, format!("Unsupported tree: {}", msg).as_str());
+      .span_err(span, format!("Unsupported tree: {}", msg.into()).as_str());
   }
 }
 
@@ -379,7 +362,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let local_def_id = tcx.hir().local_def_id(hir_id);
     assert!(tcx.has_typeck_results(local_def_id));
     let tables = tcx.typeck(local_def_id);
-    let body = base.hir_body(hir_id);
+    let body = base.hir_body(hir_id).unwrap();
 
     BodyExtractor {
       arena,
@@ -415,6 +398,14 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     let span = self.tcx().hir().span(hir_id);
     let sig = self.base.ty_fn_sig(self.tables.hir_owner.to_def_id());
     self.base.extract_ty(sig.output(), &self.txtcx, span)
+  }
+
+  fn has_mutable_params(&self) -> bool {
+    self
+      .body
+      .params
+      .iter()
+      .any(|p| is_mutable(self.tables.node_type(p.hir_id)) || is_mutable_binding(p.pat))
   }
 
   fn extract_body_expr(&mut self, ldi: LocalDefId) -> st::Expr<'l> {
