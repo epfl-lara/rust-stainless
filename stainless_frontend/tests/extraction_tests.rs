@@ -122,6 +122,7 @@ define_tests!(
   pass: mut_local_fields,
   pass: mut_local_lets,
   pass: mut_local_params,
+  pass: mut_old,
   pass: mut_params,
   pass: mut_ref_borrow_0,
   pass: mut_ref_borrow_1,

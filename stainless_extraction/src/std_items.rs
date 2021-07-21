@@ -55,6 +55,7 @@ pub enum CrateItem {
   MapInsertFn,
   MapRemoveFn,
   OptionType,
+  OldFn,
 }
 
 use CrateItem::*;
@@ -81,6 +82,7 @@ impl CrateItem {
       CloneFn => "std::clone::Clone::clone",
       CloneTrait => "std::clone::Clone",
       ImpliesFn => "stainless::Implies::implies",
+      OldFn => "stainless::old",
       MapType => "stainless::Map",
       MapNewFn => "stainless::Map::<K, V>::new",
       MapIndexFn => "stainless::Map::<K, V>::index",
@@ -106,7 +108,7 @@ impl CrateItem {
 
   pub fn def_kind(&self) -> DefKind {
     match self {
-      BeginPanicFmtFn => DefKind::Fn,
+      BeginPanicFmtFn | OldFn => DefKind::Fn,
       SetType | MapType | StringType | PhantomData => DefKind::Struct,
       CloneTrait => DefKind::Trait,
       OptionType => DefKind::Enum,
