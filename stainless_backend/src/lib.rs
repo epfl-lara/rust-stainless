@@ -56,7 +56,9 @@ impl Backend {
       .arg("--interactive")
       .arg("--batched")
       .arg("--vc-cache=false")
-      .arg("--type-checker=false")
+      // FIXME: https://github.com/epfl-lara/rust-stainless/issues/86
+      .arg("--check-measures=false")
+      .arg("--infer-measures=false")
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
       .arg(format!("--print-types={}", config.print_types))

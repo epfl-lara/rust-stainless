@@ -19,7 +19,7 @@ pub enum Result<T, E> {
 }
 
 impl<T, E> Result<T, E> {
-  #[post(self.is_ok() == ret)]
+  #[post(matches!(self, Result::Ok(_)) == ret)]
   pub fn is_ok(&self) -> bool {
     match self {
       Result::Ok(_) => true,
