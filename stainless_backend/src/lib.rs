@@ -58,7 +58,15 @@ impl Backend {
       .arg("--vc-cache=false")
       // FIXME: https://github.com/epfl-lara/rust-stainless/issues/86
       .arg("--check-measures=false")
-      .arg("--infer-measures=false")
+      .arg("--infer-measures=false");
+
+    // Stainless prioritizes the first occurrence of CLI arguments, therefore
+    // the flags need to come first, in order to overwrite the below.
+    if let Ok(extra_flags) = env::var("STAINLESS_FLAGS") {
+      cmd.args(extra_flags.split(' '));
+    }
+
+    cmd
       .arg(format!("--timeout={}", config.timeout))
       .arg(format!("--print-ids={}", config.print_ids))
       .arg(format!("--print-types={}", config.print_types))
@@ -68,10 +76,6 @@ impl Backend {
       cmd
         .arg("--debug=trees")
         .arg(format!("--debug-phases={}", config.debug_phases.join(",")));
-    }
-
-    if let Ok(extra_flags) = env::var("STAINLESS_FLAGS") {
-      cmd.args(extra_flags.split(' '));
     }
 
     let child = cmd
