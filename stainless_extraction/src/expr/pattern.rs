@@ -274,6 +274,13 @@ fn is_mut_ref(pat: Option<Pat>) -> bool {
             ..
           },
           ..
+        } | Pat {
+          kind: box PatKind::Binding {
+            mode: BindingMode::ByValue,
+            mutability: Mutability::Mut,
+            ..
+          },
+          ..
         }
       )
   })

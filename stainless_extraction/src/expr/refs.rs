@@ -44,7 +44,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   fn extract_mut_borrow_expr(&mut self, arg: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     let arg = self.strip_scopes(arg);
     match arg.kind {
-      ExprKind::Deref { arg: inner } if is_mut_ref(inner.ty) => self.extract_mut_borrow_expr(inner),
+      ExprKind::Deref { arg: inner } => self.extract_mut_borrow_expr(inner),
       ExprKind::Field { lhs, name } => self.extract_field(lhs, name, true),
       ExprKind::VarRef { id } => self.fetch_var(id).into(),
       _ => self.extract_expr(arg),

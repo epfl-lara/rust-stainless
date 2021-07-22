@@ -56,6 +56,7 @@ pub enum CrateItem {
   MapRemoveFn,
   OptionType,
   OldFn,
+  MemReplace,
 }
 
 use CrateItem::*;
@@ -92,6 +93,7 @@ impl CrateItem {
       MapInsertFn => "stainless::Map::<K, V>::insert",
       MapRemoveFn => "stainless::Map::<K, V>::remove",
       OptionType => "std::option::Option",
+      MemReplace => "std::mem::replace",
     }
   }
 
@@ -101,14 +103,14 @@ impl CrateItem {
   pub fn crate_name(&self) -> &'static str {
     match self {
       BoxNewFn | ToStringFn | StringType => "alloc",
-      PhantomData | PartialEqFn | CloneFn | CloneTrait | OptionType => "core",
+      PhantomData | PartialEqFn | CloneFn | CloneTrait | OptionType | MemReplace => "core",
       _ => self.path().splitn(2, "::").next().unwrap(),
     }
   }
 
   pub fn def_kind(&self) -> DefKind {
     match self {
-      BeginPanicFmtFn | OldFn => DefKind::Fn,
+      BeginPanicFmtFn | OldFn | MemReplace => DefKind::Fn,
       SetType | MapType | StringType | PhantomData => DefKind::Struct,
       CloneTrait => DefKind::Trait,
       OptionType => DefKind::Enum,

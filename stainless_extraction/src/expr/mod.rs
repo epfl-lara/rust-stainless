@@ -116,6 +116,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         StdItem::CrateItem(CrateItem::ImpliesFn) => self.extract_implies(args),
         StdItem::CrateItem(CrateItem::OldFn) => Some(self.extract_old(args.first().unwrap())),
+        StdItem::CrateItem(CrateItem::MemReplace) => self.extract_mem_replace(args),
 
         // Box::new, erase it and return the argument directly.
         StdItem::CrateItem(BoxNewFn) => Some(self.extract_expr(args.first().unwrap())),
@@ -128,22 +129,6 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       })
       // Otherwise, extract a normal call
       .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
-  }
-
-  fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
-    match args {
-      [lhs, rhs] => Some(
-        self
-          .factory()
-          .Implies(self.extract_expr(lhs), self.extract_expr(rhs))
-          .into(),
-      ),
-      _ => None,
-    }
-  }
-
-  fn extract_old(&mut self, arg: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
-    self.factory().Old(self.extract_expr(arg)).into()
   }
 
   fn extract_call(
@@ -300,6 +285,48 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
       }
       _ => None,
+    }
+  }
+
+  fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
+    match args {
+      [lhs, rhs] => Some(
+        self
+          .factory()
+          .Implies(self.extract_expr(lhs), self.extract_expr(rhs))
+          .into(),
+      ),
+      _ => None,
+    }
+  }
+
+  fn extract_old(&mut self, arg: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
+    self.factory().Old(self.extract_expr(arg)).into()
+  }
+
+  fn extract_mem_replace(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
+    let f = self.factory();
+    if let [dest, src] = args {
+      let tpe = self.base.extract_ty(src.ty, &self.txtcx, src.span);
+      let res = &*f.Variable(self.base.fresh_id("res".into()), tpe, vec![]);
+      let dest = self.extract_expr(dest);
+      let src = self.extract_expr(src);
+      Some(
+        f.Let(
+          f.ValDef(res),
+          f.FreshCopy(self.synth().mut_cell_value(dest)).into(),
+          f.Block(
+            vec![f
+              .FieldAssignment(dest, self.synth().mut_cell_value_id(), src)
+              .into()],
+            res.into(),
+          )
+          .into(),
+        )
+        .into(),
+      )
+    } else {
+      None
     }
   }
 
