@@ -149,12 +149,16 @@ define_tests!(
   pass: return_stmt,
   pass: set_ops,
   pass: spec_on_trait_impl,
-  pass: trait_bounds,
+  // FIXME: This test times out because of https://github.com/epfl-lara/stainless/issues/1093.
+  //   Re-enable the test as soon as the issue is fixed in Stainless.
+  // pass: trait_bounds,
   pass: struct_update,
   pass: tuple_match,
   pass: tuple_result,
   pass: tuples,
-  pass: type_class,
+  // FIXME: This test times out because of https://github.com/epfl-lara/stainless/issues/1093.
+  //   Re-enable the test as soon as the issue is fixed in Stainless.
+  // pass: type_class,
   pass: type_class_multi_lookup,
   pass: type_class_specs,
   pass: type_class_without_evidence,
