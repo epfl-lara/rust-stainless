@@ -152,6 +152,7 @@ define_tests!(
   // FIXME: This test times out because of https://github.com/epfl-lara/stainless/issues/1093.
   //   Re-enable the test as soon as the issue is fixed in Stainless.
   // pass: trait_bounds,
+  pass: tree_rotation,
   pass: struct_update,
   pass: tuple_match,
   pass: tuple_result,

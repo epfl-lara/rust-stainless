@@ -54,9 +54,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::Deref { arg } => {
         let arg = self.strip_scopes(arg);
         match arg.kind {
-          ExprKind::VarRef { id } if is_mut_ref(arg.ty) => f
+          ExprKind::VarRef { id } => f
             .FieldAssignment(
-              self.extract_var_ref(id),
+              self.fetch_var(id).into(),
               self.synth().mut_cell_value_id(),
               value,
             )
