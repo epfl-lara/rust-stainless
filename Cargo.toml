@@ -9,4 +9,5 @@ members = [
 ]
 exclude = [
   "demo",
+  "rbtree"
 ]

@@ -1,0 +1,9 @@
+[package]
+name = "rbtree"
+version = "0.1.0"
+authors = ["Yann Bolliger <yann.bolliger@epfl.ch>"]
+edition = "2018"
+
+[dependencies]
+stainless = { path = "../libstainless" }
+
