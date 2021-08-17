@@ -174,22 +174,14 @@ impl RBTree<i32> {
     }
   }
 
-  #[pre(self.black_balanced() && (match self {
-    Node(Red, l, _, r) => r.red_nodes_have_black_children() && l.red_nodes_have_black_children(),
-    Node(Black, l, _, r) =>
-      (r.red_nodes_have_black_children() && l.red_desc_have_black_children())
-      || (r.red_desc_have_black_children() && l.red_nodes_have_black_children()),
-    _ => true,
-  }))]
   #[post(
       set_equals(&old(&self).content(), &self.content())
       && self.size() == old(&self).size()
-      && self.red_desc_have_black_children()
     )]
   fn balance(&mut self) {
-    if self.is_black() {
-      match self {
-        Node(Black, left, _, _) if left.is_red() => match &mut **left {
+    if let Node(Black, left, _, _) = self {
+      if left.is_red() {
+        match &mut **left {
           Node(Red, ll, _, _) if ll.is_red() => {
             self.rotate_right();
             self.recolor();
@@ -200,8 +192,12 @@ impl RBTree<i32> {
             self.recolor();
           }
           _ => {}
-        },
-        Node(Black, _, _, right) if right.is_red() => match &mut **right {
+        }
+      }
+    }
+    if let Node(Black, _, _, right) = self {
+      if right.is_red() {
+        match &mut **right {
           Node(Red, rl, _, _) if rl.is_red() => {
             right.rotate_right();
             self.rotate_left();
@@ -212,8 +208,7 @@ impl RBTree<i32> {
             self.recolor();
           }
           _ => {}
-        },
-        _ => {}
+        }
       }
     }
   }
