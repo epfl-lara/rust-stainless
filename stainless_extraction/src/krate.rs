@@ -10,6 +10,7 @@ use rustc_span::DUMMY_SP;
 use stainless_data::ast as st;
 
 use crate::fns::{FnItem, FnSignature};
+
 use std::iter;
 
 /// Top-level extraction
@@ -85,10 +86,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      /// Ignore fn items in because they are already treated when the entire
-      /// impl/trait block is extracted.
       fn visit_trait_item(&mut self, trait_item: &'tcx hir::TraitItem<'tcx>) {
         match trait_item.kind {
+          // Ignore fn items in because they are already treated when the entire
+          // impl/trait block is extracted.
           hir::TraitItemKind::Fn(..) => {}
           _ => self
             .xtor
@@ -96,10 +97,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         }
       }
 
-      /// Ignore fn items in because they are already treated when the entire
-      /// impl/trait block is extracted.
       fn visit_impl_item(&mut self, impl_item: &'tcx hir::ImplItem<'tcx>) {
         match impl_item.kind {
+          // Ignore fn items in because they are already treated when the entire
+          // impl/trait block is extracted.
           hir::ImplItemKind::Fn(..) => {}
           _ => self
             .xtor
@@ -203,13 +204,14 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
     self.get_id_from_def(def_id).unwrap_or_else(|| {
       self.add_function_ref(def_id);
 
-      // Check whether this function implements some method of a trait.
-      // More specifically, if the function has a name
+      // Check whether this function implements some method of a trait, in other
+      // words, overrides some existing function.
       let overridden_def_id: Option<DefId> =
+        // Get the name of this function
         self.tcx.opt_item_name(def_id).and_then(|fn_item_name| {
           self
             .tcx
-            // and it is a method of an impl block
+            // Then, if it is a method of an impl block
             .impl_of_method(def_id)
             // and that impl block implements a trait
             .and_then(|impl_id| self.tcx.trait_id_of_impl(impl_id))
@@ -222,8 +224,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
                 trait_id,
               )
             })
-            // then we want to use that method's symbol path.
-            .map(|item| item.def_id)
+            // then we want to use the trait method's symbol path.
+            .map(|trait_item_method| trait_item_method.def_id)
         });
 
       match overridden_def_id {
@@ -253,7 +255,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract an external function
-  pub(super) fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
+  fn extract_extern_fn(&mut self, def_id: DefId) -> &'l st::FunDef<'l> {
     assert!(
       !def_id.is_local(),
       "Expected non-local def id, got: {:?}",
@@ -264,6 +266,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe,
+      is_pure,
     } = self.extract_fn_signature(def_id);
 
     let f = self.factory();
@@ -274,7 +277,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       params,
       return_tpe,
       empty_body,
-      vec![f.Extern().into()],
+      is_pure
+        .then(|| f.IsPure().into())
+        .into_iter()
+        .chain(iter::once(f.Extern().into()))
+        .collect(),
     )
   }
 
@@ -292,6 +299,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe,
+      is_pure,
     } = self.extract_fn_signature(def_id);
     let class_def = self.get_class_of_method(id);
 
@@ -307,6 +315,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         .iter()
         .map(|cd| f.IsMethodOf(cd.id).into())
         .chain(iter::once(f.IsAbstract().into()))
+        .chain(is_pure.then(|| f.IsPure().into()).into_iter())
         .collect(),
     )
   }
@@ -334,6 +343,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       tparams,
       params,
       return_tpe: self.extract_ty(fn_sig.output(), &txtcx, DUMMY_SP),
+      is_pure: !fn_sig.inputs().iter().any(|ty| is_mutable(ty)),
     }
   }
 
@@ -346,7 +356,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   }
 
   /// Extract a local function
-  pub(super) fn extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
+  fn extract_local_fn(&mut self, fn_item: &FnItem<'l>) -> &'l st::FunDef<'l> {
     let f = self.factory();
 
     assert!(fn_item.def_id.is_local());
@@ -383,9 +393,11 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .enter_body(hir_id, txtcx, class_def, |bxtor| {
         // Register parameters and local bindings in the DefContext
         bxtor.populate_def_context(&mut flags_by_symbol, &ev_params);
-
         let body_expr = bxtor.extract_body_expr(fn_item.def_id.expect_local());
-        let body_expr = bxtor.wrap_body_let_vars(body_expr);
+
+        if !bxtor.has_mutable_params() {
+          flags.push(f.IsPure().into());
+        }
 
         (bxtor.dcx.params().to_vec(), bxtor.return_tpe(), body_expr)
       });
@@ -504,17 +516,22 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           .iter()
           .map(|field| {
             let field_id = self.get_or_register_def(field.did);
+
             let substs = List::identity_for_item(self.tcx, def_id);
             let field_ty = field.ty(self.tcx, substs);
             let field_ty = self.extract_ty(field_ty, &txtcx, field.ident.span);
+            // All fields are MutCells
+            let field_ty = self.synth().mut_cell_type(field_ty);
 
-            let flags = flags_by_symbol.remove(&field.ident.name);
-            let flags = flags.map(|flags| flags.to_stainless(f)).unwrap_or_default();
+            let flags = flags_by_symbol
+              .remove(&field.ident.name)
+              .map(|flags| flags.to_stainless(f))
+              .unwrap_or_default();
 
-            let field = f.Variable(field_id, field_ty, flags);
-            &*f.ValDef(field)
+            &*f.ValDef(f.Variable(field_id, field_ty, flags))
           })
           .collect();
+
         &*f.ADTConstructor(cons_id, adt_id, fields)
       })
       .collect();

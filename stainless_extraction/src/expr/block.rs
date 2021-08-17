@@ -12,9 +12,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ..
     }: &Block<'a, 'tcx>,
   ) -> st::Expr<'l> {
+    let f = self.factory();
+
     let mut stmts: Vec<_> = stmts.iter().collect();
     let final_expr = final_expr
-      .map(|e| self.extract_expr(e))
+      .map(|e| self.extract_move_copy(e))
       // If there's no final expression, we need to check whether the last
       // statement is a return. If yes, we take the return as final expression.
       .or_else(|| {
@@ -29,7 +31,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           _ => None,
         })
       })
-      .unwrap_or_else(|| self.factory().UnitLiteral().into());
+      .unwrap_or_else(|| f.UnitLiteral().into());
 
     stmts.reverse();
     let mut spec_ids = HashMap::new();
@@ -116,17 +118,21 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
                 pattern.span,
               ),
               Ok(vd) => {
+                let init_expr = self.extract_move_copy(init);
+                let init_expr = if vd.is_mutable() {
+                  let tpe = self.base.extract_ty(init.ty, &self.txtcx, init.span);
+                  self.synth().mut_cell(tpe, init_expr)
+                } else {
+                  init_expr
+                };
+
                 // recurse the extract all the following statements
                 let exprs = acc_exprs.clone();
                 acc_exprs.clear();
                 let body_expr = self.extract_block_(stmts, acc_exprs, acc_specs, final_expr);
+
                 // wrap that body expression into the Let
-                let init = self.extract_expr(init);
-                let last_expr = if vd.is_mutable() {
-                  f.LetVar(vd, init, body_expr).into()
-                } else {
-                  f.Let(vd, init, body_expr).into()
-                };
+                let last_expr = f.Let(vd, init_expr, body_expr).into();
                 finish(exprs, last_expr)
               }
             }

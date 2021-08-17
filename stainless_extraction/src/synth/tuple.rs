@@ -12,6 +12,14 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
       args.len(),
       "Tuple types and arguments need to have the same length"
     );
+
+    // Wrap args in MutCell
+    let args = args
+      .into_iter()
+      .zip(tps.iter())
+      .map(|(a, t)| self.mut_cell(*t, a))
+      .collect();
+
     self
       .factory()
       .ADT(self.tuple_id(tps.len()), tps, args)
@@ -48,11 +56,17 @@ impl<'a, 'l, 'tcx> Synth<'a, 'l, 'tcx> {
             ))
           })
           .collect::<Vec<_>>();
+
         let fields = tparams
           .iter()
           .enumerate()
           .map(|(i, t)| {
-            &*f.ValDef(f.Variable(self.base.fresh_id(format!("_{}", i)), t.tp.into(), vec![]))
+            &*f.ValDef(f.Variable(
+              self.base.fresh_id(format!("_{}", i)),
+              // All fields are MutCells
+              self.mut_cell_type(t.tp.into()),
+              vec![],
+            ))
           })
           .collect();
 

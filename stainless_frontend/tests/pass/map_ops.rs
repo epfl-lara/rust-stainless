@@ -5,7 +5,7 @@ use stainless::*;
 /// https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/MapDiff.scala
 #[pre(m.contains_key(&1) && m.contains_key(&2) && m.contains_key(&3))]
 pub fn test(m: &Map<u32, u32>) {
-  let m2 = m.remove(&1).remove(&2);
+  let m2 = m.clone().remove(&1).remove(&2);
   assert!(!m2.contains_key(&1));
   assert!(!m2.contains_key(&2));
   assert!(m2.contains_key(&3));
@@ -16,8 +16,8 @@ pub fn test(m: &Map<u32, u32>) {
 #[pre(!a.contains_key(&0))]
 #[post(ret)]
 pub fn test1(a: &Map<u32, u32>) -> bool {
-  let b = a.insert(0, 1);
-  let c = a.insert(0, 1);
+  let b = a.clone().insert(0, 1);
+  let c = a.clone().insert(0, 1);
   // Deref to do primitive equality of ints
   *b.index(&0) == *c.index(&0)
 }
@@ -36,3 +36,5 @@ pub fn test3(a: &Map<u32, i32>) -> i32 {
 pub fn test2(a: &Map<u32, u32>) -> Option<&u32> {
   a.get(&0)
 }
+
+pub fn main() {}

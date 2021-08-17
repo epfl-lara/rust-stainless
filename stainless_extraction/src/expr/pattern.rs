@@ -1,6 +1,6 @@
 use super::*;
 
-use rustc_middle::mir::Mutability;
+use rustc_middle::mir::{BorrowKind, Mutability};
 use rustc_middle::ty::AdtDef;
 use rustc_mir_build::thir::{Arm, BindingMode, FieldPat, Guard, Pat, PatKind};
 use rustc_target::abi::VariantIdx;
@@ -32,24 +32,9 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         ..
       } if !allow_subpattern => Err("Subpatterns are not supported here"),
 
-      PatKind::Binding {
-        mutability,
-        mode: BindingMode::ByValue,
-        var: hir_id,
-        ..
-      }
-      | PatKind::Binding {
-        mutability,
-        mode: BindingMode::ByRef(BorrowKind::Shared),
-        var: hir_id,
-        ..
-      } => {
+      PatKind::Binding { var: hir_id, .. } => {
         let var = self.fetch_var(*hir_id);
-        if *mutability == Mutability::Not || var.is_mutable() {
-          Ok(self.factory().ValDef(var))
-        } else {
-          Err("Binding mode not allowed")
-        }
+        Ok(self.factory().ValDef(var))
       }
 
       // This encodes a user-written type ascription: let a: u32 = ...
@@ -86,7 +71,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       Guard::If(expr) => Some(self.extract_expr(expr)),
       _ => None,
     });
-    let body = self.extract_expr(body);
+    let body = self.extract_move_copy(body);
     self.factory().MatchCase(pattern, guard, body)
   }
 
@@ -112,6 +97,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
             } => f.WildcardPattern(Some(binder)).into(),
             _ => unreachable!(),
           },
+
           Err(reason) => self.unsupported_pattern(
             pattern.span,
             format!("Unsupported pattern binding: {}", reason),
@@ -158,8 +144,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
 
         TyKind::Tuple(substs) => {
           let id = self.synth().tuple_id(substs.len());
+          let field_types =
+            self
+              .base
+              .extract_tys(pattern.ty.tuple_fields(), &self.txtcx, pattern.span);
           self
-            .adt_pattern(binder, id, subpatterns, substs, substs.len(), pattern.span)
+            .adt_pattern(binder, id, subpatterns, substs, field_types, pattern.span)
             .into()
         }
 
@@ -175,7 +165,19 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       },
 
       // TODO: Confirm that rustc introduces this pattern only for primitive derefs
-      box PatKind::Deref { ref subpattern } => self.extract_pattern(subpattern, binder),
+      box PatKind::Deref { ref subpattern } => {
+        let sub = self.extract_pattern(subpattern, binder);
+
+        // If we pattern match on mutable vars, we want the MutCell not it's value
+        match pattern.ty.kind() {
+          TyKind::Ref(_, inner, Mutability::Mut) => {
+            let tpe = self.base.extract_ty(inner, &self.txtcx, pattern.span);
+            f.ADTPattern(None, self.synth().mut_cell_id(), vec![tpe], vec![sub])
+              .into()
+          }
+          _ => sub,
+        }
+      }
 
       _ => self.unsupported_pattern(pattern.span, "Unsupported kind of pattern"),
     }
@@ -192,12 +194,15 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ) -> &'l st::ADTPattern<'l> {
     let sort = self.base.get_or_extract_adt(adt_def.did);
     let constructor = sort.constructors[variant_index.index()];
+    let field_types = self
+      .base
+      .adt_field_types(adt_def, variant_index, &self.txtcx, substs);
     self.adt_pattern(
       binder,
       constructor.id,
       subpatterns,
       substs,
-      constructor.fields.len(),
+      field_types,
       span,
     )
   }
@@ -208,19 +213,35 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     id: StainlessSymId<'l>,
     subpatterns: &[FieldPat<'tcx>],
     substs: SubstsRef<'tcx>,
-    fields_len: usize,
+    field_types: Vec<st::Type<'l>>,
     span: Span,
   ) -> &'l st::ADTPattern<'l> {
-    let arg_tps = self.extract_arg_types(substs.types(), span);
-    let subpatterns = self.extract_subpatterns(subpatterns.to_vec(), fields_len);
-    self.factory().ADTPattern(binder, id, arg_tps, subpatterns)
+    let f = self.factory();
+    let arg_tps = self.base.extract_arg_tys(substs.types(), &self.txtcx, span);
+
+    // Wrap subpatterns in MutCells
+    let subpatterns = self
+      .extract_subpatterns(subpatterns.to_vec(), field_types.len())
+      .into_iter()
+      .zip(field_types)
+      .map(|((st_pat, thir_pat), t)| {
+        if is_mut_ref(thir_pat) {
+          st_pat
+        } else {
+          f.ADTPattern(None, self.synth().mut_cell_id(), vec![t], vec![st_pat])
+            .into()
+        }
+      })
+      .collect();
+
+    f.ADTPattern(binder, id, arg_tps, subpatterns)
   }
 
   fn extract_subpatterns(
     &mut self,
     mut field_pats: Vec<FieldPat<'tcx>>,
     num_fields: usize,
-  ) -> Vec<st::Pattern<'l>> {
+  ) -> Vec<(st::Pattern<'l>, Option<Pat<'tcx>>)> {
     let f = self.factory();
     field_pats.sort_by_key(|field| field.field.index());
     field_pats.reverse();
@@ -229,15 +250,38 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       let next = if let Some(FieldPat { field, .. }) = field_pats.last() {
         if field.index() == i {
           let FieldPat { pattern, .. } = field_pats.pop().unwrap();
-          self.extract_pattern(&pattern, None)
+          (self.extract_pattern(&pattern, None), Some(pattern))
         } else {
-          f.WildcardPattern(None).into()
+          (f.WildcardPattern(None).into(), None)
         }
       } else {
-        f.WildcardPattern(None).into()
+        (f.WildcardPattern(None).into(), None)
       };
       subpatterns.push(next);
     }
     subpatterns
   }
+}
+
+fn is_mut_ref(pat: Option<Pat>) -> bool {
+  pat.map_or(false, |p| {
+    ty::is_mut_ref(p.ty)
+      || matches!(
+        p,
+        Pat {
+          kind: box PatKind::Binding {
+            mode: BindingMode::ByRef(BorrowKind::Mut { .. }),
+            ..
+          },
+          ..
+        } | Pat {
+          kind: box PatKind::Binding {
+            mode: BindingMode::ByValue,
+            mutability: Mutability::Mut,
+            ..
+          },
+          ..
+        }
+      )
+  })
 }

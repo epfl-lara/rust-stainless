@@ -2,10 +2,11 @@ use super::*;
 
 use rustc_hir::Mutability;
 use rustc_middle::ty::{
-  AdtDef, GenericParamDef, GenericParamDefKind, IntTy, Predicate, PredicateKind, TraitRef, Ty,
-  TyKind, UintTy,
+  subst::SubstsRef, AdtDef, GenericParamDef, GenericParamDefKind, IntTy, Predicate, PredicateKind,
+  TraitRef, Ty, TyKind, UintTy,
 };
 use rustc_span::{Span, DUMMY_SP};
+use rustc_target::abi::VariantIdx;
 
 use std::collections::BTreeMap;
 
@@ -67,6 +68,30 @@ pub fn uint_bit_width(int_ty: &UintTy, tcx: TyCtxt<'_>) -> u64 {
   int_ty.bit_width().unwrap_or_else(|| pointer_bit_width(tcx))
 }
 
+pub fn is_mut_ref(ty: Ty) -> bool {
+  matches!(ty.ref_mutability(), Some(Mutability::Mut))
+}
+
+/// Deeply checks whether a type is or contains mutable references.
+/// TODO: also check on function & generator types
+pub fn is_mutable(ty: Ty) -> bool {
+  is_mut_ref(ty)
+    || match ty.kind() {
+      TyKind::Adt(_, subst) | TyKind::Tuple(subst) | TyKind::Opaque(_, subst) => {
+        subst.types().any(|t| is_mutable(t))
+      }
+      TyKind::Array(ty, _) | TyKind::Slice(ty) => is_mutable(ty),
+      _ => false,
+    }
+}
+
+pub fn is_mutable_binding(pat: &hir::Pat) -> bool {
+  matches!(
+    pat.kind,
+    hir::PatKind::Binding(hir::BindingAnnotation::Mutable, ..)
+  )
+}
+
 impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn extract_ty(
     &mut self,
@@ -103,6 +128,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
       // Immutably borrowed string slice, erased to a plain String
       TyKind::Ref(_, ty, Mutability::Not) if *ty.kind() == TyKind::Str => f.StringType().into(),
+      // Pointee of a string slice
+      TyKind::Str => f.StringType().into(),
 
       // "Real" ADTs
       TyKind::Adt(adt_def, substitutions) => match self.std_items.def_to_item_opt(adt_def.did) {
@@ -115,7 +142,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
           match &arg_tps[..] {
             [key_tpe, val_tpe] => f
-              .MapType(*key_tpe, self.synth().std_option_type(*val_tpe))
+              .MutableMapType(*key_tpe, self.synth().std_option_type(*val_tpe))
               .into(),
             _ => {
               self.unsupported(
@@ -133,13 +160,21 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
         // Normal user-defined ADTs
         _ => {
           let sort_id = self.get_or_register_def(adt_def.did);
-          let arg_tps = self.extract_tys(substitutions.types(), txtcx, span);
+
+          // ADTs already wrap all their fields in MutCells, we don't need to
+          // wrap the type params as well.
+          let arg_tps = self.extract_arg_tys(substitutions.types(), txtcx, span);
           f.ADTType(sort_id, arg_tps).into()
         }
       },
 
       // Immutable references
       TyKind::Ref(_, ty, Mutability::Not) => self.extract_ty(ty, txtcx, span),
+
+      TyKind::Ref(_, ty, Mutability::Mut) => {
+        let arg_ty = self.extract_ty(ty, txtcx, span);
+        self.synth().mut_cell_type(arg_ty)
+      }
 
       TyKind::Param(param_ty) => txtcx
         .index_to_tparam
@@ -167,6 +202,27 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .into_iter()
       .map(|ty| self.extract_ty(ty, txtcx, span))
       .collect()
+  }
+
+  pub(super) fn extract_arg_tys<I>(
+    &mut self,
+    types: I,
+    txtcx: &TyExtractionCtxt<'l>,
+    span: Span,
+  ) -> Vec<st::Type<'l>>
+  where
+    I: IntoIterator<Item = Ty<'tcx>>,
+  {
+    let arg_tys = types
+      .into_iter()
+      // Remove closure type parameters (they were already replaced by FunctionTypes)
+      .filter(|ty| !matches!(ty.kind(), TyKind::Closure(..)))
+      // For tparams, we only want the inner types. MutCells are already there by construction.
+      .map(|t| match t.kind() {
+        TyKind::Ref(_, inner, Mutability::Mut) => inner,
+        _ => t,
+      });
+    self.extract_tys(arg_tys, txtcx, span)
   }
 
   /// Get the extracted generics for a def_id, usually a function or a class.
@@ -208,7 +264,8 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
 
     // Discovering HOF parameters.
     // We extract `F: Fn*(S) -> T` trait predicates by replacing `F` by `S => T`.
-    // We also enumerate all other predicates, complain about all but the obviously innocuous ones.
+    // We also enumerate all other predicates and use them as trait bounds or
+    // complain about all but the obviously innocuous ones.
     let mut tparam_to_fun_params: HashMap<u32, (Vec<Ty<'tcx>>, Span)> = HashMap::new();
     let mut tparam_to_fun_return: HashMap<u32, (Ty<'tcx>, Span)> = HashMap::new();
     let mut trait_bounds: HashSet<(TraitRef<'tcx>, Span)> = HashSet::new();
@@ -275,7 +332,7 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
           } else {
             let id = self.get_or_register_def(param.def_id);
             // TODO: Extract flags on type parameters
-            let flags = vec![];
+            let flags = vec![f.IsMutable().into()];
             let tparam = TyParam::Extracted(f.TypeParameter(id, flags));
             Some((param.index, tparam))
           }
@@ -357,6 +414,23 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
       .collect()
   }
 
+  pub(super) fn adt_field_types(
+    &mut self,
+    adt_def: &AdtDef,
+    variant_index: VariantIdx,
+    txtcx: &TyExtractionCtxt<'l>,
+    substs: SubstsRef<'tcx>,
+  ) -> Vec<st::Type<'l>> {
+    adt_def.variants[variant_index]
+      .fields
+      .iter()
+      .map(|f| {
+        let tpe = f.ty(self.tcx, substs);
+        self.extract_ty(tpe, txtcx, f.ident.span)
+      })
+      .collect::<Vec<_>>()
+  }
+
   // Various helpers
 
   #[inline]
@@ -379,6 +453,10 @@ impl<'l, 'tcx> BaseExtractor<'l, 'tcx> {
   pub(super) fn is_bigint(&self, adt_def: &'tcx AdtDef) -> bool {
     // TODO: Add a check for BigInt that avoids generating the string?
     self.tcx.def_path_str(adt_def.did) == "num_bigint::BigInt"
+  }
+
+  pub(super) fn is_mut_cell(&mut self, t: st::Type) -> bool {
+    matches!(t, st::Type::ADTType(st::ADTType{id,..}) if *id == self.synth().mut_cell_id())
   }
 }
 

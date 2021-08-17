@@ -1,8 +1,7 @@
 use std::convert::TryFrom;
 
 use literal::Literal;
-use rustc_middle::mir::BorrowKind;
-use rustc_middle::ty::{subst::SubstsRef, Ty, TyKind};
+use rustc_middle::ty::{subst::Subst, subst::SubstsRef, Ty, TyKind};
 use rustc_mir_build::thir::{BlockSafety, Expr, ExprKind, FruInfo, Stmt, StmtKind};
 
 use crate::std_items::{CrateItem::*, LangItem};
@@ -15,6 +14,7 @@ mod literal;
 mod map;
 mod ops;
 mod pattern;
+mod refs;
 mod set;
 mod spec;
 mod tuple;
@@ -25,6 +25,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   pub(super) fn extract_expr(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
     match &expr.kind {
+      // TODO: Handle arbitrary-precision integers?
       ExprKind::Literal { literal, .. } => match Literal::from_const(literal, self.tcx()) {
         Some(lit) => lit.as_st_literal(self.factory()),
         _ => self.unsupported_expr(expr.span, "Unsupported kind of literal"),
@@ -34,13 +35,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       ExprKind::LogicalOp { op, lhs, rhs } => self.extract_logical_op(*op, lhs, rhs),
 
       ExprKind::Tuple { fields } => self.extract_tuple(fields, expr.span),
-      ExprKind::Field { lhs, name } => self.extract_field(lhs, *name),
-      ExprKind::VarRef { id } => self.fetch_var(*id).into(),
+      ExprKind::Field { lhs, name } => self.extract_field(lhs, *name, false),
+      ExprKind::VarRef { id } => self.extract_var_ref(*id),
 
       ExprKind::Call { ty, ref args, .. } => match ty.kind() {
-        TyKind::FnDef(def_id, substs_ref) => {
-          self.extract_call_like(*def_id, substs_ref, args, expr.span)
-        }
+        TyKind::FnDef(def_id, substs) => self.extract_call_like(*def_id, substs, args, expr.span),
         _ => self.unsupported_expr(
           expr.span,
           "Cannot extract call without statically known target",
@@ -61,19 +60,12 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       } => self.extract_if(cond, then, *else_opt),
       ExprKind::Match { scrutinee, arms } => self.extract_match(scrutinee, arms),
 
-      // TODO: Handle arbitrary-precision integers
       ExprKind::Scope { value, .. } => self.extract_expr(value),
       ExprKind::Use { source } => self.extract_expr(source),
       ExprKind::NeverToAny { source } => self.extract_expr(source),
 
-      ExprKind::Deref { arg } => self.extract_expr(arg),
-
-      // Borrow an immutable and aliasable value (i.e. the meaning of
-      // BorrowKind::Shared). Handle this safe case with erasure.
-      ExprKind::Borrow {
-        borrow_kind: BorrowKind::Shared,
-        arg,
-      } => self.extract_expr(arg),
+      ExprKind::Deref { arg } => self.extract_deref(arg),
+      ExprKind::Borrow { borrow_kind, arg } => self.extract_borrow(borrow_kind, arg),
 
       ExprKind::Assign { lhs, rhs } => self.extract_assignment(lhs, rhs),
 
@@ -123,6 +115,8 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
         }
 
         StdItem::CrateItem(CrateItem::ImpliesFn) => self.extract_implies(args),
+        StdItem::CrateItem(CrateItem::OldFn) => Some(self.extract_old(args.first().unwrap())),
+        StdItem::CrateItem(CrateItem::MemReplace) => self.extract_mem_replace(args),
 
         // Box::new, erase it and return the argument directly.
         StdItem::CrateItem(BoxNewFn) => Some(self.extract_expr(args.first().unwrap())),
@@ -137,22 +131,10 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       .unwrap_or_else(|| self.extract_call(def_id, substs_ref, args, span))
   }
 
-  fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
-    match args {
-      [lhs, rhs] => Some(
-        self
-          .factory()
-          .Implies(self.extract_expr(lhs), self.extract_expr(rhs))
-          .into(),
-      ),
-      _ => None,
-    }
-  }
-
   fn extract_call(
     &mut self,
     def_id: DefId,
-    substs_ref: SubstsRef<'tcx>,
+    substs: SubstsRef<'tcx>,
     args: &'a [Expr<'a, 'tcx>],
     span: Span,
   ) -> st::Expr<'l> {
@@ -167,13 +149,48 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     // FIXME: Filter out as many type params of the function as the classdef
     //   already provides. This clearly fails when there is more than one
     //   parent etc. => improve
-    let arg_tps_without_parents = self.extract_arg_types(
-      substs_ref
+    let arg_tps_without_parents = self.base.extract_arg_tys(
+      substs
         .types()
         .skip(class_def.map_or(0, |cd| cd.tparams.len())),
+      &self.txtcx,
       span,
     );
-    let mut args = self.extract_exprs(args);
+    let fn_sig = self.base.ty_fn_sig(def_id).subst(self.tcx(), substs);
+
+    // If the callee has a HIR body, then we use the HIR body to see which
+    // arguments are locally mutable and hence need to be wrapped in a MutCell.
+    let are_params_mutable: Vec<bool> = self
+      .base
+      .def_to_hir_id(def_id)
+      .and_then(|hir_id| self.base.hir_body(hir_id))
+      .map(|body| {
+        body
+          .params
+          .iter()
+          .map(|p| is_mutable_binding(p.pat))
+          .collect()
+      })
+      .unwrap_or_else(|| vec![false; args.len()]);
+
+    // Wrap locally mutable params in a MutCell
+    let mut args: Vec<_> = self
+      .extract_exprs(args)
+      .into_iter()
+      .zip(
+        self
+          .base
+          .extract_arg_tys(fn_sig.inputs().iter().copied(), &self.txtcx, span),
+      )
+      .zip(are_params_mutable)
+      .map(|((arg, tpe), is_mutable)| {
+        if is_mutable {
+          self.synth().mut_cell(tpe, arg)
+        } else {
+          arg
+        }
+      })
+      .collect();
 
     // If the function has trait bounds but is not on a class, we must find the
     // corresponding evidence arguments.
@@ -201,7 +218,7 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
       // The receiver type is the type of the &self of the method call. This
       // is the first argument type. We have to extract it because we filtered
       // the self type above.
-      let recv_tps = self.base.extract_tys(substs_ref.types(), &self.txtcx, span);
+      let recv_tps = self.base.extract_tys(substs.types(), &self.txtcx, span);
       self.extract_method_receiver(&TypeClassKey { id, recv_tps })
     }) {
       Some(recv) => self
@@ -217,10 +234,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   }
 
   fn extract_return(&mut self, value: Option<&'a Expr<'a, 'tcx>>) -> st::Expr<'l> {
-    let expr = value
-      .map(|v| self.extract_expr(v))
-      .unwrap_or_else(|| self.factory().UnitLiteral().into());
-    self.factory().Return(expr).into()
+    let f = self.factory();
+    f.Return(
+      value
+        .map(|v| self.extract_move_copy(v))
+        .unwrap_or_else(|| f.UnitLiteral().into()),
+    )
+    .into()
   }
 
   fn extract_str_to_string(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
@@ -248,24 +268,71 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
   ///   to correctly solve this use-case is by attaching a spec to the real
   ///   `Clone::clone` that preserves equality.
   ///   https://github.com/epfl-lara/rust-stainless/issues/136
-  fn extract_clone(&mut self, expr: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
-    Some(self.extract_expr(expr))
+  fn extract_clone(&mut self, arg: &'a Expr<'a, 'tcx>) -> Option<st::Expr<'l>> {
+    // The argument of clone is always `&T`, i.e. a borrow.
+    let arg = self.strip_scopes(arg);
+    match arg.kind {
+      ExprKind::Borrow { arg, .. } => {
+        // Extract with fresh copy to be sure to have distinct objects. Rustc
+        // doesn't automatically derive Clone for types that contain mutable
+        // references, therefore we can't accidentally freshCopy MutCells that we
+        // shouldn't copy here. (Once we test that the clone is derived => FIXME)
+        let arg_expr = self.extract_move_copy(arg);
+        if is_mut_ref(arg.ty) {
+          Some(self.synth().mut_cell_value(arg_expr))
+        } else {
+          Some(arg_expr)
+        }
+      }
+      _ => None,
+    }
+  }
+
+  fn extract_implies(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
+    match args {
+      [lhs, rhs] => Some(
+        self
+          .factory()
+          .Implies(self.extract_expr(lhs), self.extract_expr(rhs))
+          .into(),
+      ),
+      _ => None,
+    }
+  }
+
+  fn extract_old(&mut self, arg: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
+    self.factory().Old(self.extract_expr(arg)).into()
+  }
+
+  fn extract_mem_replace(&mut self, args: &'a [Expr<'a, 'tcx>]) -> Option<st::Expr<'l>> {
+    let f = self.factory();
+    if let [dest, src] = args {
+      let tpe = self.base.extract_ty(src.ty, &self.txtcx, src.span);
+      let res = &*f.Variable(self.base.fresh_id("res".into()), tpe, vec![]);
+      let dest = self.extract_expr(dest);
+      let src = self.extract_expr(src);
+      Some(
+        f.Let(
+          f.ValDef(res),
+          f.FreshCopy(self.synth().mut_cell_value(dest)).into(),
+          f.Block(
+            vec![f
+              .FieldAssignment(dest, self.synth().mut_cell_value_id(), src)
+              .into()],
+            res.into(),
+          )
+          .into(),
+        )
+        .into(),
+      )
+    } else {
+      None
+    }
   }
 
   fn is_str_type(&mut self, expr: &'a Expr<'a, 'tcx>) -> bool {
     let ty = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
     matches!(ty, st::Type::StringType(_))
-  }
-
-  fn extract_arg_types<I>(&mut self, types: I, span: Span) -> Vec<st::Type<'l>>
-  where
-    I: IntoIterator<Item = Ty<'tcx>>,
-  {
-    // Remove closure type parameters (they were already replaced by FunctionTypes)
-    let arg_tys = types
-      .into_iter()
-      .filter(|ty| !matches!(ty.kind(), TyKind::Closure(..)));
-    self.base.extract_tys(arg_tys, &self.txtcx, span)
   }
 
   fn extract_panic(
@@ -304,10 +371,13 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     {
       let sort = self.base.get_or_extract_adt(adt_def.did);
       let constructor = sort.constructors[variant_index.index()];
-      let arg_tps = self.extract_arg_types(substs.types(), expr.span);
+
+      let arg_tps = self
+        .base
+        .extract_arg_tys(substs.types(), &self.txtcx, expr.span);
 
       // If the ADT is constructed with "struct update syntax"
-      let args = if let Some(FruInfo { base, .. }) = base {
+      let args: Vec<_> = if let Some(FruInfo { base, .. }) = base {
         // we take the explicit fields
         let fields_by_index = fields
           .iter()
@@ -320,10 +390,11 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .iter()
           .enumerate()
           .map(|(index, fi)| {
-            fields_by_index
-              .get(&index)
-              .copied()
-              .unwrap_or_else(|| f.ADTSelector(adt, fi.v.id).into())
+            fields_by_index.get(&index).copied().unwrap_or_else(|| {
+              self
+                .synth()
+                .mut_cell_value(f.ADTSelector(adt, fi.v.id).into())
+            })
           })
           .collect()
       }
@@ -336,6 +407,24 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
           .map(|field| self.extract_expr(field.expr))
           .collect()
       };
+
+      // Wrap args in MutCell
+      let args = args
+        .into_iter()
+        .zip(
+          self
+            .base
+            .adt_field_types(adt_def, *variant_index, &self.txtcx, substs),
+        )
+        .map(|(a, t)| {
+          if self.base.is_mut_cell(t) {
+            a
+          } else {
+            self.synth().mut_cell(t, a)
+          }
+        })
+        .collect();
+
       f.ADT(constructor.id, arg_tps, args).into()
     } else {
       unreachable!()
@@ -346,6 +435,45 @@ impl<'a, 'l, 'tcx> BodyExtractor<'a, 'l, 'tcx> {
     match expr.kind {
       ExprKind::Scope { value, .. } => self.strip_scopes(value),
       _ => expr,
+    }
+  }
+
+  /// Extract a move or copy of the expression. By default everything is
+  /// freshCopy'd because this is safe except for mutable types (see thesis).
+  ///
+  /// A mutable type is a type that is or contains mutable references
+  /// [is_mutable]. For mutable types, we return the identity so that changes to
+  /// the mutable data will be propagated.
+  ///
+  /// Additionally, we don't insert freshCopy around some control structures for
+  /// which we know by design that a freshCopy will be inserted inside the
+  /// structure (like ifs, matches, return). We also omit freshCopy for common
+  /// Rust & JVM primitive types.
+  fn extract_move_copy(&mut self, expr: &'a Expr<'a, 'tcx>) -> st::Expr<'l> {
+    let e = self.extract_expr(expr);
+    if is_mutable(expr.ty) {
+      e
+    } else {
+      let tpe = self.base.extract_ty(expr.ty, &self.txtcx, expr.span);
+      match e {
+        // don't nest freshCopy
+        st::Expr::FreshCopy(_)
+        // don't fresh copy entire matches/ifs, we leave that to each block
+        | st::Expr::MatchExpr(_)
+        | st::Expr::IfExpr(_)
+        // don't fresh copy "around" the return, we do it inside
+        | st::Expr::Return(_) => e,
+        _ => match tpe {
+          st::Type::BooleanType(_)
+          | st::Type::NothingType(_)
+          | st::Type::BVType(_)
+          | st::Type::CharType(_)
+          | st::Type::UnitType(_)
+          | st::Type::RealType(_)
+          | st::Type::IntegerType(_) => e,
+          _ => self.factory().FreshCopy(e).into(),
+        },
+      }
     }
   }
 

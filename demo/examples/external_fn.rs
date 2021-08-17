@@ -3,7 +3,6 @@ use stainless::*;
 
 struct State(i32);
 
-#[var(0)]
 struct Printer(i32);
 
 #[pure(state)]
@@ -18,6 +17,6 @@ fn work(state: State, printer: Printer) -> i32 {
   do_sideeffectful_stuff(state, printer)
 }
 
-fn main() -> () {
+pub fn main() -> () {
   work(State(123), Printer(999));
 }

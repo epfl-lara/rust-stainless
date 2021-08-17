@@ -15,8 +15,6 @@ use stainless_data::ast as st;
 pub(super) enum Flag {
   Extern,
   IsPure,
-  IsMutable,
-  IsVar,
   IsAbstract,
   Law,
   Pre,
@@ -41,8 +39,6 @@ impl Flags {
       .filter_map(|flag| match flag {
         Extern => Some(f.Extern().into()),
         IsPure => Some(f.IsPure().into()),
-        IsMutable => Some(f.IsMutable().into()),
-        IsVar => Some(f.IsVar().into()),
         Law => Some(f.Law().into()),
         IsAbstract => Some(f.IsAbstract().into()),
 
@@ -61,8 +57,6 @@ impl Flag {
     match self {
       Extern => "external",
       IsPure => "pure",
-      IsMutable => "mutable",
-      IsVar => "var",
       IsAbstract => "is_abstract",
       Law => "law",
       Pre => "pre",

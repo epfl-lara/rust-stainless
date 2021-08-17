@@ -6,11 +6,6 @@ use stainless::*;
 ///
 /// [1]: https://github.com/epfl-lara/stainless/blob/master/frontends/benchmarks/verification/valid/InsertionSort.scala
 
-pub enum Option<T> {
-  None,
-  Some(T),
-}
-
 pub enum List<T> {
   Nil,
   Cons(T, Box<List<T>>),
@@ -53,11 +48,11 @@ impl List<i32> {
   #[measure(self)]
   pub fn min(&self) -> Option<i32> {
     match self {
-      List::Nil => Option::None,
+      List::Nil => None,
       List::Cons(x, xs) => match xs.min() {
-        Option::None => Option::Some(*x),
-        Option::Some(y) if *x < y => Option::Some(*x),
-        Option::Some(y) => Option::Some(y),
+        None => Some(*x),
+        Some(y) if *x < y => Some(*x),
+        Some(y) => Some(y),
       },
     }
   }

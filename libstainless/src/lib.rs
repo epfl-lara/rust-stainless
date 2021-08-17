@@ -7,6 +7,10 @@ pub use set::*;
 mod map;
 pub use map::*;
 
+pub fn old<T>(t: T) -> T {
+  t
+}
+
 pub trait Implies {
   fn implies(self, b: Self) -> bool;
 }
