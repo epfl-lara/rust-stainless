@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 extern crate stainless;
 use stainless::*;
 
@@ -48,7 +50,6 @@ impl RBTree<i32> {
     }
   }
 
-  #[allow(dead_code)]
   fn content(&self) -> Set<&i32> {
     match self {
       Empty => Set::new(),
@@ -56,7 +57,6 @@ impl RBTree<i32> {
     }
   }
 
-  #[allow(dead_code)]
   fn red_nodes_have_black_children(&self) -> bool {
     match self {
       Empty => true,
@@ -72,7 +72,6 @@ impl RBTree<i32> {
     }
   }
 
-  #[allow(dead_code)]
   fn red_desc_have_black_children(&self) -> bool {
     match self {
       Empty => true,
@@ -90,7 +89,6 @@ impl RBTree<i32> {
     }
   }
 
-  #[allow(dead_code)]
   fn black_height(&self) -> usize {
     match self {
       Empty => 1,
@@ -214,7 +212,6 @@ impl RBTree<i32> {
   }
 }
 
-#[allow(dead_code)]
 fn set_equals<'a>(a: &Set<&'a i32>, b: &Set<&'a i32>) -> bool {
   a.is_subset(b) && b.is_subset(a)
 }
@@ -222,9 +219,14 @@ fn set_equals<'a>(a: &Set<&'a i32>, b: &Set<&'a i32>) -> bool {
 pub fn main() {
   let mut tree = RBTree::new();
 
-  tree.insert(1);
-  tree.insert(2);
-  tree.insert(3);
-  tree.insert(4);
-  tree.insert(5);
+  #[pre(n >= 0)]
+  fn rec(tree: &mut RBTree<i32>, n: i32) {
+    if n > 0 {
+      println!("{}", n);
+      tree.insert(n);
+      rec(tree, n - 1);
+    }
+  }
+
+  rec(&mut tree, 5000);
 }
