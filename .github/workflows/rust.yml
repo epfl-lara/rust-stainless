@@ -81,3 +81,17 @@ jobs:
         run: cd demo && cargo build && cargo stainless
         env:
           STAINLESS_HOME: ${{ github.workspace }}/stainless-noxt
+
+  docker:
+    name: Build docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Setup docker builder
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Build image
+        run: docker buildx build .
